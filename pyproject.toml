@@ -12,6 +12,7 @@ license = { text = "Proprietary" }
 dependencies = [
     "scikit-learn>=1.4",
     "pyyaml>=6.0",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]

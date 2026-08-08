@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 
-from . import jobs, model
+from . import autolabel, brama, jobs, model
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -50,6 +50,24 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_info = sub.add_parser("info", help="list trained aspects, artifacts, and metrics")
     p_info.add_argument("--json", action="store_true", help="print machine-readable JSON")
+
+    p_auto = sub.add_parser(
+        "autolabel",
+        help="label every unlabeled session for an aspect via a Brama teacher (zero-touch)",
+    )
+    p_auto.add_argument("--aspect", required=True, help="aspect name, e.g. tasktype")
+    p_auto.add_argument(
+        "--values",
+        required=True,
+        help="comma-separated allowed label values, e.g. bugfix,feature,chore,question",
+    )
+    p_auto.add_argument(
+        "--brama-model",
+        metavar="MODEL_ID",
+        help=f"Brama-routed teacher model (default: {brama.DEFAULT_MODEL})",
+    )
+    p_auto.add_argument("--limit", type=int, help="cap the number of sessions labeled")
+    p_auto.add_argument("--runtime", help="only sessions of this runtime")
 
     return parser
 
@@ -137,6 +155,25 @@ def main(argv: list[str] | None = None) -> None:
             sys.stderr.write(f"infer: {exc}\n")
             sys.exit(1)
         print(json.dumps(suggestions, indent=2))
+        return
+
+    if args.command == "autolabel":
+        values = [v.strip() for v in args.values.split(",") if v.strip()]
+        if not values:
+            sys.stderr.write("autolabel: --values must name at least one allowed value\n")
+            sys.exit(1)
+        try:
+            summary = autolabel.autolabel(
+                args.aspect,
+                values,
+                brama_model=args.brama_model,
+                limit=args.limit,
+                runtime=args.runtime,
+            )
+        except (ValueError, RuntimeError, brama.BramaError) as exc:
+            sys.stderr.write(f"autolabel: {exc}\n")
+            sys.exit(1)
+        print(json.dumps(summary, indent=2))
         return
 
     if args.command == "info":

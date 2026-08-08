@@ -37,9 +37,11 @@ Transcript Label Trainer does not own:
   consumed here read-only through its own CLI;
 - the label store or the label vocabulary — the lake's labeler owns
   `labels/*.ndjson`; this tool reads it and never writes it;
-- applying suggestions. Review the emitted records, then apply them through
-  the lake's labeler: `transcript-lake label add <session-id> --aspect <name>
-  --value <v> --source model`;
+- applying `infer` suggestions. Review the emitted records, then apply them
+  through the lake's labeler: `transcript-lake label add <session-id> --aspect
+  <name> --value <v> --source model`. (`autolabel` is the deliberate
+  exception: it applies teacher labels through the same lake CLI immediately,
+  with no review step — operator-mandated zero-touch.);
 - model serving or cloud training. Everything runs locally with scikit-learn,
   plus a local HuggingFace fine-tune on CPU or Apple-silicon MPS when the
   optional `hf` extra is installed.
@@ -174,6 +176,54 @@ sessions found per class) before training, then trains exactly like `train`
 does. Artifacts land in `$TLT_HOME/models/<name>/` with a copy of the spec
 (`job.yaml`), and `metrics.json` carries the job metadata. `train` and `infer`
 are unchanged; `run` is a layer over the same code path.
+
+## Automatic labeling with a Brama teacher
+
+`autolabel` labels sessions at scale with a big model routed through Brama —
+Wisent's authenticated, provider-neutral OpenAI-compatible gateway (all LLM
+inference goes through Brama; never direct provider keys). It is zero-touch
+by operator mandate: suggestions are not staged for review, they are applied
+immediately.
+
+```sh
+transcript-label-trainer autolabel --aspect tasktype \
+  --values bugfix,feature,chore,question --limit 50
+```
+
+For each session that has no label on the aspect yet, autolabel reconstructs
+the session text, asks the teacher for exactly one of the allowed values, and
+applies the answer through the lake's own CLI:
+
+```sh
+transcript-lake label add <session-id> --aspect tasktype --value <v> --source brama:<model-id> --note autolabel
+```
+
+The lake CLI validates the session and owns the write — that boundary stays;
+what changed is only that no human reviews the suggestion. Rules:
+
+- **No overwrite.** A session already labeled with the aspect by ANY source
+  is skipped — human labels are sacred, and reruns are idempotent.
+- **Failure isolation.** A Brama error or an unparseable answer fails that
+  one session, writes nothing for it, and is counted in the final summary
+  (`labeled` / `skipped_labeled` / `failed`).
+- The teacher defaults to `302ai/claude-haiku-4-5` (cheap, multilingual —
+  transcripts are mixed Polish/English); override with `--brama-model`.
+- Auth mirrors jeden: HMAC-signed requests keyed by the Skarbiec item
+  `agent:wisent-app`, bearer from `jeden-model-router`, endpoint from
+  `BRAMA_URL` (falling back to jeden's own configured URL). Secrets are read
+  into memory only, never printed.
+
+The end-to-end story: autolabel an aspect, then train on the teacher's
+labels by naming the provenance in a job spec:
+
+```yaml
+name: tasktype-v1
+task: classify what kind of work the session did
+evaluator: brama:302ai/claude-haiku-4-5
+model: tfidf-logreg
+scope:
+  aspect: tasktype
+```
 
 ## Environment
 
