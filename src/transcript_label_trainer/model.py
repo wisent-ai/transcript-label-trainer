@@ -1,4 +1,16 @@
-"""Training, inference, and artifact inspection for aspect-label classifiers."""
+"""Training, inference, and artifact inspection for aspect-label classifiers.
+
+Two backends share one data path (lake label store + lake CLI session text):
+
+- sklearn (default): TF-IDF + logistic regression, artifacts directly in
+  ``$TLT_HOME/models/<aspect>/`` (``model.joblib`` + ``metrics.json``);
+- hf (``--model <hf-model-id>``): fine-tuned HuggingFace sequence classifier,
+  artifacts in ``$TLT_HOME/models/<aspect>/hf-<sanitized-model-id>/``
+  (``save_pretrained`` output + ``metrics.json``).
+
+When both backends exist for an aspect, inference uses the newest artifact by
+``trained_at``.
+"""
 
 from __future__ import annotations
 
@@ -11,19 +23,23 @@ from pathlib import Path
 import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 
 from . import __version__, lake
 
-# Below this many labeled sessions a TF-IDF + logistic-regression model is not
-# meaningful, so train refuses with an explicit message instead of fitting
-# noise. This is a product floor, not a sklearn requirement.
+# Below this many labeled sessions a classifier is not meaningful, so train
+# refuses with an explicit message instead of fitting noise. This is a product
+# floor, not a library requirement.
 MIN_LABELED_SESSIONS = 8
 
 # Cross-validated accuracy is reported once every class can spare members for
 # stratified folds; below that the metric would be noise, so it is omitted.
 MIN_SESSIONS_FOR_CV = 10
+
+# HF fine-tuning additionally needs 2 sessions per class so the stratified
+# holdout split keeps every class on both sides.
+MIN_PER_CLASS_HF = 2
 
 _ASPECT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
@@ -46,6 +62,10 @@ def _aspect_dir(aspect: str) -> Path:
 
 class NotEnoughData(Exception):
     """Raised when an aspect has too few labeled sessions to train."""
+
+
+class HfExtraMissing(Exception):
+    """Raised when --model is used without the optional 'hf' extra installed."""
 
 
 def _now() -> str:
@@ -92,7 +112,25 @@ def _training_frame(aspect: str) -> tuple[list[str], list[str], dict[str, int]]:
     return texts, values, counts
 
 
-def train(aspect: str) -> dict:
+def _base_metrics(aspect: str, backend: str, model_desc: str, texts, counts) -> dict:
+    return {
+        "aspect": aspect,
+        "backend": backend,
+        "trained_at": _now(),
+        "trainer_version": __version__,
+        "model": model_desc,
+        "n_sessions": len(texts),
+        "classes": sorted(counts),
+        "counts": counts,
+    }
+
+
+# ---------------------------------------------------------------------------
+# sklearn backend
+# ---------------------------------------------------------------------------
+
+
+def _train_sklearn(aspect: str) -> dict:
     texts, values, counts = _training_frame(aspect)
 
     pipeline = Pipeline(
@@ -117,36 +155,239 @@ def train(aspect: str) -> dict:
     out_dir = _aspect_dir(aspect)
     out_dir.mkdir(parents=True, exist_ok=True)
     model_path = out_dir / "model.joblib"
-    metrics_path = out_dir / "metrics.json"
+    metrics = _base_metrics(aspect, "sklearn", "tfidf(1-2gram, sublinear) + logistic-regression", texts, counts)
+    metrics.update(
+        {
+            "cv_accuracy": cv_accuracy,
+            "cv_folds": cv_folds,
+            "model_path": str(model_path),
+        }
+    )
     joblib.dump(pipeline, model_path)
-    metrics = {
-        "aspect": aspect,
-        "trained_at": _now(),
-        "trainer_version": __version__,
-        "model": "tfidf(1-2gram, sublinear) + logistic-regression",
-        "n_sessions": len(texts),
-        "classes": sorted(counts),
-        "counts": counts,
-        "cv_accuracy": cv_accuracy,
-        "cv_folds": cv_folds,
-        "model_path": str(model_path),
-    }
-    metrics_path.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
+    (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     return metrics
 
 
-def _load_model(aspect: str) -> Pipeline:
-    model_path = _aspect_dir(aspect) / "model.joblib"
-    if not model_path.is_file():
+# ---------------------------------------------------------------------------
+# HuggingFace backend (optional 'hf' extra: torch + transformers)
+# ---------------------------------------------------------------------------
+
+
+def _sanitize_model_id(model_id: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "--", model_id).strip("-")
+
+
+def _hf_imports():
+    try:
+        import torch
+        from transformers import (
+            AutoModelForSequenceClassification,
+            AutoTokenizer,
+            Trainer,
+            TrainingArguments,
+        )
+    except ImportError:
+        raise HfExtraMissing(
+            "fine-tuning with --model requires the optional 'hf' extra; "
+            "install it with: pip install '.[hf]' (adds torch and transformers)"
+        )
+    return torch, AutoModelForSequenceClassification, AutoTokenizer, Trainer, TrainingArguments
+
+
+def _hf_device(torch) -> str:
+    return "mps" if torch.backends.mps.is_available() else "cpu"
+
+
+class _TextDataset:
+    def __init__(self, encodings, label_ids):
+        self.encodings = encodings
+        self.label_ids = label_ids
+
+    def __len__(self):
+        return len(self.label_ids)
+
+    def __getitem__(self, index):
+        item = {key: val[index] for key, val in self.encodings.items()}
+        item["labels"] = self.label_ids[index]
+        return item
+
+
+def _train_hf(aspect: str, model_id: str, epochs: float, batch_size: int, lr: float, max_length: int) -> dict:
+    torch, AutoModelForSequenceClassification, AutoTokenizer, Trainer, TrainingArguments = _hf_imports()
+
+    texts, values, counts = _training_frame(aspect)
+    too_small = {value: n for value, n in counts.items() if n < MIN_PER_CLASS_HF}
+    if too_small:
+        detail = ", ".join(f"'{value}' has {n}" for value, n in sorted(too_small.items()))
+        raise NotEnoughData(
+            f"aspect '{aspect}': HF fine-tuning requires at least "
+            f"{MIN_PER_CLASS_HF} sessions per class ({detail}). "
+            "Add labels with 'transcript-lake label add' and retry."
+        )
+
+    classes = sorted(counts)
+    label2id = {label: index for index, label in enumerate(classes)}
+    id2label = {index: label for label, index in label2id.items()}
+    label_ids = [label2id[value] for value in values]
+
+    # Stratified holdout for an honest eval number; the test side must hold at
+    # least one session per class.
+    n_test = max(len(classes), round(len(texts) * 0.2))
+    x_train, x_eval, y_train, y_eval = train_test_split(
+        texts, label_ids, test_size=n_test, stratify=label_ids, random_state=0
+    )
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_id, num_labels=len(classes), id2label=id2label, label2id=label2id
+    )
+
+    def encode(batch_texts):
+        return tokenizer(batch_texts, truncation=True, max_length=max_length, padding=True)
+
+    train_ds = _TextDataset(encode(x_train), y_train)
+    eval_ds = _TextDataset(encode(x_eval), y_eval)
+
+    out_dir = _aspect_dir(aspect) / f"hf-{_sanitize_model_id(model_id)}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    import tempfile
+
+    def compute_metrics(eval_pred):
+        logits, gold = eval_pred
+        preds = logits.argmax(-1)
+        return {"accuracy": float((preds == gold).mean())}
+
+    device = _hf_device(torch)
+    with tempfile.TemporaryDirectory(prefix="tlt-hf-") as tmp:
+        args = TrainingArguments(
+            output_dir=tmp,
+            num_train_epochs=epochs,
+            per_device_train_batch_size=batch_size,
+            per_device_eval_batch_size=batch_size,
+            learning_rate=lr,
+            seed=0,
+            report_to=[],
+            disable_tqdm=True,
+            save_strategy="no",
+        )
+        trainer = Trainer(
+            model=model,
+            args=args,
+            train_dataset=train_ds,
+            eval_dataset=eval_ds,
+            compute_metrics=compute_metrics,
+        )
+        trainer.train()
+        eval_result = trainer.evaluate()
+
+    model.save_pretrained(out_dir)
+    tokenizer.save_pretrained(out_dir)
+
+    metrics = _base_metrics(aspect, "hf", f"fine-tuned {model_id} (sequence classification)", texts, counts)
+    metrics.update(
+        {
+            "base_model": model_id,
+            "hyperparameters": {
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "lr": lr,
+                "max_length": max_length,
+            },
+            "device": device,
+            "eval_accuracy": round(float(eval_result.get("eval_accuracy", 0.0)), 4)
+            if "eval_accuracy" in eval_result
+            else None,
+            "eval_loss": round(float(eval_result.get("eval_loss", 0.0)), 4)
+            if "eval_loss" in eval_result
+            else None,
+            "eval_sessions": len(x_eval),
+            "model_path": str(out_dir),
+        }
+    )
+    (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
+    return metrics
+
+
+def train(
+    aspect: str,
+    model_id: str | None = None,
+    epochs: float = 3,
+    batch_size: int = 8,
+    lr: float = 2e-5,
+    max_length: int = 512,
+) -> dict:
+    if model_id is None:
+        return _train_sklearn(aspect)
+    return _train_hf(aspect, model_id, epochs, batch_size, lr, max_length)
+
+
+# ---------------------------------------------------------------------------
+# Inference
+# ---------------------------------------------------------------------------
+
+
+def _artifacts(aspect: str) -> list[dict]:
+    """All trained artifacts for one aspect, oldest first."""
+    base = _aspect_dir(aspect)
+    found: list[dict] = []
+    sklearn_metrics = base / "metrics.json"
+    if (base / "model.joblib").is_file() and sklearn_metrics.is_file():
+        metrics = json.loads(sklearn_metrics.read_text(encoding="utf-8"))
+        found.append({"backend": "sklearn", "dir": base, "metrics": metrics})
+    if base.is_dir():
+        for sub in sorted(base.glob("hf-*")):
+            metrics_path = sub / "metrics.json"
+            if sub.is_dir() and metrics_path.is_file():
+                metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+                found.append({"backend": "hf", "dir": sub, "metrics": metrics})
+    return sorted(found, key=lambda a: a["metrics"].get("trained_at", ""))
+
+
+def _active_artifact(aspect: str) -> dict:
+    artifacts = _artifacts(aspect)
+    if not artifacts:
         raise FileNotFoundError(
-            f"no trained model for aspect '{aspect}' at {model_path}; "
+            f"no trained model for aspect '{aspect}' under {_aspect_dir(aspect)}; "
             f"run 'transcript-label-trainer train --aspect {aspect}' first"
         )
-    return joblib.load(model_path)
+    return artifacts[-1]  # newest wins
+
+
+def _infer_sklearn(artifact: dict, texts: list[str]) -> list[tuple[str, float]]:
+    pipeline = joblib.load(artifact["dir"] / "model.joblib")
+    probas = pipeline.predict_proba(texts)
+    return [
+        (str(pipeline.classes_[int(proba.argmax())]), float(proba.max()))
+        for proba in probas
+    ]
+
+
+def _infer_hf(artifact: dict, texts: list[str]) -> list[tuple[str, float]]:
+    torch, AutoModelForSequenceClassification, AutoTokenizer, _, _ = _hf_imports()
+    out_dir = artifact["dir"]
+    max_length = int(artifact["metrics"].get("hyperparameters", {}).get("max_length", 512))
+    tokenizer = AutoTokenizer.from_pretrained(out_dir)
+    model = AutoModelForSequenceClassification.from_pretrained(out_dir)
+    device = _hf_device(torch)
+    model.to(device)
+    model.eval()
+    results: list[tuple[str, float]] = []
+    with torch.no_grad():
+        for start in range(0, len(texts), 8):
+            batch = texts[start : start + 8]
+            encoded = tokenizer(
+                batch, truncation=True, max_length=max_length, padding=True, return_tensors="pt"
+            ).to(device)
+            probas = torch.softmax(model(**encoded).logits, dim=-1)
+            for proba in probas:
+                best = int(proba.argmax())
+                results.append((str(model.config.id2label[best]), float(proba[best])))
+    return results
 
 
 def infer(aspect: str, session: str | None = None, limit: int | None = None) -> list[dict]:
-    pipeline = _load_model(aspect)
+    artifact = _active_artifact(aspect)
 
     if session:
         targets = [{"session_id": session}]
@@ -157,40 +398,62 @@ def infer(aspect: str, session: str | None = None, limit: int | None = None) -> 
             targets = targets[:limit]
 
     texts_by_id = lake.session_texts([t["session_id"] for t in targets])
+    usable = [
+        (t, texts_by_id[t["session_id"]])
+        for t in targets
+        if texts_by_id.get(t["session_id"], {}).get("text", "").strip()
+    ]
+    if not usable:
+        return []
+
+    predict = _infer_sklearn if artifact["backend"] == "sklearn" else _infer_hf
+    predictions = predict(artifact, [entry["text"] for _, entry in usable])
+
     suggestions: list[dict] = []
-    for target in targets:
-        sid = target["session_id"]
-        entry = texts_by_id.get(sid)
-        if not entry or not entry["text"].strip():
-            continue
-        proba = pipeline.predict_proba([entry["text"]])[0]
-        best = int(proba.argmax())
+    for (target, entry), (value, confidence) in zip(usable, predictions):
         suggestions.append(
             {
                 "ts": _now(),
-                "session_id": sid,
+                "session_id": target["session_id"],
                 "runtime": entry.get("runtime") or target.get("runtime"),
                 "aspect": aspect,
-                "value": str(pipeline.classes_[best]),
-                "note": f"confidence={proba[best]:.2f}",
+                "value": value,
+                "note": f"confidence={confidence:.2f}",
                 "source": "model",
             }
         )
     return suggestions
 
 
+# ---------------------------------------------------------------------------
+# info
+# ---------------------------------------------------------------------------
+
+
 def info() -> list[dict]:
-    """One entry per trained aspect, with artifact paths and metrics."""
+    """One entry per trained aspect: every artifact, newest marked active."""
     entries: list[dict] = []
     root = models_dir()
     if not root.is_dir():
         return entries
     for aspect_dir in sorted(p for p in root.iterdir() if p.is_dir()):
-        metrics_path = aspect_dir / "metrics.json"
-        entry: dict = {"aspect": aspect_dir.name, "dir": str(aspect_dir)}
-        if metrics_path.is_file():
-            entry["metrics"] = json.loads(metrics_path.read_text(encoding="utf-8"))
-        else:
-            entry["metrics"] = None
-        entries.append(entry)
+        artifacts = _artifacts(aspect_dir.name)
+        if not artifacts:
+            entries.append({"aspect": aspect_dir.name, "dir": str(aspect_dir), "artifacts": []})
+            continue
+        entries.append(
+            {
+                "aspect": aspect_dir.name,
+                "dir": str(aspect_dir),
+                "active": artifacts[-1]["backend"],
+                "artifacts": [
+                    {
+                        "backend": a["backend"],
+                        "dir": str(a["dir"]),
+                        "metrics": a["metrics"],
+                    }
+                    for a in artifacts
+                ],
+            }
+        )
     return entries

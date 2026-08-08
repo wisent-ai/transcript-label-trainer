@@ -21,6 +21,23 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_train = sub.add_parser("train", help="train a classifier for one aspect")
     p_train.add_argument("--aspect", required=True, help="aspect name, e.g. reviewed")
+    p_train.add_argument(
+        "--model",
+        dest="model_id",
+        metavar="HF_MODEL_ID",
+        help=(
+            "fine-tune this HuggingFace model instead of the default TF-IDF + "
+            "logistic regression (requires the 'hf' extra); multilingual models "
+            "such as distilbert-base-multilingual-cased fit the mixed "
+            "Polish/English transcripts"
+        ),
+    )
+    p_train.add_argument("--epochs", type=float, default=3, help="HF training epochs (default: 3)")
+    p_train.add_argument("--batch-size", type=int, default=8, help="HF batch size (default: 8)")
+    p_train.add_argument("--lr", type=float, default=2e-5, help="HF learning rate (default: 2e-5)")
+    p_train.add_argument(
+        "--max-length", type=int, default=512, help="HF tokenizer max tokens per session (default: 512)"
+    )
 
     p_infer = sub.add_parser("infer", help="emit label suggestions for unlabeled sessions")
     p_infer.add_argument("--aspect", required=True, help="aspect name, e.g. reviewed")
@@ -34,16 +51,55 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _print_info(entries: list[dict]) -> None:
+    if not entries:
+        print(f"no trained aspects under {model.models_dir()}")
+        return
+    for entry in entries:
+        artifacts = entry["artifacts"]
+        if not artifacts:
+            print(f"{entry['aspect']}: no trained artifacts in {entry['dir']}")
+            continue
+        print(f"{entry['aspect']} (active backend: {entry['active']}):")
+        for artifact in artifacts:
+            metrics = artifact["metrics"]
+            backend = artifact["backend"]
+            marker = "*" if backend == entry["active"] else " "
+            if backend == "sklearn":
+                cv = metrics["cv_accuracy"]
+                quality = (
+                    f"cv_accuracy={cv} ({metrics['cv_folds']}-fold)" if cv is not None else "cv_accuracy=n/a"
+                )
+            else:
+                hp = metrics["hyperparameters"]
+                acc = metrics.get("eval_accuracy")
+                quality = f"eval_accuracy={acc}" if acc is not None else "eval_accuracy=n/a"
+                quality += f" ({metrics['base_model']}, epochs={hp['epochs']}, lr={hp['lr']}, device={metrics['device']})"
+            print(
+                f" {marker} {backend}: {metrics['n_sessions']} sessions, "
+                f"classes={metrics['classes']}, {quality}\n"
+                f"    model:   {metrics['model_path']}\n"
+                f"    trained: {metrics['trained_at']}"
+            )
+
+
 def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
 
     if args.command == "train":
         try:
-            metrics = model.train(args.aspect)
+            metrics = model.train(
+                args.aspect,
+                model_id=args.model_id,
+                epochs=args.epochs,
+                batch_size=args.batch_size,
+                lr=args.lr,
+                max_length=args.max_length,
+            )
         except model.NotEnoughData as exc:
             sys.stderr.write(f"train: {exc}\n")
             sys.exit(2)
-        except (ValueError, RuntimeError) as exc:
+        except (ValueError, RuntimeError, model.HfExtraMissing) as exc:
             sys.stderr.write(f"train: {exc}\n")
             sys.exit(1)
         print(json.dumps(metrics, indent=2))
@@ -52,7 +108,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "infer":
         try:
             suggestions = model.infer(args.aspect, session=args.session, limit=args.limit)
-        except (ValueError, FileNotFoundError, RuntimeError) as exc:
+        except (ValueError, FileNotFoundError, RuntimeError, model.HfExtraMissing) as exc:
             sys.stderr.write(f"infer: {exc}\n")
             sys.exit(1)
         print(json.dumps(suggestions, indent=2))
@@ -63,23 +119,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.json:
             print(json.dumps(entries, indent=2))
             return
-        if not entries:
-            print(f"no trained aspects under {model.models_dir()}")
-            return
-        for entry in entries:
-            metrics = entry["metrics"]
-            if metrics is None:
-                print(f"{entry['aspect']}: no metrics.json in {entry['dir']}")
-                continue
-            cv = metrics["cv_accuracy"]
-            cv_text = f"cv_accuracy={cv} ({metrics['cv_folds']}-fold)" if cv is not None else "cv_accuracy=n/a"
-            print(
-                f"{entry['aspect']}: {metrics['n_sessions']} sessions, "
-                f"classes={metrics['classes']}, {cv_text}\n"
-                f"  model:   {metrics['model_path']}\n"
-                f"  metrics: {entry['dir']}/metrics.json\n"
-                f"  trained: {metrics['trained_at']}"
-            )
+        _print_info(entries)
         return
 
 

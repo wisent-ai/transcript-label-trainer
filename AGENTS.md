@@ -11,5 +11,7 @@
 - **No tests.** Standing operator policy forbids creating or running tests.
   Verification is running the CLI against the real (or a scratch `LAKE_DATA`)
   lake and reading the output.
-- Keep dependencies minimal: scikit-learn and its transitives. No torch, no
-  GPU assumptions.
+- Keep dependencies minimal: scikit-learn and its transitives in the base
+  install. torch and transformers belong only to the optional `hf` extra;
+  import them lazily so the base install never needs them. CPU is the
+  baseline, MPS is picked up automatically on Apple silicon.

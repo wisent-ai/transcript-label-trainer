@@ -13,6 +13,13 @@ dependencies = [
     "scikit-learn>=1.4",
 ]
 
+[project.optional-dependencies]
+hf = [
+    "torch>=2.2",
+    "transformers>=4.40",
+    "accelerate>=1.1",
+]
+
 [project.scripts]
 transcript-label-trainer = "transcript_label_trainer.cli:main"
 

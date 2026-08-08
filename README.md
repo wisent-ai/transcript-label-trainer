@@ -19,8 +19,9 @@ model that suggests the rest.
 
 Transcript Label Trainer owns:
 
-- training one TF-IDF + logistic-regression classifier per aspect over the
-  manual labels in the lake's label store;
+- training one classifier per aspect over the manual labels in the lake's
+  label store — TF-IDF + logistic regression by default, or a fine-tuned
+  HuggingFace transformer when `--model` is given (optional `hf` extra);
 - session-text reconstruction, by shelling out to the lake CLI's read-only
   `query` command (user + assistant text per session, ordered by `ts`, capped
   at 12 KB);
@@ -38,9 +39,10 @@ Transcript Label Trainer does not own:
   `labels/*.ndjson`; this tool reads it and never writes it;
 - applying suggestions. Review the emitted records, then apply them through
   the lake's labeler: `transcript-lake label add <session-id> --aspect <name>
-  --value <v>`;
-- model serving, cloud training, or GPUs. Everything runs locally on CPU with
-  scikit-learn.
+  --value <v> --source model`;
+- model serving or cloud training. Everything runs locally with scikit-learn,
+  plus a local HuggingFace fine-tune on CPU or Apple-silicon MPS when the
+  optional `hf` extra is installed.
 
 ## Quick start
 
@@ -86,12 +88,8 @@ them, review and feed the accepted ones to the lake's labeler:
 ```sh
 transcript-label-trainer infer --aspect reviewed --limit 20 > suggestions.json
 # review, then apply each accepted record:
-transcript-lake label add <session-id> --aspect reviewed --value <value> --note "confidence=0.83"
+transcript-lake label add <session-id> --aspect reviewed --value <value> --source model --note "confidence=0.83"
 ```
-
-Note: `label add` currently records every applied label with `source="manual"`;
-the labeler reserves `source="model"` but exposes no flag for it yet. Until it
-does, the confidence in `--note` is what marks an applied suggestion.
 
 Inspect trained aspects, artifact paths, and metrics:
 
@@ -101,6 +99,42 @@ transcript-label-trainer info
 
 `python -m transcript_label_trainer ...` is equivalent to the console script.
 
+## Fine-tuning a HuggingFace model
+
+By default `train` fits TF-IDF + logistic regression. With `--model` it
+fine-tunes any HuggingFace sequence-classification model instead. This needs
+the optional `hf` extra (torch + transformers); without it, `train --model`
+fails with a message telling you to install it:
+
+```sh
+pip install -e '.[hf]'
+```
+
+Transcripts are mixed Polish and English, so prefer a multilingual base model:
+
+```sh
+transcript-label-trainer train --aspect topic \
+  --model distilbert-base-multilingual-cased \
+  --epochs 3 --batch-size 8 --lr 2e-5 --max-length 512
+```
+
+The data path is identical: labels from the lake label store, session text via
+the lake CLI. The same minimum of 8 labeled sessions and 2 distinct values
+applies, and the HF path additionally requires at least 2 sessions per class so
+the stratified holdout split keeps every class on both sides; a stratified
+holdout provides the `eval_accuracy` in the metrics.
+
+Artifacts land in `$TLT_HOME/models/<aspect>/hf-<sanitized-model-id>/` — the
+`save_pretrained` model and tokenizer plus a `metrics.json` with the same
+fields as the sklearn metrics (aspect, counts, classes, n_sessions, …) plus the
+hyperparameters, base model, device, and holdout evaluation. Training runs on
+CPU by default and uses Apple-silicon MPS automatically when
+`torch.backends.mps.is_available()`.
+
+When both a sklearn and an HF artifact exist for an aspect, `infer` uses the
+newest one by training time; `info` lists every backend per aspect and marks
+the active one.
+
 ## Environment
 
 - `LAKE_DATA` — lake data root, default `~/.transcript-lake`. Resolved exactly
@@ -108,11 +142,14 @@ transcript-label-trainer info
 - `TLT_LAKE_CLI` — override how the lake CLI is invoked. Default:
   `node ~/Documents/CodingProjects/Wisent/transcript-lake/src/cli.mjs`.
 - `TLT_HOME` — trainer state root, default `~/.transcript-label-trainer`.
-  Models live under `$TLT_HOME/models/<aspect>/` as `model.joblib` +
-  `metrics.json`.
+  Models live under `$TLT_HOME/models/<aspect>/`: sklearn as `model.joblib` +
+  `metrics.json`, HF fine-tunes in `hf-<model-id>/` subdirectories.
 
 ## Requirements
 
 - Python 3.10+, scikit-learn (installed into the venv by the quick start).
+- Optionally torch + transformers via the `hf` extra, for `--model`
+  fine-tuning. CPU is the baseline; MPS is used automatically on Apple
+  silicon.
 - Node.js and DuckDB, because session text comes from the lake CLI's `query`
   command, which runs DuckDB over the lake's own views.
