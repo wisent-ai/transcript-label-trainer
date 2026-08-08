@@ -135,6 +135,46 @@ When both a sklearn and an HF artifact exist for an aspect, `infer` uses the
 newest one by training time; `info` lists every backend per aspect and marks
 the active one.
 
+## Training jobs
+
+For repeatable runs, declare the job in a YAML spec instead of flags. A job
+answers four questions: **WHO** evaluated the transcripts (`evaluator` — the
+exact label-store source that counts as ground truth; only labels with exactly
+this source are used), **WHICH** model to train (`model` — `tfidf-logreg` for
+the sklearn backend, any other string is a HuggingFace model id), the **SCOPE**
+of training data (`scope`), and the **TASK** (`task` — free text stored with
+the artifacts and shown by `info`).
+
+```yaml
+name: topic-v1
+task: classify the primary topic of the session
+evaluator: manual
+model: tfidf-logreg
+scope:
+  aspect: topic
+  runtimes: [claude, codex, kimi]  # optional; default is all runtimes
+  since: "2026-07-01"              # optional; label ts must be on/after this
+  values: [bugfix, feature, chore] # optional; restrict to these values
+  min_text_chars: 200              # optional; skip shorter session texts
+```
+
+Every field is validated with a clear error — there are no silent defaults.
+Note that `evaluator: manual` matches only `manual` exactly, not `human` or
+`brama:…`; to train on a teacher's labels, name it, e.g.
+`evaluator: brama:claude-opus-4.6`. Model-sourced labels are never ground
+truth unless you explicitly say so, because self-training on the model's own
+predictions is a confirmation loop.
+
+```sh
+transcript-label-trainer run jobs/example-topic.yaml
+```
+
+`run` prints a resolved summary (name, task, evaluator, model, scope, and the
+sessions found per class) before training, then trains exactly like `train`
+does. Artifacts land in `$TLT_HOME/models/<name>/` with a copy of the spec
+(`job.yaml`), and `metrics.json` carries the job metadata. `train` and `infer`
+are unchanged; `run` is a layer over the same code path.
+
 ## Environment
 
 - `LAKE_DATA` — lake data root, default `~/.transcript-lake`. Resolved exactly
@@ -147,7 +187,8 @@ the active one.
 
 ## Requirements
 
-- Python 3.10+, scikit-learn (installed into the venv by the quick start).
+- Python 3.10+, scikit-learn and PyYAML (installed into the venv by the quick
+  start).
 - Optionally torch + transformers via the `hf` extra, for `--model`
   fine-tuning. CPU is the baseline; MPS is used automatically on Apple
   silicon.

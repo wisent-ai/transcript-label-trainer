@@ -1,0 +1,27 @@
+# Example training job for transcript-label-trainer.
+#
+# A job spec answers four questions about a training run:
+#   WHO evaluated the transcripts  -> evaluator (the exact label-store source
+#                                     that counts as ground truth)
+#   WHICH model to train           -> model ("tfidf-logreg" for the sklearn
+#                                     backend, any other string is a
+#                                     HuggingFace model id and needs the
+#                                     'hf' extra)
+#   the SCOPE of training data     -> scope (aspect plus optional filters)
+#   the TASK                       -> task (free text stored with the artifacts)
+#
+# Run it with:  transcript-label-trainer run jobs/example-topic.yaml
+# Artifacts land in $TLT_HOME/models/<name>/.
+
+name: topic-v1
+task: classify the primary topic of the session
+evaluator: manual
+model: tfidf-logreg
+scope:
+  aspect: topic
+  # Optional filters, all unset here so the job trains on everything the
+  # evaluator labeled:
+  # runtimes: [claude, codex, kimi]   # only these runtimes
+  # since: "2026-07-01"               # only labels recorded on/after this date
+  # values: [bugfix, feature, chore]  # only these label values
+  # min_text_chars: 200               # skip sessions with shorter text

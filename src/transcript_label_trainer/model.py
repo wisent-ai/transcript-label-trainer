@@ -21,12 +21,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import joblib
+import yaml
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 
-from . import __version__, lake
+from . import __version__, jobs, lake
 
 # Below this many labeled sessions a classifier is not meaningful, so train
 # refuses with an explicit message instead of fitting noise. This is a product
@@ -72,17 +73,20 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _training_frame(aspect: str) -> tuple[list[str], list[str], dict[str, int]]:
-    """Labeled sessions joined with their lake text.
+def _frame_from_labels(
+    labels: dict[str, dict], subject: str, min_text_chars: int | None = None
+) -> tuple[list[str], list[str], dict[str, int]]:
+    """Preselected label records joined with their lake text.
 
-    Returns (texts, values, counts_per_value). Raises NotEnoughData with the
-    exact numbers when the aspect cannot be trained.
+    ``subject`` names the selection in error messages ("aspect 'topic'" for
+    train, "job 'topic-v1' (…)" for run). Returns (texts, values,
+    counts_per_value). Raises NotEnoughData with the exact numbers when the
+    selection cannot be trained.
     """
-    labels = lake.load_labels(aspect)
     n_labeled = len(labels)
     if n_labeled < MIN_LABELED_SESSIONS:
         raise NotEnoughData(
-            f"aspect '{aspect}' has {n_labeled} labeled session(s); "
+            f"{subject} has {n_labeled} labeled session(s); "
             f"at least {MIN_LABELED_SESSIONS} are required to train. "
             "Add labels with 'transcript-lake label add' and retry."
         )
@@ -90,19 +94,28 @@ def _training_frame(aspect: str) -> tuple[list[str], list[str], dict[str, int]]:
     texts: list[str] = []
     values: list[str] = []
     skipped = 0
+    skipped_short = 0
     for sid, record in labels.items():
         entry = texts_by_id.get(sid)
         if not entry or not entry["text"].strip():
             skipped += 1
             continue
+        if min_text_chars is not None and len(entry["text"]) < min_text_chars:
+            skipped_short += 1
+            continue
         texts.append(entry["text"])
         values.append(str(record["value"]))
     if skipped:
         lake.warn(f"{skipped} labeled session(s) had no text in the lake and were skipped")
+    if skipped_short:
+        lake.warn(
+            f"{skipped_short} labeled session(s) were shorter than "
+            f"scope.min_text_chars={min_text_chars} and were skipped"
+        )
     distinct = sorted(set(values))
     if len(texts) < MIN_LABELED_SESSIONS or len(distinct) < 2:
         raise NotEnoughData(
-            f"aspect '{aspect}' has {len(texts)} usable labeled session(s) "
+            f"{subject} has {len(texts)} usable labeled session(s) "
             f"across {len(distinct)} distinct value(s); at least "
             f"{MIN_LABELED_SESSIONS} sessions and 2 distinct values are "
             "required to train. Add labels with 'transcript-lake label add' "
@@ -110,6 +123,11 @@ def _training_frame(aspect: str) -> tuple[list[str], list[str], dict[str, int]]:
         )
     counts = {value: values.count(value) for value in distinct}
     return texts, values, counts
+
+
+def _training_frame(aspect: str) -> tuple[list[str], list[str], dict[str, int]]:
+    """Labeled sessions joined with their lake text (train command path)."""
+    return _frame_from_labels(lake.load_labels(aspect), f"aspect '{aspect}'")
 
 
 def _base_metrics(aspect: str, backend: str, model_desc: str, texts, counts) -> dict:
@@ -130,8 +148,13 @@ def _base_metrics(aspect: str, backend: str, model_desc: str, texts, counts) -> 
 # ---------------------------------------------------------------------------
 
 
-def _train_sklearn(aspect: str) -> dict:
-    texts, values, counts = _training_frame(aspect)
+def _train_sklearn(
+    aspect: str,
+    frame: tuple | None = None,
+    out_name: str | None = None,
+    job: dict | None = None,
+) -> dict:
+    texts, values, counts = frame if frame is not None else _training_frame(aspect)
 
     pipeline = Pipeline(
         [
@@ -152,7 +175,7 @@ def _train_sklearn(aspect: str) -> dict:
 
     pipeline.fit(texts, values)
 
-    out_dir = _aspect_dir(aspect)
+    out_dir = _aspect_dir(out_name or aspect)
     out_dir.mkdir(parents=True, exist_ok=True)
     model_path = out_dir / "model.joblib"
     metrics = _base_metrics(aspect, "sklearn", "tfidf(1-2gram, sublinear) + logistic-regression", texts, counts)
@@ -163,6 +186,8 @@ def _train_sklearn(aspect: str) -> dict:
             "model_path": str(model_path),
         }
     )
+    if job is not None:
+        metrics["job"] = job
     joblib.dump(pipeline, model_path)
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     return metrics
@@ -212,10 +237,20 @@ class _TextDataset:
         return item
 
 
-def _train_hf(aspect: str, model_id: str, epochs: float, batch_size: int, lr: float, max_length: int) -> dict:
+def _train_hf(
+    aspect: str,
+    model_id: str,
+    epochs: float,
+    batch_size: int,
+    lr: float,
+    max_length: int,
+    frame: tuple | None = None,
+    out_name: str | None = None,
+    job: dict | None = None,
+) -> dict:
     torch, AutoModelForSequenceClassification, AutoTokenizer, Trainer, TrainingArguments = _hf_imports()
 
-    texts, values, counts = _training_frame(aspect)
+    texts, values, counts = frame if frame is not None else _training_frame(aspect)
     too_small = {value: n for value, n in counts.items() if n < MIN_PER_CLASS_HF}
     if too_small:
         detail = ", ".join(f"'{value}' has {n}" for value, n in sorted(too_small.items()))
@@ -248,7 +283,7 @@ def _train_hf(aspect: str, model_id: str, epochs: float, batch_size: int, lr: fl
     train_ds = _TextDataset(encode(x_train), y_train)
     eval_ds = _TextDataset(encode(x_eval), y_eval)
 
-    out_dir = _aspect_dir(aspect) / f"hf-{_sanitize_model_id(model_id)}"
+    out_dir = _aspect_dir(out_name or aspect) / f"hf-{_sanitize_model_id(model_id)}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     import tempfile
@@ -305,6 +340,8 @@ def _train_hf(aspect: str, model_id: str, epochs: float, batch_size: int, lr: fl
             "model_path": str(out_dir),
         }
     )
+    if job is not None:
+        metrics["job"] = job
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     return metrics
 
@@ -320,6 +357,120 @@ def train(
     if model_id is None:
         return _train_sklearn(aspect)
     return _train_hf(aspect, model_id, epochs, batch_size, lr, max_length)
+
+
+# ---------------------------------------------------------------------------
+# Declarative training jobs (run command)
+# ---------------------------------------------------------------------------
+
+
+def _label_ts(record: dict) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(record.get("ts", "")).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _select_labels(job: dict) -> dict[str, dict]:
+    """Label records matching the job's evaluator and scope filters."""
+    scope = job["scope"]
+    labels = lake.load_labels(scope["aspect"])
+    evaluator = job["evaluator"]
+    selected = {
+        sid: record
+        for sid, record in labels.items()
+        if str(record.get("source", "")).strip() == evaluator
+    }
+    if scope["runtimes"]:
+        allowed = set(scope["runtimes"])
+        selected = {
+            sid: record
+            for sid, record in selected.items()
+            if record.get("runtime") in allowed
+        }
+    if scope["since"] is not None:
+        since = scope["since"]
+        selected = {
+            sid: record
+            for sid, record in selected.items()
+            if (_label_ts(record) or datetime.min.replace(tzinfo=timezone.utc)) >= since
+        }
+    if scope["values"]:
+        allowed_values = set(scope["values"])
+        selected = {
+            sid: record
+            for sid, record in selected.items()
+            if str(record.get("value")) in allowed_values
+        }
+    return selected
+
+
+def _job_scope_json(scope: dict) -> dict:
+    return {
+        "aspect": scope["aspect"],
+        "runtimes": scope["runtimes"],
+        "since": scope["since"].isoformat() if scope["since"] is not None else None,
+        "values": scope["values"],
+        "min_text_chars": scope["min_text_chars"],
+    }
+
+
+def resolve_job(job: dict) -> dict:
+    """Resolve a validated job spec to its training data, without training.
+
+    Returns the selected labels plus per-class counts for the resolved summary.
+    """
+    labels = _select_labels(job)
+    counts: dict[str, int] = {}
+    for record in labels.values():
+        value = str(record.get("value"))
+        counts[value] = counts.get(value, 0) + 1
+    return {"labels": labels, "counts": dict(sorted(counts.items()))}
+
+
+def job_summary(job: dict, resolved: dict) -> dict:
+    """The resolved-summary printed before training."""
+    return {
+        "name": job["name"],
+        "task": job["task"],
+        "evaluator": job["evaluator"],
+        "model": job["model"],
+        "scope": _job_scope_json(job["scope"]),
+        "sessions_found": len(resolved["labels"]),
+        "counts": resolved["counts"],
+    }
+
+
+def run_job(job: dict, resolved: dict) -> dict:
+    """Train from a resolved job and persist spec copy + job metadata."""
+    scope = job["scope"]
+    subject = (
+        f"job '{job['name']}' (evaluator '{job['evaluator']}', "
+        f"aspect '{scope['aspect']}')"
+    )
+    frame = _frame_from_labels(
+        resolved["labels"], subject, min_text_chars=scope["min_text_chars"]
+    )
+    job_meta = {
+        "name": job["name"],
+        "task": job["task"],
+        "evaluator": job["evaluator"],
+        "scope": _job_scope_json(scope),
+    }
+    if job["model"] == jobs.SKLEARN_MODEL:
+        metrics = _train_sklearn(
+            scope["aspect"], frame=frame, out_name=job["name"], job=job_meta
+        )
+    else:
+        metrics = _train_hf(
+            scope["aspect"], job["model"], 3, 8, 2e-5, 512,
+            frame=frame, out_name=job["name"], job=job_meta,
+        )
+    spec_copy = dict(job_meta, model=job["model"])
+    (_aspect_dir(job["name"]) / "job.yaml").write_text(
+        yaml.safe_dump(spec_copy, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
+    return metrics
 
 
 # ---------------------------------------------------------------------------

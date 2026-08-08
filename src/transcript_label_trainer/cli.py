@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 
-from . import model
+from . import jobs, model
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -39,6 +39,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--max-length", type=int, default=512, help="HF tokenizer max tokens per session (default: 512)"
     )
 
+    p_run = sub.add_parser("run", help="execute a declarative training job (YAML spec)")
+    p_run.add_argument("job_file", help="path to the job spec YAML")
+
     p_infer = sub.add_parser("infer", help="emit label suggestions for unlabeled sessions")
     p_infer.add_argument("--aspect", required=True, help="aspect name, e.g. reviewed")
     target = p_infer.add_mutually_exclusive_group()
@@ -65,6 +68,9 @@ def _print_info(entries: list[dict]) -> None:
             metrics = artifact["metrics"]
             backend = artifact["backend"]
             marker = "*" if backend == entry["active"] else " "
+            job = metrics.get("job")
+            if job:
+                print(f"    job:     {job['name']} — {job['task']} (evaluator: {job['evaluator']})")
             if backend == "sklearn":
                 cv = metrics["cv_accuracy"]
                 quality = (
@@ -101,6 +107,25 @@ def main(argv: list[str] | None = None) -> None:
             sys.exit(2)
         except (ValueError, RuntimeError, model.HfExtraMissing) as exc:
             sys.stderr.write(f"train: {exc}\n")
+            sys.exit(1)
+        print(json.dumps(metrics, indent=2))
+        return
+
+    if args.command == "run":
+        try:
+            job = jobs.load(args.job_file)
+        except jobs.JobError as exc:
+            sys.stderr.write(f"run: {exc}\n")
+            sys.exit(1)
+        resolved = model.resolve_job(job)
+        print(json.dumps(model.job_summary(job, resolved), indent=2))
+        try:
+            metrics = model.run_job(job, resolved)
+        except model.NotEnoughData as exc:
+            sys.stderr.write(f"run: {exc}\n")
+            sys.exit(2)
+        except (ValueError, RuntimeError, model.HfExtraMissing) as exc:
+            sys.stderr.write(f"run: {exc}\n")
             sys.exit(1)
         print(json.dumps(metrics, indent=2))
         return
