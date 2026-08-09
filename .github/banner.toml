@@ -1,0 +1,15 @@
+[automation]
+managed = true
+source_fingerprint = "2736343ac0a21793"
+category = "data"
+
+[banner]
+title = "Transcript Label Trainer remembers. Context stays useful."
+description = "Transcript Label Trainer"
+product = "Wisent"
+url = "wisent.ai"
+theme = "dark"
+layout = "layers-left"
+art_seed = "transcript-label-trainer"
+width = 1584
+height = 396
