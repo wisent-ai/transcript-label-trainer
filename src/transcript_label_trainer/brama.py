@@ -20,8 +20,8 @@ fallback), the bearer is item ``jeden-model-router`` field ``token``. Secret
 values are only ever held in memory — never printed, never logged.
 
 Endpoint resolution: BRAMA_URL, then JEDEN_BRAMA_URL, then the BRAMA_URL line
-of jeden's own config (~/.jeden/.env — the same value jeden uses), then the
-public default.
+of jeden's own config (~/.jeden/.env — the same value jeden uses), then Stado's
+service directory, which derives the address from where the gateway is placed.
 """
 
 from __future__ import annotations
@@ -36,20 +36,55 @@ from pathlib import Path
 
 import requests
 
-DEFAULT_BRAMA_URL = "https://brama.wisent.com"
+DEFAULT_STADO_BIN = "stado"
 DEFAULT_AGENT_ITEM = "agent:wisent-app"
 DEFAULT_TOKEN_ITEM = "jeden-model-router"
 
-# Advertised by the fleet gateway's /v1/models; cheap and multilingual, which
-# fits the mixed Polish/English transcripts. Override with --brama-model.
-DEFAULT_MODEL = "302ai/claude-haiku-4-5"
+# Being listed by /v1/models is not the same as being servable: that list is the
+# public models.dev catalogue, several thousand ids wide, and on 2026-08-09 only
+# 59 of 6244 came back with ``available: true`` for this agent. The previous
+# default, ``302ai/claude-haiku-4-5``, was chosen off that list and answered 503
+# ``direct '302ai' credential is unavailable`` on every call, because the fleet
+# vault has never held a 302ai credential.
+#
+# This one is billed to an existing subscription rather than per-token credits,
+# handles the mixed Polish/English transcripts, and was measured answering
+# through this client. When the subscription is exhausted, the free local route
+# is ``wisent-backend/chat/primary``. Override either way with --brama-model.
+DEFAULT_MODEL = "codex/gpt-5.6-sol"
 
 REQUEST_TIMEOUT = 120
+STADO_TIMEOUT = 20
 ANSWER_MAX_TOKENS = 16
 
 
 class BramaError(Exception):
     """Raised when Brama cannot be reached, authenticated, or parsed."""
+
+
+def _stado_url() -> str:
+    """Where Stado says Brama is actually placed, or an empty string.
+
+    ``stado service directory connect brama`` derives the address from the
+    placement rather than from a name someone wrote down, and verifies that
+    something answers there before reporting it.
+    """
+    stado = os.environ.get("TLT_STADO_BIN", DEFAULT_STADO_BIN)
+    try:
+        done = subprocess.run(
+            [stado, "service", "directory", "connect", "--json", "brama"],
+            capture_output=True,
+            text=True,
+            timeout=STADO_TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if done.returncode:
+        return ""
+    try:
+        return str(json.loads(done.stdout).get("url", "")).strip()
+    except json.JSONDecodeError:
+        return ""
 
 
 def _resolve_url() -> str:
@@ -64,7 +99,18 @@ def _resolve_url() -> str:
                 value = line.split("=", 1)[1].strip()
                 if value:
                     return value
-    return DEFAULT_BRAMA_URL
+    # There used to be a public default here, `https://brama.wisent.com`. That
+    # hostname resolves to the company website, so every call that reached this
+    # line got a 404 page from Vercel and a parse error blaming Brama. The fleet
+    # keeps the real placement in Stado's service directory, which is also the
+    # one answer that follows the gateway when it moves.
+    url = _stado_url()
+    if url:
+        return url
+    raise BramaError(
+        "no Brama endpoint: set BRAMA_URL, or make `stado service directory "
+        "connect brama` resolve (it reports where the gateway is placed)"
+    )
 
 
 def _skarbiec_read(item: str, field: str) -> str:
@@ -90,7 +136,7 @@ def _skarbiec_read(item: str, field: str) -> str:
             value = str(fields.get(field, "")).strip()
             if value:
                 return value
-    stado = os.environ.get("TLT_STADO_BIN", "stado")
+    stado = os.environ.get("TLT_STADO_BIN", DEFAULT_STADO_BIN)
     env = dict(
         os.environ,
         WC_SKARBIEC_CONSUMER=os.environ.get("TLT_SKARBIEC_CONSUMER", "local-operator"),
