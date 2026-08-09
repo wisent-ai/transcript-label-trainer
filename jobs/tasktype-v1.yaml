@@ -1,0 +1,16 @@
+# The end-to-end story of this repository, as an actual job.
+#
+#   transcript-label-trainer autolabel --aspect tasktype \
+#     --values bugfix,feature,chore,question --limit 40
+#   transcript-label-trainer run jobs/tasktype-v1.yaml
+#   transcript-label-trainer evaluate tasktype-v1
+#
+# The teacher routed through Brama produced the ground truth, so the evaluator
+# names that exact provenance: manual labels, model suggestions and a different
+# teacher are all excluded from training by this one field.
+name: tasktype-v1
+task: classify what kind of work the session did
+evaluator: brama:codex/gpt-5.6-sol
+model: tfidf-logreg
+scope:
+  aspect: tasktype
