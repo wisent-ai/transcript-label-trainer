@@ -11,6 +11,10 @@ Two backends share one data path (lake label store + lake CLI session text):
 The training root is resolved by :mod:`.placement`, never read straight out of
 the environment here.
 
+Neither backend ever trains on the frozen evaluation split: :mod:`.evaluate`
+resolves it before training starts, both backends fit on the training side
+only, and both report the holdout under ``holdout_evaluation``.
+
 When both backends exist for an aspect, inference uses the newest artifact by
 ``trained_at``.
 """

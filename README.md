@@ -28,7 +28,9 @@ Transcript Label Trainer owns:
 - emitting suggestion records shaped exactly like label-store records, with
   `source="model"` and the confidence in `note`;
 - its own model artifacts, under the training root Stado places this trainer
-  on — runtime state, outside this repository (see *Placement*).
+  on — runtime state, outside this repository (see *Placement*), including the
+  frozen evaluation split (`eval-split.json`) and the teacher's verdict
+  (`judge.json`);
 
 Transcript Label Trainer does not own:
 
@@ -62,7 +64,9 @@ transcript-label-trainer train --aspect reviewed
 
 With too few labeled sessions this fails cleanly, stating the minimum and the
 actual count — that is correct behavior, not a crash. The minimum is 8 labeled
-sessions across at least 2 distinct values.
+sessions across at least 2 distinct values *on the training side*: a fifth of
+the labels is frozen out of training by default, so in practice about 10
+labeled sessions get you started. `--no-eval-split` trains on all of them.
 
 Emit suggestions for sessions that have no label on that aspect yet:
 
@@ -121,15 +125,17 @@ transcript-label-trainer train --aspect topic \
 ```
 
 The data path is identical: labels from the lake label store, session text via
-the lake CLI. The same minimum of 8 labeled sessions and 2 distinct values
 applies, and the HF path additionally requires at least 2 sessions per class so
-the stratified holdout split keeps every class on both sides; a stratified
-holdout provides the `eval_accuracy` in the metrics.
+its in-training split keeps every class on both sides; that split is a
+stratified slice of the *training* side and provides `in_training_eval` in the
+metrics. It is not the frozen evaluation split described below, which no
+backend ever trains on and which both backends score under
+`holdout_evaluation`.
 
 Artifacts land in `<training root>/models/<aspect>/hf-<sanitized-model-id>/` — the
 `save_pretrained` model and tokenizer plus a `metrics.json` with the same
 fields as the sklearn metrics (aspect, counts, classes, n_sessions, …) plus the
-hyperparameters, base model, device, and holdout evaluation. Training runs on
+hyperparameters, base model, device, and both evaluations. Training runs on
 CPU by default and uses Apple-silicon MPS automatically when
 `torch.backends.mps.is_available()`.
 
@@ -158,6 +164,11 @@ scope:
   since: "2026-07-01"              # optional; label ts must be on/after this
   values: [bugfix, feature, chore] # optional; restrict to these values
   min_text_chars: 200              # optional; skip shorter session texts
+eval_split:                        # optional; ON by default, shown with its defaults
+  fraction: 0.2                    # share of labeled sessions frozen out of training
+  seed: 20260808                   # fixed, so the first run's pick is reproducible
+judge:                             # optional; ON by default, shown with its default
+  model: 302ai/claude-haiku-4-5    # the Brama-routed teacher `evaluate` asks
 ```
 
 Every field is validated with a clear error — there are no silent defaults.
@@ -172,10 +183,97 @@ transcript-label-trainer run jobs/example-topic.yaml
 ```
 
 `run` prints a resolved summary (name, task, evaluator, model, scope, and the
-sessions found per class) before training, then trains exactly like `train`
-does. Artifacts land in `<training root>/models/<name>/` with a copy of the spec
-(`job.yaml`), and `metrics.json` carries the job metadata. `train` and `infer`
-are unchanged; `run` is a layer over the same code path.
+sessions found per class), then the resolved evaluation split (how many
+sessions train, how many are held out, and whether the frozen file was reused),
+and only then trains. Artifacts land in `<training root>/models/<name>/` with a
+copy of the spec (`job.yaml`), and `metrics.json` carries the job metadata.
+`train` and `infer` are unchanged; `run` is a layer over the same code path.
+
+## The frozen evaluation split, and a Brama judge on top of it
+
+Comparing two models over time only means something when both were scored on
+the same untouched sessions. So every job and every `train` freezes a holdout
+**by default** — you have to say `eval_split: false` to train on everything —
+and the chosen session ids are written once to
+`<training root>/models/<name>/eval-split.json`:
+
+```json
+{
+  "fraction": 0.2,
+  "seed": 20260808,
+  "created_at": "2026-08-08T22:14:07Z",
+  "session_ids": ["019f3a44-…", "session_95aaaf37-…"]
+}
+```
+
+What "frozen" buys you, and what it costs:
+
+- **Written once, reused forever.** Every later run of the same job reads that
+  file back and never rewrites it. Sessions labeled after the first run can
+  only join the *training* side — nothing is ever promoted into the holdout —
+  and a session in the holdout is never trained on, by either backend.
+- **Reproducible from the seed.** The first run picks the holdout stratified
+  per class, shuffled by `seed` (and the class name, so labeling one class more
+  does not reshuffle the others). No class is ever emptied into the holdout,
+  and any class with two or more sessions contributes at least one.
+- **It costs training data.** The floor of 8 sessions and 2 distinct values now
+  applies to the *training* side, so about 10 labeled sessions is the practical
+  minimum. Too few and the run fails with the exact numbers and says how to
+  disable the split.
+- **If the spec's fraction or seed later disagrees with the file, the file
+  wins** and the run says so on stderr. That is what frozen means; delete the
+  file by hand if you truly want a different holdout, and accept that the
+  comparison with older runs is gone.
+
+Both backends report it in `metrics.json` under `holdout_evaluation` —
+accuracy, per-class counts, correct-per-class, and the confusion pairs — kept
+deliberately separate from the HF backend's `in_training_eval`, which is a
+stratified slice of the training side and is resplit on every run.
+
+Accuracy against a stored label says how often the model agreed with whoever
+labeled the session. It does not say whether the label the model chose was
+defensible. `evaluate` asks that second question of a Brama teacher:
+
+```sh
+transcript-label-trainer evaluate topic-v1
+```
+
+```
+topic-v1 (aspect: topic, backend: sklearn):
+    frozen split:  5 session(s), fraction=0.2, seed=20260808, created 2026-08-08T22:14:07Z
+    split file:    /…/models/topic-v1/eval-split.json
+    holdout:       accuracy=0.6 on 5 session(s)
+        agent: 3/3 correct
+        data: 0/1 correct
+        confused data -> agent (1x)
+    judge:         <model> calls 4/5 prediction(s) acceptable (agreement_rate=0.8, failed=0)
+```
+
+Per holdout session the judge gets the reconstructed session text (the same
+lake CLI path and the same 12 KB cap training uses), the model's prediction and
+the ground-truth label, and answers `acceptable` or `unacceptable` — so a
+prediction that differs from the label can still be ruled defensible, and a
+prediction that matches it can still be rejected. The verdict, the aggregate
+agreement rate and one record per session go to
+`<training root>/models/<name>/judge.json`.
+
+Rules, mirroring `autolabel`:
+
+- **Failure isolation.** A Brama error or an unparseable answer fails that one
+  session, is counted in `failed`, and is recorded verbatim in `judge.json`.
+- **No invented verdict.** If not one session could be judged — no usable
+  provider route, no credential — `evaluate` prints the gateway's own error
+  verbatim, writes nothing, and exits nonzero. There is no local heuristic
+  fallback, because a fabricated verdict is worse than no verdict.
+- The judge model comes from the job spec's `judge.model`, or `--brama-model`,
+  defaulting to the same teacher `autolabel` uses. `judge: false` in the spec,
+  or `--no-judge`, reports the holdout scores alone.
+- Auth is `brama.py`'s single HMAC/Skarbiec path — the same one `autolabel`
+  uses. There is no second credential route.
+
+`train` takes the same split as flags: `--eval-split-fraction`,
+`--eval-split-seed`, `--no-eval-split`. `evaluate <aspect>` then scores it the
+same way.
 
 ## Automatic labeling with a Brama teacher
 
@@ -291,7 +389,8 @@ being invisible about it.
 
 - `TLT_HOME` — trainer state root. Overrides the Stado training declaration;
   models live under `$TLT_HOME/models/<aspect>/` (sklearn as `model.joblib` +
-  `metrics.json`, HF fine-tunes in `hf-<model-id>/` subdirectories).
+  `metrics.json`, HF fine-tunes in `hf-<model-id>/` subdirectories, plus the
+  job's `eval-split.json` and, once `evaluate` has run, `judge.json`).
 - `LAKE_DATA` — lake data root. Overrides the Stado storage declaration, and
   is passed through to the lake CLI.
 - `TLT_LAKE_CLI` — override how the lake CLI is invoked. Default:
