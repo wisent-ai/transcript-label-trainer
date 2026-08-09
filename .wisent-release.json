@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "product": "transcript-label-trainer",
   "releases": false,
   "reason": "The README installs this private training tool from the source checkout with cargo install --path .; it defines no immutable released artifact or versioned publisher."
 }
