@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "releases": false,
+  "reason": "The README installs this private training tool from the source checkout with cargo install --path .; it defines no immutable released artifact or versioned publisher."
+}
