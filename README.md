@@ -168,7 +168,7 @@ eval_split:                        # optional; ON by default, shown with its def
   fraction: 0.2                    # share of labeled sessions frozen out of training
   seed: 20260808                   # fixed, so the first run's pick is reproducible
 judge:                             # optional; ON by default, shown with its default
-  model: 302ai/claude-haiku-4-5    # the Brama-routed teacher `evaluate` asks
+  model: codex/gpt-5.6-sol         # the Brama-routed teacher `evaluate` asks
 ```
 
 Every field is validated with a clear error — there are no silent defaults.
@@ -304,8 +304,9 @@ what changed is only that no human reviews the suggestion. Rules:
 - **Failure isolation.** A Brama error or an unparseable answer fails that
   one session, writes nothing for it, and is counted in the final summary
   (`labeled` / `skipped_labeled` / `failed`).
-- The teacher defaults to `302ai/claude-haiku-4-5` (cheap, multilingual —
-  transcripts are mixed Polish/English); override with `--brama-model`.
+- The teacher defaults to `codex/gpt-5.6-sol` — one of the few model ids this
+  fleet's Brama can actually serve, and multilingual, which the mixed
+  Polish/English transcripts need; override with `--brama-model`.
 - Auth mirrors jeden: HMAC-signed requests keyed by the Skarbiec item
   `agent:wisent-app`, bearer from `jeden-model-router`, endpoint from
   `BRAMA_URL` (falling back to jeden's own configured URL). Secrets are read
@@ -317,7 +318,7 @@ labels by naming the provenance in a job spec:
 ```yaml
 name: tasktype-v1
 task: classify what kind of work the session did
-evaluator: brama:302ai/claude-haiku-4-5
+evaluator: brama:codex/gpt-5.6-sol
 model: tfidf-logreg
 scope:
   aspect: tasktype

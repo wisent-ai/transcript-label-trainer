@@ -44,4 +44,4 @@ eval_split:
 # whether the model's holdout predictions are acceptable. On by default;
 # `judge: false` skips the verdict. All inference goes through Brama.
 judge:
-  model: 302ai/claude-haiku-4-5
+  model: codex/gpt-5.6-sol
