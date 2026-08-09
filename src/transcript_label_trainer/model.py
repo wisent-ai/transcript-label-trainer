@@ -3,10 +3,13 @@
 Two backends share one data path (lake label store + lake CLI session text):
 
 - sklearn (default): TF-IDF + logistic regression, artifacts directly in
-  ``$TLT_HOME/models/<aspect>/`` (``model.joblib`` + ``metrics.json``);
+  ``<training root>/models/<aspect>/`` (``model.joblib`` + ``metrics.json``);
 - hf (``--model <hf-model-id>``): fine-tuned HuggingFace sequence classifier,
-  artifacts in ``$TLT_HOME/models/<aspect>/hf-<sanitized-model-id>/``
+  artifacts in ``<training root>/models/<aspect>/hf-<sanitized-model-id>/``
   (``save_pretrained`` output + ``metrics.json``).
+
+The training root is resolved by :mod:`.placement`, never read straight out of
+the environment here.
 
 When both backends exist for an aspect, inference uses the newest artifact by
 ``trained_at``.
@@ -15,7 +18,6 @@ When both backends exist for an aspect, inference uses the newest artifact by
 from __future__ import annotations
 
 import json
-import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +30,7 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test
 from sklearn.pipeline import Pipeline
 
 from . import __version__, jobs, lake
+from .placement import resolve_placement
 
 # Below this many labeled sessions a classifier is not meaningful, so train
 # refuses with an explicit message instead of fitting noise. This is a product
@@ -45,15 +48,11 @@ MIN_PER_CLASS_HF = 2
 _ASPECT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
-def tlt_home() -> Path:
-    return Path(os.environ.get("TLT_HOME", Path.home() / ".transcript-label-trainer"))
-
-
 def models_dir() -> Path:
-    return tlt_home() / "models"
+    return resolve_placement().training_root / "models"
 
 
-def _aspect_dir(aspect: str) -> Path:
+def aspect_dir(aspect: str) -> Path:
     if not _ASPECT_RE.match(aspect):
         raise ValueError(
             f"invalid aspect name {aspect!r}: use lowercase letters, digits, '-' and '_'"
@@ -75,13 +74,13 @@ def _now() -> str:
 
 def _frame_from_labels(
     labels: dict[str, dict], subject: str, min_text_chars: int | None = None
-) -> tuple[list[str], list[str], dict[str, int]]:
+) -> tuple[list[str], list[str], list[str], dict[str, int]]:
     """Preselected label records joined with their lake text.
 
     ``subject`` names the selection in error messages ("aspect 'topic'" for
-    train, "job 'topic-v1' (…)" for run). Returns (texts, values,
-    counts_per_value). Raises NotEnoughData with the exact numbers when the
-    selection cannot be trained.
+    train, "job 'topic-v1' (…)" for run). Returns (session_ids, texts, values,
+    counts_per_value), row-aligned on the first three. Raises NotEnoughData
+    with the exact numbers when the selection cannot be trained.
     """
     n_labeled = len(labels)
     if n_labeled < MIN_LABELED_SESSIONS:
@@ -91,6 +90,7 @@ def _frame_from_labels(
             "Add labels with 'transcript-lake label add' and retry."
         )
     texts_by_id = lake.session_texts(list(labels))
+    session_ids: list[str] = []
     texts: list[str] = []
     values: list[str] = []
     skipped = 0
@@ -103,6 +103,7 @@ def _frame_from_labels(
         if min_text_chars is not None and len(entry["text"]) < min_text_chars:
             skipped_short += 1
             continue
+        session_ids.append(sid)
         texts.append(entry["text"])
         values.append(str(record["value"]))
     if skipped:
@@ -122,12 +123,64 @@ def _frame_from_labels(
             "and retry."
         )
     counts = {value: values.count(value) for value in distinct}
-    return texts, values, counts
+    return session_ids, texts, values, counts
 
 
-def _training_frame(aspect: str) -> tuple[list[str], list[str], dict[str, int]]:
-    """Labeled sessions joined with their lake text (train command path)."""
-    return _frame_from_labels(lake.load_labels(aspect), f"aspect '{aspect}'")
+def _plan(
+    aspect: str,
+    labels: dict[str, dict],
+    subject: str,
+    out_name: str,
+    eval_split: dict,
+    min_text_chars: int | None = None,
+    job_meta: dict | None = None,
+) -> dict:
+    """Everything a backend needs to train: the frame plus the frozen split.
+
+    Resolving the split here — before any backend runs — is what lets ``run``
+    print the train/holdout counts ahead of training, and what keeps both
+    backends of one job scored on the same untouched sessions.
+    """
+    from .evaluate import resolve_split
+
+    session_ids, texts, values, counts = _frame_from_labels(
+        labels, subject, min_text_chars
+    )
+    split = resolve_split(out_name, session_ids, values, eval_split, subject)
+    return {
+        "aspect": aspect,
+        "out_name": out_name,
+        "session_ids": session_ids,
+        "texts": texts,
+        "values": values,
+        "counts": counts,
+        "split": split,
+        "job": job_meta,
+    }
+
+
+def plan_train(aspect: str, eval_split: dict | None = None) -> dict:
+    """Training plan for the ``train`` command (whole label store, one aspect)."""
+    return _plan(
+        aspect,
+        lake.load_labels(aspect),
+        f"aspect '{aspect}'",
+        aspect,
+        eval_split or jobs.default_eval_split(),
+    )
+
+
+def _side(plan: dict, which: str) -> tuple[list[str], list[str]]:
+    """The (texts, values) of the training or holdout side of a plan."""
+    index = plan["split"][f"{which}_index"]
+    return [plan["texts"][i] for i in index], [plan["values"][i] for i in index]
+
+
+def split_summary(plan: dict) -> dict:
+    """The split line printed before training starts."""
+    from .evaluate import split_json
+
+    return split_json(plan["split"])
 
 
 def _base_metrics(aspect: str, backend: str, model_desc: str, texts, counts) -> dict:
@@ -143,18 +196,32 @@ def _base_metrics(aspect: str, backend: str, model_desc: str, texts, counts) -> 
     }
 
 
+def _class_counts(values: list[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 # ---------------------------------------------------------------------------
 # sklearn backend
 # ---------------------------------------------------------------------------
 
 
-def _train_sklearn(
-    aspect: str,
-    frame: tuple | None = None,
-    out_name: str | None = None,
-    job: dict | None = None,
-) -> dict:
-    texts, values, counts = frame if frame is not None else _training_frame(aspect)
+def _sklearn_predict(pipeline, texts: list[str]) -> list[tuple[str, float]]:
+    """(value, confidence) per text from a fitted sklearn pipeline."""
+    return [
+        (str(pipeline.classes_[int(proba.argmax())]), float(proba.max()))
+        for proba in pipeline.predict_proba(texts)
+    ]
+
+
+def _train_sklearn(plan: dict) -> dict:
+    from .evaluate import holdout_report, split_json
+
+    aspect = plan["aspect"]
+    texts, values = _side(plan, "train")
+    counts = _class_counts(values)
 
     pipeline = Pipeline(
         [
@@ -175,7 +242,7 @@ def _train_sklearn(
 
     pipeline.fit(texts, values)
 
-    out_dir = _aspect_dir(out_name or aspect)
+    out_dir = aspect_dir(plan["out_name"])
     out_dir.mkdir(parents=True, exist_ok=True)
     model_path = out_dir / "model.joblib"
     metrics = _base_metrics(aspect, "sklearn", "tfidf(1-2gram, sublinear) + logistic-regression", texts, counts)
@@ -183,11 +250,17 @@ def _train_sklearn(
         {
             "cv_accuracy": cv_accuracy,
             "cv_folds": cv_folds,
+            "eval_split": split_json(plan["split"]),
             "model_path": str(model_path),
         }
     )
-    if job is not None:
-        metrics["job"] = job
+    holdout_texts, holdout_values = _side(plan, "holdout")
+    if holdout_texts:
+        metrics["holdout_evaluation"] = holdout_report(
+            holdout_values, _sklearn_predict(pipeline, holdout_texts)
+        )
+    if plan["job"] is not None:
+        metrics["job"] = plan["job"]
     joblib.dump(pipeline, model_path)
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     return metrics
@@ -237,27 +310,46 @@ class _TextDataset:
         return item
 
 
+def _hf_predict(model, tokenizer, texts: list[str], max_length: int, device: str, torch) -> list[tuple[str, float]]:
+    """(value, confidence) per text from a loaded or freshly fine-tuned model."""
+    model.to(device)
+    model.eval()
+    results: list[tuple[str, float]] = []
+    with torch.no_grad():
+        for start in range(0, len(texts), 8):
+            batch = texts[start : start + 8]
+            encoded = tokenizer(
+                batch, truncation=True, max_length=max_length, padding=True, return_tensors="pt"
+            ).to(device)
+            probas = torch.softmax(model(**encoded).logits, dim=-1)
+            for proba in probas:
+                best = int(proba.argmax())
+                results.append((str(model.config.id2label[best]), float(proba[best])))
+    return results
+
+
 def _train_hf(
-    aspect: str,
+    plan: dict,
     model_id: str,
     epochs: float,
     batch_size: int,
     lr: float,
     max_length: int,
-    frame: tuple | None = None,
-    out_name: str | None = None,
-    job: dict | None = None,
 ) -> dict:
+    from .evaluate import holdout_report, split_json
+
     torch, AutoModelForSequenceClassification, AutoTokenizer, Trainer, TrainingArguments = _hf_imports()
 
-    texts, values, counts = frame if frame is not None else _training_frame(aspect)
+    aspect = plan["aspect"]
+    texts, values = _side(plan, "train")
+    counts = _class_counts(values)
     too_small = {value: n for value, n in counts.items() if n < MIN_PER_CLASS_HF}
     if too_small:
         detail = ", ".join(f"'{value}' has {n}" for value, n in sorted(too_small.items()))
         raise NotEnoughData(
             f"aspect '{aspect}': HF fine-tuning requires at least "
-            f"{MIN_PER_CLASS_HF} sessions per class ({detail}). "
-            "Add labels with 'transcript-lake label add' and retry."
+            f"{MIN_PER_CLASS_HF} sessions per class on the training side "
+            f"({detail}). Add labels with 'transcript-lake label add' and retry."
         )
 
     classes = sorted(counts)
@@ -265,8 +357,9 @@ def _train_hf(
     id2label = {index: label for label, index in label2id.items()}
     label_ids = [label2id[value] for value in values]
 
-    # Stratified holdout for an honest eval number; the test side must hold at
-    # least one session per class.
+    # A stratified slice of the TRAINING side, resplit on every run, so the
+    # fine-tune has a loss curve to watch. It is not the frozen holdout: that
+    # one is the same sessions every run and no backend ever trains on it.
     n_test = max(len(classes), round(len(texts) * 0.2))
     x_train, x_eval, y_train, y_eval = train_test_split(
         texts, label_ids, test_size=n_test, stratify=label_ids, random_state=0
@@ -283,7 +376,7 @@ def _train_hf(
     train_ds = _TextDataset(encode(x_train), y_train)
     eval_ds = _TextDataset(encode(x_eval), y_eval)
 
-    out_dir = _aspect_dir(out_name or aspect) / f"hf-{_sanitize_model_id(model_id)}"
+    out_dir = aspect_dir(plan["out_name"]) / f"hf-{_sanitize_model_id(model_id)}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     import tempfile
@@ -330,18 +423,28 @@ def _train_hf(
                 "max_length": max_length,
             },
             "device": device,
-            "eval_accuracy": round(float(eval_result.get("eval_accuracy", 0.0)), 4)
-            if "eval_accuracy" in eval_result
-            else None,
-            "eval_loss": round(float(eval_result.get("eval_loss", 0.0)), 4)
-            if "eval_loss" in eval_result
-            else None,
-            "eval_sessions": len(x_eval),
+            "in_training_eval": {
+                "accuracy": round(float(eval_result.get("eval_accuracy", 0.0)), 4)
+                if "eval_accuracy" in eval_result
+                else None,
+                "loss": round(float(eval_result.get("eval_loss", 0.0)), 4)
+                if "eval_loss" in eval_result
+                else None,
+                "sessions": len(x_eval),
+                "note": "stratified slice of the training side, resplit every run",
+            },
+            "eval_split": split_json(plan["split"]),
             "model_path": str(out_dir),
         }
     )
-    if job is not None:
-        metrics["job"] = job
+    holdout_texts, holdout_values = _side(plan, "holdout")
+    if holdout_texts:
+        metrics["holdout_evaluation"] = holdout_report(
+            holdout_values,
+            _hf_predict(model, tokenizer, holdout_texts, max_length, device, torch),
+        )
+    if plan["job"] is not None:
+        metrics["job"] = plan["job"]
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     return metrics
 
@@ -353,10 +456,12 @@ def train(
     batch_size: int = 8,
     lr: float = 2e-5,
     max_length: int = 512,
+    eval_split: dict | None = None,
 ) -> dict:
+    plan = plan_train(aspect, eval_split)
     if model_id is None:
-        return _train_sklearn(aspect)
-    return _train_hf(aspect, model_id, epochs, batch_size, lr, max_length)
+        return _train_sklearn(plan)
+    return _train_hf(plan, model_id, epochs, batch_size, lr, max_length)
 
 
 # ---------------------------------------------------------------------------
@@ -371,8 +476,8 @@ def _label_ts(record: dict) -> datetime | None:
         return None
 
 
-def _select_labels(job: dict) -> dict[str, dict]:
-    """Label records matching the job's evaluator and scope filters."""
+def select_labels(job: dict) -> dict[str, dict]:
+    """Label records matching a job's evaluator and scope filters."""
     scope = job["scope"]
     labels = lake.load_labels(scope["aspect"])
     evaluator = job["evaluator"]
@@ -420,7 +525,7 @@ def resolve_job(job: dict) -> dict:
 
     Returns the selected labels plus per-class counts for the resolved summary.
     """
-    labels = _select_labels(job)
+    labels = select_labels(job)
     counts: dict[str, int] = {}
     for record in labels.values():
         value = str(record.get("value"))
@@ -441,33 +546,44 @@ def job_summary(job: dict, resolved: dict) -> dict:
     }
 
 
-def run_job(job: dict, resolved: dict) -> dict:
-    """Train from a resolved job and persist spec copy + job metadata."""
+def prepare_job(job: dict, resolved: dict) -> dict:
+    """Everything a job needs to train, including its frozen evaluation split.
+
+    Separate from :func:`run_job` so ``run`` can print the resolved split —
+    which sessions train and which are held out — before training starts.
+    """
     scope = job["scope"]
     subject = (
         f"job '{job['name']}' (evaluator '{job['evaluator']}', "
         f"aspect '{scope['aspect']}')"
-    )
-    frame = _frame_from_labels(
-        resolved["labels"], subject, min_text_chars=scope["min_text_chars"]
     )
     job_meta = {
         "name": job["name"],
         "task": job["task"],
         "evaluator": job["evaluator"],
         "scope": _job_scope_json(scope),
+        "eval_split": dict(job["eval_split"]),
+        "judge": dict(job["judge"]),
     }
+    return _plan(
+        scope["aspect"],
+        resolved["labels"],
+        subject,
+        job["name"],
+        job["eval_split"],
+        min_text_chars=scope["min_text_chars"],
+        job_meta=job_meta,
+    )
+
+
+def run_job(job: dict, plan: dict) -> dict:
+    """Train from a prepared job and persist spec copy + job metadata."""
     if job["model"] == jobs.SKLEARN_MODEL:
-        metrics = _train_sklearn(
-            scope["aspect"], frame=frame, out_name=job["name"], job=job_meta
-        )
+        metrics = _train_sklearn(plan)
     else:
-        metrics = _train_hf(
-            scope["aspect"], job["model"], 3, 8, 2e-5, 512,
-            frame=frame, out_name=job["name"], job=job_meta,
-        )
-    spec_copy = dict(job_meta, model=job["model"])
-    (_aspect_dir(job["name"]) / "job.yaml").write_text(
+        metrics = _train_hf(plan, job["model"], 3, 8, 2e-5, 512)
+    spec_copy = dict(plan["job"], model=job["model"])
+    (aspect_dir(job["name"]) / "job.yaml").write_text(
         yaml.safe_dump(spec_copy, sort_keys=False, allow_unicode=True), encoding="utf-8"
     )
     return metrics
@@ -480,7 +596,7 @@ def run_job(job: dict, resolved: dict) -> dict:
 
 def _artifacts(aspect: str) -> list[dict]:
     """All trained artifacts for one aspect, oldest first."""
-    base = _aspect_dir(aspect)
+    base = aspect_dir(aspect)
     found: list[dict] = []
     sklearn_metrics = base / "metrics.json"
     if (base / "model.joblib").is_file() and sklearn_metrics.is_file():
@@ -495,50 +611,63 @@ def _artifacts(aspect: str) -> list[dict]:
     return sorted(found, key=lambda a: a["metrics"].get("trained_at", ""))
 
 
-def _active_artifact(aspect: str) -> dict:
-    artifacts = _artifacts(aspect)
+def active_artifact(name: str) -> dict:
+    """The newest artifact trained under one aspect or job name."""
+    artifacts = _artifacts(name)
     if not artifacts:
         raise FileNotFoundError(
-            f"no trained model for aspect '{aspect}' under {_aspect_dir(aspect)}; "
-            f"run 'transcript-label-trainer train --aspect {aspect}' first"
+            f"no trained model under {aspect_dir(name)}; train it first with "
+            f"'transcript-label-trainer train --aspect {name}' or "
+            "'transcript-label-trainer run <job.yaml>'"
         )
     return artifacts[-1]  # newest wins
 
 
+def labels_for_artifact(metrics: dict) -> dict[str, dict]:
+    """The ground-truth label records an artifact was trained against.
+
+    A job artifact carries its evaluator and scope, so the same selection is
+    reproduced; a bare ``train`` artifact was fitted on every label for its
+    aspect.
+    """
+    job_meta = metrics.get("job")
+    if not job_meta:
+        return lake.load_labels(metrics["aspect"])
+    scope = dict(job_meta["scope"])
+    since = scope.get("since")
+    scope["since"] = (
+        datetime.fromisoformat(str(since).replace("Z", "+00:00")) if since else None
+    )
+    return select_labels({"evaluator": job_meta["evaluator"], "scope": scope})
+
+
 def _infer_sklearn(artifact: dict, texts: list[str]) -> list[tuple[str, float]]:
-    pipeline = joblib.load(artifact["dir"] / "model.joblib")
-    probas = pipeline.predict_proba(texts)
-    return [
-        (str(pipeline.classes_[int(proba.argmax())]), float(proba.max()))
-        for proba in probas
-    ]
+    return _sklearn_predict(joblib.load(artifact["dir"] / "model.joblib"), texts)
 
 
 def _infer_hf(artifact: dict, texts: list[str]) -> list[tuple[str, float]]:
     torch, AutoModelForSequenceClassification, AutoTokenizer, _, _ = _hf_imports()
     out_dir = artifact["dir"]
     max_length = int(artifact["metrics"].get("hyperparameters", {}).get("max_length", 512))
-    tokenizer = AutoTokenizer.from_pretrained(out_dir)
-    model = AutoModelForSequenceClassification.from_pretrained(out_dir)
-    device = _hf_device(torch)
-    model.to(device)
-    model.eval()
-    results: list[tuple[str, float]] = []
-    with torch.no_grad():
-        for start in range(0, len(texts), 8):
-            batch = texts[start : start + 8]
-            encoded = tokenizer(
-                batch, truncation=True, max_length=max_length, padding=True, return_tensors="pt"
-            ).to(device)
-            probas = torch.softmax(model(**encoded).logits, dim=-1)
-            for proba in probas:
-                best = int(proba.argmax())
-                results.append((str(model.config.id2label[best]), float(proba[best])))
-    return results
+    return _hf_predict(
+        AutoModelForSequenceClassification.from_pretrained(out_dir),
+        AutoTokenizer.from_pretrained(out_dir),
+        texts,
+        max_length,
+        _hf_device(torch),
+        torch,
+    )
+
+
+def predict(artifact: dict, texts: list[str]) -> list[tuple[str, float]]:
+    """(value, confidence) per text, from whichever backend the artifact is."""
+    if artifact["backend"] == "sklearn":
+        return _infer_sklearn(artifact, texts)
+    return _infer_hf(artifact, texts)
 
 
 def infer(aspect: str, session: str | None = None, limit: int | None = None) -> list[dict]:
-    artifact = _active_artifact(aspect)
+    artifact = active_artifact(aspect)
 
     if session:
         targets = [{"session_id": session}]
@@ -557,7 +686,6 @@ def infer(aspect: str, session: str | None = None, limit: int | None = None) -> 
     if not usable:
         return []
 
-    predict = _infer_sklearn if artifact["backend"] == "sklearn" else _infer_hf
     predictions = predict(artifact, [entry["text"] for _, entry in usable])
 
     suggestions: list[dict] = []

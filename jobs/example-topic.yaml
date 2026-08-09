@@ -10,8 +10,12 @@
 #   the SCOPE of training data     -> scope (aspect plus optional filters)
 #   the TASK                       -> task (free text stored with the artifacts)
 #
+# Two more sections are ON by default and are written out below only to show
+# their defaults: eval_split (the frozen holdout training never sees) and
+# judge (the Brama teacher that rules on the result in `evaluate`).
+#
 # Run it with:  transcript-label-trainer run jobs/example-topic.yaml
-# Artifacts land in $TLT_HOME/models/<name>/.
+# Artifacts land in <training root>/models/<name>/.
 
 name: topic-v1
 task: classify the primary topic of the session
@@ -25,3 +29,19 @@ scope:
   # since: "2026-07-01"               # only labels recorded on/after this date
   # values: [bugfix, feature, chore]  # only these label values
   # min_text_chars: 200               # skip sessions with shorter text
+
+# The frozen evaluation split, on by default. The holdout is chosen once,
+# written to $TLT_HOME/models/topic-v1/eval-split.json, and reused by every
+# later run of this job: sessions labeled later can only join the training
+# side, and nothing in the file is ever trained on. Both fields are optional;
+# these are the defaults. Use `eval_split: false` to train on every labeled
+# session instead — then there is nothing for `evaluate` to score.
+eval_split:
+  fraction: 0.2
+  seed: 20260808
+
+# The Brama teacher that `transcript-label-trainer evaluate topic-v1` asks
+# whether the model's holdout predictions are acceptable. On by default;
+# `judge: false` skips the verdict. All inference goes through Brama.
+judge:
+  model: 302ai/claude-haiku-4-5

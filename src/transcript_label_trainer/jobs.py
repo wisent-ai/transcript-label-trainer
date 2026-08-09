@@ -5,6 +5,11 @@ WHO evaluated the transcripts (evaluator — the exact label-store source that
 counts as ground truth), WHICH model to train (model), the SCOPE of training
 data (scope), and the TASK (free text stored with the artifacts).
 
+Two more sections govern how the run is judged, and both are ON unless the
+spec turns them off: ``eval_split`` freezes a holdout of labeled sessions that
+training never sees, and ``judge`` has a Brama-routed teacher rule on whether
+the trained model's holdout predictions are acceptable.
+
 Every field is validated here; invalid specs fail with clear errors and no
 silent defaults.
 """
@@ -17,18 +22,32 @@ from pathlib import Path
 
 import yaml
 
+from . import brama
+
 # The lake labeler's source provenance grammar.
 SOURCE_PATTERN = re.compile(r"^(manual|human|model|brama)(:[A-Za-z0-9._/-]+)?$")
 
-# Job names become artifact directory names under $TLT_HOME/models/.
+# Job names become artifact directory names under <training root>/models/.
 NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 # The one reserved model name: the existing sklearn backend. Anything else is
 # a HuggingFace model id and selects the HF backend.
 SKLEARN_MODEL = "tfidf-logreg"
 
-_TOP_LEVEL_KEYS = {"name", "task", "evaluator", "model", "scope"}
+# The frozen evaluation split is on by default: model comparisons over time
+# have to run on the same untouched sessions, so the holdout is decided once
+# and persisted next to the artifacts. The seed is fixed so a first run on the
+# same labels always picks the same sessions.
+DEFAULT_EVAL_FRACTION = 0.2
+DEFAULT_EVAL_SEED = 20260808
+
+# A fraction above this would starve training rather than measure it.
+MAX_EVAL_FRACTION = 0.5
+
+_TOP_LEVEL_KEYS = {"name", "task", "evaluator", "model", "scope", "eval_split", "judge"}
 _SCOPE_KEYS = {"aspect", "runtimes", "since", "values", "min_text_chars"}
+_EVAL_SPLIT_KEYS = {"fraction", "seed"}
+_JUDGE_KEYS = {"model"}
 
 
 class JobError(ValueError):
@@ -51,6 +70,81 @@ def _string_list(scope: dict, key: str) -> list[str] | None:
     ):
         raise JobError(f"scope.{key} must be a non-empty list of strings")
     return [item.strip() for item in value]
+
+
+def default_eval_split() -> dict:
+    """The frozen split every run gets unless the spec says ``false``."""
+    return {
+        "enabled": True,
+        "fraction": DEFAULT_EVAL_FRACTION,
+        "seed": DEFAULT_EVAL_SEED,
+    }
+
+
+def default_judge() -> dict:
+    """The Brama teacher verdict every run gets unless the spec says ``false``."""
+    return {"enabled": True, "model": brama.DEFAULT_MODEL}
+
+
+def _eval_split(raw: dict) -> dict:
+    """Validate the eval_split section. Absent means the default, on."""
+    value = raw.get("eval_split")
+    if value is None or value is True:
+        return default_eval_split()
+    if value is False:
+        return {"enabled": False, "fraction": None, "seed": None}
+    if not isinstance(value, dict):
+        raise JobError(
+            "'eval_split' must be a mapping with 'fraction' and/or 'seed', "
+            "true for the defaults, or false to train on every labeled session"
+        )
+    unknown = sorted(set(value) - _EVAL_SPLIT_KEYS)
+    if unknown:
+        raise JobError(f"unknown eval_split field(s): {', '.join(unknown)}")
+
+    fraction = value.get("fraction")
+    if fraction is None:
+        fraction = DEFAULT_EVAL_FRACTION
+    elif isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
+        raise JobError(
+            f"eval_split.fraction must be a number, got {fraction!r}"
+        )
+    elif not 0 < float(fraction) <= MAX_EVAL_FRACTION:
+        raise JobError(
+            f"eval_split.fraction must be greater than 0 and at most "
+            f"{MAX_EVAL_FRACTION}, got {fraction!r}"
+        )
+
+    seed = value.get("seed")
+    if seed is None:
+        seed = DEFAULT_EVAL_SEED
+    elif isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise JobError(f"eval_split.seed must be a non-negative integer, got {seed!r}")
+
+    return {"enabled": True, "fraction": float(fraction), "seed": int(seed)}
+
+
+def _judge(raw: dict) -> dict:
+    """Validate the judge section. Absent means the default teacher, on."""
+    value = raw.get("judge")
+    if value is None or value is True:
+        return default_judge()
+    if value is False:
+        return {"enabled": False, "model": None}
+    if not isinstance(value, dict):
+        raise JobError(
+            "'judge' must be a mapping with 'model', true for the default "
+            f"teacher ({brama.DEFAULT_MODEL}), or false to skip the verdict"
+        )
+    unknown = sorted(set(value) - _JUDGE_KEYS)
+    if unknown:
+        raise JobError(f"unknown judge field(s): {', '.join(unknown)}")
+    model = value.get("model")
+    if model is None:
+        model = brama.DEFAULT_MODEL
+    elif not isinstance(model, str) or not model.strip():
+        raise JobError("judge.model must be a non-empty Brama-routed model id")
+    return {"enabled": True, "model": model.strip()}
 
 
 def load(path: str) -> dict:
@@ -133,4 +227,6 @@ def load(path: str) -> dict:
             "values": _string_list(scope, "values"),
             "min_text_chars": min_text_chars,
         },
+        "eval_split": _eval_split(raw),
+        "judge": _judge(raw),
     }

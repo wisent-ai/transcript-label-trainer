@@ -27,8 +27,8 @@ Transcript Label Trainer owns:
   at 12 KB);
 - emitting suggestion records shaped exactly like label-store records, with
   `source="model"` and the confidence in `note`;
-- its own model artifacts, under `~/.transcript-label-trainer/models/`
-  (override with `TLT_HOME`) — runtime state, outside this repository.
+- its own model artifacts, under the training root Stado places this trainer
+  on — runtime state, outside this repository (see *Placement*).
 
 Transcript Label Trainer does not own:
 
@@ -126,7 +126,7 @@ applies, and the HF path additionally requires at least 2 sessions per class so
 the stratified holdout split keeps every class on both sides; a stratified
 holdout provides the `eval_accuracy` in the metrics.
 
-Artifacts land in `$TLT_HOME/models/<aspect>/hf-<sanitized-model-id>/` — the
+Artifacts land in `<training root>/models/<aspect>/hf-<sanitized-model-id>/` — the
 `save_pretrained` model and tokenizer plus a `metrics.json` with the same
 fields as the sklearn metrics (aspect, counts, classes, n_sessions, …) plus the
 hyperparameters, base model, device, and holdout evaluation. Training runs on
@@ -173,7 +173,7 @@ transcript-label-trainer run jobs/example-topic.yaml
 
 `run` prints a resolved summary (name, task, evaluator, model, scope, and the
 sessions found per class) before training, then trains exactly like `train`
-does. Artifacts land in `$TLT_HOME/models/<name>/` with a copy of the spec
+does. Artifacts land in `<training root>/models/<name>/` with a copy of the spec
 (`job.yaml`), and `metrics.json` carries the job metadata. `train` and `infer`
 are unchanged; `run` is a layer over the same code path.
 
@@ -225,15 +225,77 @@ scope:
   aspect: tasktype
 ```
 
+## Placement: Stado decides where this runs
+
+Stado owns the canonical compute-target registry, and that registry — not this
+repository and not an environment variable — is the authority on where label
+models are trained and where the lake keeps its data. Two declarations carry
+it, both per registry target:
+
+| Key | Meaning |
+|---|---|
+| `targets[<this machine>].transcript_lake.root` | the **storage root**: the lake data root labels and session text are read out of |
+| `targets[<host>].training` | `{enabled, kinds, models_dir}` — the host that trains, and the **training root** for model artifacts on it. This trainer claims the kind `label-model`. |
+
+Register both through the checked-in script, never by hand:
+
+```sh
+./scripts/register-placement.sh
+```
+
+It pulls the canonical document, merges the two declarations into it, and
+pushes only if the merge changed something — so a second run leaves the
+registry byte-identical, and no key another publisher added is ever dropped.
+`TRAINING_HOST`, `TRAINING_ROOT` and `LAKE_DATA` override what it declares;
+the machine it declares the lake root for is whatever `stado registry self`
+says this box is.
+
+### Resolution order
+
+Each root is resolved independently, strongest layer first:
+
+1. **flag** — `--training-root` / `--storage-root`, before the subcommand;
+2. **env** — `TLT_HOME` / `LAKE_DATA`;
+3. **stado** — the declarations above;
+4. **local-fallback** — `~/.transcript-label-trainer` and `~/.transcript-lake`.
+
+### The local fallback is an exception, not a default
+
+Falling back is never silent. `info` prints the resolved placement, and
+`source` reports the *weakest* layer any root needed, so one root quietly
+going local cannot hide behind another that resolved:
+
+```
+placement:
+    source:        local-fallback
+    training host: ubuntu-server-rtx-pro-6000
+    training root: /Users/lukaszbartoszcze/.transcript-label-trainer
+    storage root:  /Users/lukaszbartoszcze/.transcript-lake
+    fallback:      training root … — local fallback because Stado places
+                   label-model training on ubuntu-server-rtx-pro-6000 at
+                   /mnt/wd16tb/stado/training, and this machine is
+                   lukasz-macbook; storage root … declared in the Stado registry
+```
+
+Everything that can stop Stado from answering degrades this way and names
+itself in the `fallback` line: the `stado` binary absent from `PATH`, the
+registry unreachable, this machine not declaring `transcript_lake.root`, no
+host declaring the `label-model` training kind, or — as above — training
+placed on a host that is not the one running the command. Resolution never
+raises; a control plane that is down must not stop a local run, only stop
+being invisible about it.
+
+`info --json` carries the same thing under `placement`, next to `aspects`.
+
 ## Environment
 
-- `LAKE_DATA` — lake data root, default `~/.transcript-lake`. Resolved exactly
-  like the lake CLI resolves it, and passed through to it.
+- `TLT_HOME` — trainer state root. Overrides the Stado training declaration;
+  models live under `$TLT_HOME/models/<aspect>/` (sklearn as `model.joblib` +
+  `metrics.json`, HF fine-tunes in `hf-<model-id>/` subdirectories).
+- `LAKE_DATA` — lake data root. Overrides the Stado storage declaration, and
+  is passed through to the lake CLI.
 - `TLT_LAKE_CLI` — override how the lake CLI is invoked. Default:
   `node ~/Documents/CodingProjects/Wisent/transcript-lake/src/cli.mjs`.
-- `TLT_HOME` — trainer state root, default `~/.transcript-label-trainer`.
-  Models live under `$TLT_HOME/models/<aspect>/`: sklearn as `model.joblib` +
-  `metrics.json`, HF fine-tunes in `hf-<model-id>/` subdirectories.
 
 ## Requirements
 

@@ -16,6 +16,7 @@ import os
 import subprocess
 
 from . import brama, lake
+from .placement import resolve_placement
 
 AUTOLABEL_NOTE = "autolabel"
 
@@ -25,7 +26,7 @@ class LabelApplyError(Exception):
 
 
 def _label_add(session_id: str, aspect: str, value: str, source: str) -> None:
-    env = dict(os.environ, LAKE_DATA=str(lake.lake_data()))
+    env = dict(os.environ, LAKE_DATA=str(resolve_placement().storage_root))
     done = subprocess.run(
         lake.lake_cli()
         + [

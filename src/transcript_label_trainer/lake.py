@@ -2,7 +2,7 @@
 
 Two contracts are consumed here, neither is reimplemented:
 
-- the append-only label store at ``$LAKE_DATA/labels/*.ndjson``, owned by
+- the append-only label store at ``<storage root>/labels/*.ndjson``, owned by
   ``transcript-lake label`` — this module only ever reads it;
 - the canonical ``events``/``sessions`` DuckDB views, reached by shelling out
   to the lake CLI (``query --json``) so the SQL setup in sql/views.sql stays
@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .placement import resolve_placement
+
 TEXT_CAP = 12_000  # characters of concatenated session text kept per session
 
 DEFAULT_LAKE_CLI = (
@@ -28,11 +30,6 @@ DEFAULT_LAKE_CLI = (
     / "src"
     / "cli.mjs"
 )
-
-
-def lake_data() -> Path:
-    """Resolve the lake data root the same way the lake CLI does."""
-    return Path(os.environ.get("LAKE_DATA", Path.home() / ".transcript-lake"))
 
 
 def lake_cli() -> list[str]:
@@ -49,7 +46,7 @@ def load_labels(aspect: str) -> dict[str, dict]:
     The store is append-only, so the record with the newest ``ts`` wins for
     each ``session_id``. A missing labels directory simply means zero labels.
     """
-    labels_dir = lake_data() / "labels"
+    labels_dir = resolve_placement().storage_root / "labels"
     latest: dict[str, dict] = {}
     if not labels_dir.is_dir():
         return latest
@@ -77,7 +74,7 @@ def _quote(value: str) -> str:
 def query(sql: str) -> list[dict]:
     """Run SQL over the lake views and return rows as dicts."""
     env = dict(os.environ)
-    env["LAKE_DATA"] = str(lake_data())
+    env["LAKE_DATA"] = str(resolve_placement().storage_root)
     proc = subprocess.run(
         lake_cli() + ["query", "--json", sql],
         capture_output=True,
