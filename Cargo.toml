@@ -1,0 +1,49 @@
+[package]
+name = "transcript-label-trainer"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Trains small local classifiers that predict aspect labels for coding-agent sessions in the Transcript Lake"
+license = "MIT"
+repository = "https://github.com/wisent-ai/transcript-label-trainer"
+publish = false
+
+[[bin]]
+name = "transcript-label-trainer"
+path = "src/main.rs"
+
+[features]
+# The HuggingFace fine-tune backend. Off by default: it pulls candle and
+# tokenizers, which the tfidf-logreg path does not need.
+default = []
+hf = ["dep:candle-core", "dep:candle-nn", "dep:tokenizers", "dep:hf-hub"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+serde_yaml = "0.9"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# Brama is the only network dependency: an HMAC-signed OpenAI-compatible call.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.9"
+rand_chacha = "0.9"
+
+candle-core = { version = "0.9", optional = true }
+candle-nn = { version = "0.9", optional = true }
+tokenizers = { version = "0.21", optional = true }
+hf-hub = { version = "0.4", optional = true }
+
+# Apple silicon fine-tunes on Metal, the way the Python backend used MPS.
+# candle only reports a Metal device when candle-core carries this feature, so
+# it is switched on for macOS and nowhere else.
+[target.'cfg(target_os = "macos")'.dependencies]
+candle-core = { version = "0.9", optional = true, features = ["metal"] }
+candle-nn = { version = "0.9", optional = true, features = ["metal"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

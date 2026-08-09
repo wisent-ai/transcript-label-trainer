@@ -21,7 +21,7 @@ Transcript Label Trainer owns:
 
 - training one classifier per aspect over the manual labels in the lake's
   label store — TF-IDF + logistic regression by default, or a fine-tuned
-  HuggingFace transformer when `--model` is given (optional `hf` extra);
+  HuggingFace transformer when `--model` is given (optional `hf` feature);
 - session-text reconstruction, by shelling out to the lake CLI's read-only
   `query` command (user + assistant text per session, ordered by `ts`, capped
   at 12 KB);
@@ -44,17 +44,20 @@ Transcript Label Trainer does not own:
   <name> --value <v> --source model`. (`autolabel` is the deliberate
   exception: it applies teacher labels through the same lake CLI immediately,
   with no review step — operator-mandated zero-touch.);
-- model serving or cloud training. Everything runs locally with scikit-learn,
-  plus a local HuggingFace fine-tune on CPU or Apple-silicon MPS when the
-  optional `hf` extra is installed.
+- model serving or cloud training. Everything runs locally: the tfidf-logreg
+  backend needs nothing beyond this binary, and a local HuggingFace fine-tune
+  runs on this machine when the optional `hf` feature is compiled in.
 
 ## Quick start
 
 ```sh
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e .
+cargo install --path .
 ```
+
+`cargo install` places `transcript-label-trainer` in `~/.cargo/bin`, which must
+be on `PATH`. To build without installing, run `cargo build --release` and
+invoke `target/release/transcript-label-trainer` directly. Building needs a
+Rust toolchain at version `1.85` or newer; nothing else.
 
 Train one aspect from the manual labels in the lake:
 
@@ -103,18 +106,22 @@ Inspect trained aspects, artifact paths, and metrics:
 transcript-label-trainer info
 ```
 
-`python -m transcript_label_trainer ...` is equivalent to the console script.
-
 ## Fine-tuning a HuggingFace model
 
 By default `train` fits TF-IDF + logistic regression. With `--model` it
-fine-tunes any HuggingFace sequence-classification model instead. This needs
-the optional `hf` extra (torch + transformers); without it, `train --model`
-fails with a message telling you to install it:
+fine-tunes a HuggingFace sequence-classification model instead. This needs
+the optional `hf` feature (candle-core, candle-nn, tokenizers, hf-hub);
+without it, `train --model` fails with a message telling you to build it in:
 
 ```sh
-pip install -e '.[hf]'
+cargo build --release --features hf
 ```
+
+Use `cargo install --path . --features hf` instead to replace the installed
+binary. Fine-tuning supports the `distilbert` and `bert` architectures, which
+covers `distilbert-base-multilingual-cased` and `bert-base-multilingual-cased`;
+any other `model_type` fails with a sentence naming those two rather than
+pretending to train.
 
 Transcripts are mixed Polish and English, so prefer a multilingual base model:
 
@@ -132,12 +139,16 @@ metrics. It is not the frozen evaluation split described below, which no
 backend ever trains on and which both backends score under
 `holdout_evaluation`.
 
-Artifacts land in `<training root>/models/<aspect>/hf-<sanitized-model-id>/` — the
-`save_pretrained` model and tokenizer plus a `metrics.json` with the same
-fields as the sklearn metrics (aspect, counts, classes, n_sessions, …) plus the
-hyperparameters, base model, device, and both evaluations. Training runs on
-CPU by default and uses Apple-silicon MPS automatically when
-`torch.backends.mps.is_available()`.
+Artifacts land in `<training root>/models/<aspect>/hf-<sanitized-model-id>/` —
+`model.safetensors` (the fine-tuned encoder plus classification head),
+`config.json` (the base model's config carrying `num_labels`, `id2label`, and
+`label2id` for the classes this aspect learned) and `tokenizer.json`, plus a
+`metrics.json` with the same fields as the sklearn metrics (aspect, counts,
+classes, n_sessions, …) plus the hyperparameters, base model, device, and both
+evaluations. Training uses Apple-silicon Metal automatically and CPU
+everywhere else, the way the Python backend used MPS: `Cargo.toml` turns
+candle's `metal` feature on for macOS only. `metrics.json` records which one
+ran under `device`, as `metal` or `cpu`; the Python build wrote `mps` there.
 
 When both a sklearn and an HF artifact exist for an aspect, `infer` uses the
 newest one by training time; `info` lists every backend per aspect and marks
@@ -268,7 +279,7 @@ Rules, mirroring `autolabel`:
 - The judge model comes from the job spec's `judge.model`, or `--brama-model`,
   defaulting to the same teacher `autolabel` uses. `judge: false` in the spec,
   or `--no-judge`, reports the holdout scores alone.
-- Auth is `brama.py`'s single HMAC/Skarbiec path — the same one `autolabel`
+- Auth is `brama.rs`'s single HMAC/Skarbiec path — the same one `autolabel`
   uses. There is no second credential route.
 
 `train` takes the same split as flags: `--eval-split-fraction`,
@@ -389,20 +400,49 @@ being invisible about it.
 ## Environment
 
 - `TLT_HOME` — trainer state root. Overrides the Stado training declaration;
-  models live under `$TLT_HOME/models/<aspect>/` (sklearn as `model.joblib` +
+  models live under `$TLT_HOME/models/<aspect>/` (tfidf-logreg as `model.json` +
   `metrics.json`, HF fine-tunes in `hf-<model-id>/` subdirectories, plus the
   job's `eval-split.json` and, once `evaluate` has run, `judge.json`).
 - `LAKE_DATA` — lake data root. Overrides the Stado storage declaration, and
   is passed through to the lake CLI.
-- `TLT_LAKE_CLI` — override how the lake CLI is invoked. Default:
-  `node ~/Documents/CodingProjects/Wisent/transcript-lake/src/cli.mjs`.
+- `TLT_LAKE_CLI` — override how the lake CLI is invoked, split on whitespace
+  into a command and its arguments. Default: `transcript-lake` on `PATH`,
+  falling back to
+  `~/Documents/CodingProjects/Wisent/transcript-lake/target/release/transcript-lake`
+  when the name is not found there.
 
 ## Requirements
 
-- Python 3.10+, scikit-learn and PyYAML (installed into the venv by the quick
-  start).
-- Optionally torch + transformers via the `hf` extra, for `--model`
-  fine-tuning. CPU is the baseline; MPS is used automatically on Apple
-  silicon.
-- Node.js and DuckDB, because session text comes from the lake CLI's `query`
-  command, which runs DuckDB over the lake's own views.
+- A Rust toolchain at version `1.85` or newer, to build the binary. The
+  tfidf-logreg backend needs nothing else at run time.
+- The `hf` cargo feature, for `--model` fine-tuning.
+- The lake CLI and DuckDB, because session text comes from the lake CLI's
+  `query` command, which runs DuckDB over the lake's own views.
+
+## Unreleased changes
+
+- Transcript Label Trainer is now implemented in Rust and ships as one binary.
+  The CLI surface is unchanged — same commands, flags, human output, JSON keys
+  and exit codes — and so is everything on disk: the label records it reads
+  from the lake and the ones `autolabel` writes through the lake CLI,
+  `metrics.json` (including the `backend` value, still literally `sklearn` for
+  the tfidf-logreg artifact), `eval-split.json`, `job.yaml`, `judge.json`, and
+  the job spec YAML all keep their shapes. One file changed name: `model.json`
+  replaces `model.joblib`, because the fitted vectorizer and classifier are now
+  stored as JSON anything can read.
+- **Retrain any model the Python build produced.** A `model.joblib` is a
+  pickle this binary cannot read. `info` still lists such an artifact with all
+  its metrics; only inference refuses, saying the artifact "holds
+  model.joblib, a pickle written by the Python build that this binary cannot
+  read" and naming the `train`/`run` command that produces `model.json`. The
+  labels it was trained on are untouched in the lake, so retraining is the
+  whole migration.
+- Installation changed: `cargo install --path .` replaces the virtualenv and
+  `pip install -e .`. The HuggingFace fine-tune backend is the `hf` cargo
+  feature (`cargo install --path . --features hf`), built on candle and
+  tokenizers rather than torch and transformers.
+- Python, pip, a virtualenv, scikit-learn and PyYAML are no longer
+  prerequisites, and neither is Node: the lake CLI this tool shells out to is a
+  Rust binary now, so `TLT_LAKE_CLI` defaults to `transcript-lake` on `PATH`.
+  DuckDB is still required, because session text still comes from the lake
+  CLI's `query` command.

@@ -1,7 +1,4 @@
-.venv/
+.DS_Store
+target/
 models/
-__pycache__/
 .work/
-*.egg-info/
-dist/
-build/

@@ -6,7 +6,7 @@
 #   WHICH model to train           -> model ("tfidf-logreg" for the sklearn
 #                                     backend, any other string is a
 #                                     HuggingFace model id and needs the
-#                                     'hf' extra)
+#                                     'hf' cargo feature)
 #   the SCOPE of training data     -> scope (aspect plus optional filters)
 #   the TASK                       -> task (free text stored with the artifacts)
 #
