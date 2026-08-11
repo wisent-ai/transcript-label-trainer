@@ -1,7 +1,7 @@
 //! The frozen evaluation split, and the Brama teacher's verdict on it.
 //!
-//! Two things live here, and they are two halves of one question — *does the
-//! trained model work?*
+//! Three checks live here, and they answer one question — *does the trained
+//! model and the evidence used to assess it make sense?*
 //!
 //! **The frozen split.** Comparing two models over time only means something
 //! when both were scored on the same untouched sessions, so the holdout is
@@ -19,6 +19,11 @@
 //! session and is counted, exactly like `autolabel`; if no session could be
 //! judged at all, the gateway's own error is surfaced verbatim and nothing is
 //! written, because a fabricated verdict is worse than no verdict.
+//!
+//! **The final review.** With `--best`, Brama's `-best` route independently
+//! audits both the stored ground-truth label and the first judge's opinion.
+//! Any nonsensical or unreviewed record makes the command fail after the
+//! evidence has been written to `judge.json`.
 //!
 //! # The shuffle is deterministic, and it is not Python's
 //!
@@ -57,6 +62,13 @@ pub const JUDGE_FILE: &str = "judge.json";
 
 /// The judge answers with exactly one of these.
 pub const JUDGE_VALUES: [&str; 2] = ["acceptable", "unacceptable"];
+/// Joint audit outcomes from Brama's strongest approved subscription route.
+const BEST_REVIEW_VALUES: [&str; 4] = [
+    "both-sensible",
+    "label-nonsensical",
+    "judge-nonsensical",
+    "both-nonsensical",
+];
 
 /// Where the frozen holdout of one job (or aspect) is persisted.
 pub fn split_path(name: &str) -> Result<PathBuf> {
@@ -501,12 +513,97 @@ fn judge_sessions(
     (records, failures)
 }
 
+fn best_review_prompt(
+    aspect: &str,
+    task: Option<&str>,
+    gold: &str,
+    prediction: &str,
+    verdict: &str,
+    text: &str,
+) -> Vec<brama::Message> {
+    let purpose = match task {
+        Some(task) if !task.is_empty() => format!("\nWhat the classifier is for: {task}"),
+        _ => String::new(),
+    };
+    vec![
+        brama::Message {
+            role: "system".to_string(),
+            content: format!(
+                "You are the final semantic auditor for transcript labels and \
+                 another judge's opinion. Answer with exactly one of: {}.",
+                BEST_REVIEW_VALUES.join(", ")
+            ),
+        },
+        brama::Message {
+            role: "user".to_string(),
+            content: format!(
+                "Aspect: {aspect}{purpose}\n\
+                 Recorded ground-truth label: {gold}\n\
+                 Classifier prediction: {prediction}\n\
+                 Earlier judge verdict on that prediction: {verdict}\n\n\
+                 Decide independently whether (1) the recorded label is a \
+                 sensible reading of the transcript for this aspect, and \
+                 (2) the earlier judge verdict is sensible given the prediction \
+                 and transcript. Answer both-sensible when both are sound, \
+                 label-nonsensical when only the label is unsound, \
+                 judge-nonsensical when only the earlier verdict is unsound, or \
+                 both-nonsensical when neither is sound.\n\n\
+                 Transcript:\n{text}"
+            ),
+        },
+    ]
+}
+
+fn best_review_sessions(
+    client: &brama::BramaClient,
+    aspect: &str,
+    task: Option<&str>,
+    sessions: &mut [Value],
+    texts: &HashMap<String, lake::SessionText>,
+) -> Vec<Value> {
+    let mut failures = Vec::new();
+    for session in sessions {
+        let session_id =
+            session.get("session_id").and_then(Value::as_str).unwrap_or_default().to_string();
+        let gold = session.get("gold").and_then(Value::as_str).unwrap_or_default().to_string();
+        let prediction =
+            session.get("prediction").and_then(Value::as_str).unwrap_or_default().to_string();
+        let verdict =
+            session.get("verdict").and_then(Value::as_str).unwrap_or_default().to_string();
+        let text = texts.get(&session_id).map(|entry| entry.text.as_str()).unwrap_or_default();
+        let prompt = best_review_prompt(aspect, task, &gold, &prediction, &verdict, text);
+        match client.chat(brama::BEST_MODEL, &prompt) {
+            Ok(answer) => match brama::parse_answer(&answer, &BEST_REVIEW_VALUES[..]) {
+                Some((review, _exact)) => {
+                    if let Some(object) = session.as_object_mut() {
+                        object.insert("best_review".to_string(), Value::String(review));
+                    }
+                }
+                None => failures.push(failure(
+                    &session_id,
+                    &format!(
+                        "unparseable final review answer: {}",
+                        jobs::py_repr_str(&brama::truncate_chars(&answer, 80))
+                    ),
+                )),
+            },
+            Err(error) => failures.push(failure(&session_id, &error.0)),
+        }
+    }
+    failures
+}
+
 /// Score the trained model on its frozen holdout and have Brama judge it.
 ///
 /// `name` is a job name or a bare aspect — both are directory names under
 /// `$TLT_HOME/models/`. Fails when there is no frozen holdout, when nothing is
 /// trained, and when the gateway could not judge a single session.
-pub fn evaluate(name: &str, judge: Option<bool>, judge_model: Option<&str>) -> Result<Value> {
+pub fn evaluate(
+    name: &str,
+    judge: Option<bool>,
+    judge_model: Option<&str>,
+    best_review: bool,
+) -> Result<Value> {
     let artifact = model::active_artifact(name)?;
     let metrics = &artifact.metrics;
     let aspect = metrics.get("aspect").and_then(Value::as_str).unwrap_or_default().to_string();
@@ -532,6 +629,9 @@ pub fn evaluate(name: &str, judge: Option<bool>, judge_model: Option<&str>) -> R
                 .map(str::to_string)
         })
         .unwrap_or_else(|| brama::DEFAULT_MODEL.to_string());
+    if best_review && !judge_enabled {
+        return Err(Error("--best requires the Brama judge to be enabled".to_string()));
+    }
 
     let frozen = read_split(name)?;
     let labels = model::labels_for_artifact(metrics)?;
@@ -646,7 +746,7 @@ pub fn evaluate(name: &str, judge: Option<bool>, judge_model: Option<&str>) -> R
 
     let client = brama::BramaClient::from_env()?;
     let task = job_meta.get("task").and_then(Value::as_str);
-    let (records, failures) =
+    let (mut records, failures) =
         judge_sessions(&client, &model_id, &aspect, task, &sessions, &texts);
     if records.is_empty() {
         // No usable provider route: surface the gateway's own words and write
@@ -685,6 +785,72 @@ pub fn evaluate(name: &str, judge: Option<bool>, judge_model: Option<&str>) -> R
         number(round4(acceptable as f64 / records.len() as f64)),
     );
     result.insert("judge".to_string(), Value::Object(block));
+    if best_review {
+        let review_failures =
+            best_review_sessions(&client, &aspect, task, &mut records, &texts);
+        let reviewed = records
+            .iter()
+            .filter(|record| record.get("best_review").and_then(Value::as_str).is_some())
+            .count();
+        if reviewed == 0 {
+            let first = review_failures
+                .first()
+                .and_then(|entry| entry.get("error"))
+                .and_then(Value::as_str)
+                .unwrap_or("(no sessions to review)");
+            return Err(Error(format!(
+                "the final Brama reviewer ({}) could not review any of the {} \
+                 judge record(s); first error: {first}",
+                brama::BEST_MODEL,
+                records.len()
+            )));
+        }
+        let both_sensible = records
+            .iter()
+            .filter(|record| {
+                record.get("best_review").and_then(Value::as_str)
+                    == Some(BEST_REVIEW_VALUES[0])
+            })
+            .count();
+        let label_nonsensical = records
+            .iter()
+            .filter(|record| {
+                matches!(
+                    record.get("best_review").and_then(Value::as_str),
+                    Some("label-nonsensical" | "both-nonsensical")
+                )
+            })
+            .count();
+        let judge_nonsensical = records
+            .iter()
+            .filter(|record| {
+                matches!(
+                    record.get("best_review").and_then(Value::as_str),
+                    Some("judge-nonsensical" | "both-nonsensical")
+                )
+            })
+            .count();
+        let sensible = failures.is_empty()
+            && review_failures.is_empty()
+            && both_sensible == records.len();
+        result.insert(
+            "best_review".to_string(),
+            serde_json::json!({
+                "enabled": true,
+                "model": brama::BEST_MODEL,
+                "reviewed": reviewed,
+                "both_sensible": both_sensible,
+                "label_nonsensical": label_nonsensical,
+                "judge_nonsensical": judge_nonsensical,
+                "failed": review_failures.len(),
+                "sensible": sensible,
+            }),
+        );
+        result.insert(
+            "best_review_failures".to_string(),
+            Value::Array(review_failures),
+        );
+    }
     result.insert("sessions".to_string(), Value::Array(records));
     result.insert("failures".to_string(), Value::Array(failures));
 

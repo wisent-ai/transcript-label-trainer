@@ -10,6 +10,7 @@ mod jobs;
 mod lake;
 mod model;
 mod placement;
+mod stado;
 mod util;
 
 use std::process::ExitCode;

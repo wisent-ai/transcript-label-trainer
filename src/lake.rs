@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::bail;
@@ -34,7 +35,7 @@ const LAKE_BINARY: &str = "transcript-lake";
 ///
 /// `text` is empty here — the label store carries no transcript text, and
 /// [`session_texts`] is what fills it in for the sessions a caller needs.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SessionLabel {
     pub session_id: String,
     pub value: String,
@@ -56,6 +57,57 @@ pub struct SessionText {
 pub struct SessionRow {
     pub session_id: String,
     pub runtime: Option<String>,
+}
+
+const DATASET_BUNDLE_ENV: &str = "TLT_DATASET_BUNDLE";
+const DATASET_BUNDLE_SCHEMA: u32 = 1;
+
+#[derive(Debug, Deserialize, Serialize)]
+struct DatasetBundle {
+    schema_version: u32,
+    aspect: String,
+    labels: Vec<SessionLabel>,
+}
+
+fn read_bundle() -> Result<Option<DatasetBundle>> {
+    let Some(path) = std::env::var_os(DATASET_BUNDLE_ENV).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(path);
+    let bundle: DatasetBundle = serde_json::from_slice(&std::fs::read(&path)?)
+        .map_err(|error| Error(format!("invalid dataset bundle {}: {error}", path.display())))?;
+    if bundle.schema_version != DATASET_BUNDLE_SCHEMA {
+        bail!(
+            "unsupported dataset bundle schema {} in {}; expected {}",
+            bundle.schema_version,
+            path.display(),
+            DATASET_BUNDLE_SCHEMA
+        );
+    }
+    Ok(Some(bundle))
+}
+
+/// Materialize only the selected labels and their transcript text for a remote
+/// Stado run. The bundle is read-only and contains no unrelated lake sessions.
+pub fn export_bundle(aspect: &str, labels: &[SessionLabel], path: &Path) -> Result<()> {
+    let ids: Vec<String> = labels.iter().map(|label| label.session_id.clone()).collect();
+    let mut texts = session_texts(&ids)?;
+    let mut bundled = Vec::with_capacity(labels.len());
+    for label in labels {
+        let mut label = label.clone();
+        if let Some(text) = texts.remove(&label.session_id) {
+            label.runtime = label.runtime.or(text.runtime);
+            label.text = text.text;
+        }
+        bundled.push(label);
+    }
+    let bundle = DatasetBundle {
+        schema_version: DATASET_BUNDLE_SCHEMA,
+        aspect: aspect.to_string(),
+        labels: bundled,
+    };
+    std::fs::write(path, serde_json::to_vec_pretty(&bundle)?)?;
+    Ok(())
 }
 
 /// Command prefix that invokes the lake CLI.
@@ -86,6 +138,15 @@ pub fn lake_cli() -> Vec<String> {
 /// order, because the directory listing order must not decide which record
 /// a tie on `ts` resolves to.
 pub fn load_labels(aspect: &str) -> Result<Vec<SessionLabel>> {
+    if let Some(bundle) = read_bundle()? {
+        if bundle.aspect != aspect {
+            bail!(
+                "dataset bundle carries aspect '{}', not requested aspect '{aspect}'",
+                bundle.aspect
+            );
+        }
+        return Ok(bundle.labels);
+    }
     let labels_dir = resolve_placement().storage_root.join("labels");
     let mut latest: Vec<SessionLabel> = Vec::new();
     if !labels_dir.is_dir() {
@@ -173,6 +234,16 @@ pub fn query(sql: &str) -> Result<Vec<Value>> {
 
 /// Every session known to the lake.
 pub fn all_sessions() -> Result<Vec<SessionRow>> {
+    if let Some(bundle) = read_bundle()? {
+        return Ok(bundle
+            .labels
+            .into_iter()
+            .map(|label| SessionRow {
+                session_id: label.session_id,
+                runtime: label.runtime,
+            })
+            .collect());
+    }
     let rows = query("SELECT runtime, session_id FROM sessions ORDER BY last_ts DESC")?;
     Ok(rows
         .into_iter()
@@ -191,6 +262,24 @@ pub fn all_sessions() -> Result<Vec<SessionRow>> {
 /// Only sessions with at least one text event appear; each is capped at
 /// [`TEXT_CAP`] characters.
 pub fn session_texts(session_ids: &[String]) -> Result<HashMap<String, SessionText>> {
+    if let Some(bundle) = read_bundle()? {
+        let wanted: std::collections::HashSet<&str> =
+            session_ids.iter().map(String::as_str).collect();
+        return Ok(bundle
+            .labels
+            .into_iter()
+            .filter(|label| wanted.contains(label.session_id.as_str()))
+            .map(|label| {
+                (
+                    label.session_id,
+                    SessionText {
+                        runtime: label.runtime,
+                        text: label.text,
+                    },
+                )
+            })
+            .collect());
+    }
     if session_ids.is_empty() {
         return Ok(HashMap::new());
     }

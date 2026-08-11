@@ -52,11 +52,11 @@ Transcript Label Trainer does not own:
 - applying `infer` suggestions. Review the emitted records, then apply them
   through the lake's labeler: `transcript-lake label add <session-id> --aspect
   <name> --value <v> --source model`. (`autolabel` is the deliberate
-  exception: it applies teacher labels through the same lake CLI immediately,
-  with no review step — operator-mandated zero-touch.);
-- model serving or cloud training. Everything runs locally: the tfidf-logreg
-  backend needs nothing beyond this binary, and a local HuggingFace fine-tune
-  runs on this machine when the optional `hf` feature is compiled in.
+  exception: it writes through the lake CLI without a human staging queue and
+  can require the independent Brama `-best` gate.);
+- model serving, the compute-target registry, or remote job lifecycle. Stado
+  owns placement, source checkout, scoped secrets, execution, logs, and the
+  terminal outcome; this trainer only prepares and submits the declared work.
 
 ## Quick start
 
@@ -256,7 +256,7 @@ labeled the session. It does not say whether the label the model chose was
 defensible. `evaluate` asks that second question of a Brama teacher:
 
 ```sh
-transcript-label-trainer evaluate topic-v1
+transcript-label-trainer evaluate topic-v1 --best
 ```
 
 ```
@@ -278,6 +278,14 @@ prediction that matches it can still be rejected. The verdict, the aggregate
 agreement rate and one record per session go to
 `<training root>/models/<name>/judge.json`.
 
+`--best` adds a second, independent pass through Brama's `-best` subscription
+route. For every holdout record it audits both the stored ground-truth label
+and the first judge's `acceptable`/`unacceptable` opinion against the
+transcript. The four possible outcomes (`both-sensible`, `label-nonsensical`,
+`judge-nonsensical`, `both-nonsensical`) and their aggregate counts are stored
+under `best_review` in the same `judge.json`; any nonsensical or unreviewed
+record makes the command exit nonzero.
+
 Rules, mirroring `autolabel`:
 
 - **Failure isolation.** A Brama error or an unparseable answer fails that one
@@ -298,23 +306,24 @@ same way.
 
 ## Automatic labeling with a Brama teacher
 
-`autolabel` labels sessions at scale with a big model routed through Brama —
+`autolabel` labels sessions at scale with a model routed through Brama —
 Wisent's authenticated, provider-neutral OpenAI-compatible gateway (all LLM
-inference goes through Brama; never direct provider keys). It is zero-touch
-by operator mandate: suggestions are not staged for review, they are applied
-immediately.
+inference goes through Brama; never direct provider keys). With `--best`, each
+proposed label is independently audited by Brama's `-best` route before it can
+reach Transcript Lake; there is still no human staging queue.
 
 ```sh
 transcript-label-trainer autolabel --aspect tasktype \
-  --values bugfix,feature,chore,question --limit 50
+  --values bugfix,feature,chore,question --limit 50 --best
 ```
 
 For each session that has no label on the aspect yet, autolabel reconstructs
-the session text, asks the teacher for exactly one of the allowed values, and
-applies the answer through the lake's own CLI:
+the session text and asks the teacher for exactly one of the allowed values.
+With `--best`, a second model returns `sensible` or `nonsensical`; only a
+`sensible` proposal is applied through the lake's own CLI:
 
 ```sh
-transcript-lake label add <session-id> --aspect tasktype --value <v> --source brama:<model-id> --note autolabel
+transcript-lake label add <session-id> --aspect tasktype --value <v> --source brama:<model-id> --note "autolabel; reviewed=-best"
 ```
 
 The lake CLI validates the session and owns the write — that boundary stays;
@@ -322,6 +331,9 @@ what changed is only that no human reviews the suggestion. Rules:
 
 - **No overwrite.** A session already labeled with the aspect by ANY source
   is skipped — human labels are sacred, and reruns are idempotent.
+- **Semantic gate.** `--best` never applies a proposal rejected as
+  `nonsensical`, records it under `rejected`, and exits nonzero if a proposal
+  is rejected or the final reviewer cannot answer.
 - **Failure isolation.** A Brama error or an unparseable answer fails that
   one session, writes nothing for it, and is counted in the final summary
   (`labeled` / `skipped_labeled` / `failed`).
@@ -369,6 +381,28 @@ registry byte-identical, and no key another publisher added is ever dropped.
 `TRAINING_HOST`, `TRAINING_ROOT` and `LAKE_DATA` override what it declares;
 the machine it declares the lake root for is whatever `stado registry self`
 says this box is.
+
+### Execute on one named compute target
+
+`run --compute-target` turns the local command into a Stado job pinned to one
+canonical registry target:
+
+```sh
+transcript-label-trainer run jobs/example-topic.yaml \
+  --compute-target ubuntu-server-rtx-pro-6000
+```
+
+The submitter resolves the job against the local Transcript Lake, exports only
+the selected labels and their capped transcript text, and uploads that
+read-only, content-addressed bundle plus the validated YAML through
+`stado://datasets`. Stado then clones this repository at one exact commit,
+pins the job with `--pinned-host`, injects the Brama signing and bearer
+references through `--secret-env`, and streams `stado job watch --follow`
+until the target reports a terminal state. The remote command trains under the
+target's declared `training.models_dir`; when the default split and judge are
+enabled, it immediately runs `evaluate <name> --best`, so nonsensical labels
+or final judge opinions fail the Stado job rather than becoming a successful
+artifact.
 
 ### Resolution order
 
@@ -420,6 +454,10 @@ being invisible about it.
   falling back to
   `~/Documents/CodingProjects/Wisent/transcript-lake/target/release/transcript-lake`
   when the name is not found there.
+- `TLT_DATASET_BUNDLE` — internal read-only dataset bundle used by a pinned
+  Stado job instead of reaching back into the source machine's lake.
+- `TLT_REPO_REF` — exact lowercase commit used for Stado's source checkout;
+  normally resolved from this checkout automatically.
 
 ## Requirements
 
@@ -431,13 +469,21 @@ being invisible about it.
 
 ## Unreleased changes
 
+- `run JOB --compute-target TARGET` now exports a minimal read-only dataset,
+  submits the exact trainer commit through Stado, pins execution to the named
+  compute target, follows the job, and runs the semantic evaluation there.
+- `autolabel --best` audits proposed labels before writing them;
+  `evaluate --best` independently audits both stored labels and the first
+  judge's opinions through Brama's `-best` route. Both are quality gates with
+  machine-readable records and nonzero status for nonsensical results.
+
 - Transcript Label Trainer is now implemented in Rust and ships as one binary.
-  The CLI surface is unchanged — same commands, flags, human output, JSON keys
-  and exit codes — and so is everything on disk: the label records it reads
-  from the lake and the ones `autolabel` writes through the lake CLI,
-  `metrics.json` (including the `backend` value, still literally `sklearn` for
-  the tfidf-logreg artifact), `eval-split.json`, `job.yaml`, `judge.json`, and
-  the job spec YAML all keep their shapes. One file changed name: `model.json`
+  Existing command behavior remains compatible; the Stado and `--best`
+  surfaces above are additive. Existing label records, `metrics.json`
+  (including the `backend` value, still literally `sklearn` for the
+  tfidf-logreg artifact), `eval-split.json`, `job.yaml`, and the job spec YAML
+  keep their shapes; `--best` adds its audit records only to command output and
+  `judge.json`. One file changed name during the Rust migration: `model.json`
   replaces `model.joblib`, because the fitted vectorizer and classifier are now
   stored as JSON anything can read.
 - **Retrain any model the Python build produced.** A `model.joblib` is a

@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 use serde_json::Value;
 
 use crate::util::{float_repr, json_text, json_truthy, Error, Result, TrainFailure};
-use crate::{autolabel, brama, evaluate, jobs, model, placement};
+use crate::{autolabel, brama, evaluate, jobs, model, placement, stado};
 
 /// `println!` that does not panic when the reader has closed the pipe.
 ///
@@ -167,6 +167,9 @@ fn cmd_run(args: &Parsed) -> Result<i32> {
             return Ok(1);
         }
     };
+    if let Some(target) = args.text("--compute-target") {
+        return stado::execute(args.positional(0), &job, target);
+    }
     let resolved = model::resolve_job(&job)?;
     outln!("{}", dumps(&model::job_summary(&job, &resolved)));
 
@@ -187,19 +190,34 @@ fn cmd_run(args: &Parsed) -> Result<i32> {
 
 fn cmd_evaluate(args: &Parsed) -> Result<i32> {
     let judge = if args.flag("--no-judge") { Some(false) } else { None };
-    let verdict = match evaluate::evaluate(args.positional(0), judge, args.text("--brama-model")) {
+    let verdict = match evaluate::evaluate(
+        args.positional(0),
+        judge,
+        args.text("--brama-model"),
+        args.flag("--best"),
+    ) {
         Ok(verdict) => verdict,
         Err(error) => {
             eprintln!("evaluate: {error}");
             return Ok(1);
         }
     };
+    let status = if args.flag("--best")
+        && verdict
+            .pointer("/best_review/sensible")
+            .and_then(Value::as_bool)
+            != Some(true)
+    {
+        1
+    } else {
+        0
+    };
     if args.flag("--json") {
         outln!("{}", dumps(&verdict));
-        return Ok(0);
+    } else {
+        print_verdict(&verdict);
     }
-    print_verdict(&verdict);
-    Ok(0)
+    Ok(status)
 }
 
 fn cmd_infer(args: &Parsed) -> Result<i32> {
@@ -234,6 +252,7 @@ fn cmd_autolabel(args: &Parsed) -> Result<i32> {
         args.text("--aspect").unwrap_or_default(),
         &values,
         args.text("--brama-model"),
+        args.flag("--best"),
         args.int("--limit"),
         args.text("--runtime"),
     ) {
@@ -244,7 +263,16 @@ fn cmd_autolabel(args: &Parsed) -> Result<i32> {
         }
     };
     outln!("{}", dumps(&summary));
-    Ok(0)
+    if args.flag("--best")
+        && summary
+            .pointer("/best_review/sensible")
+            .and_then(Value::as_bool)
+            != Some(true)
+    {
+        Ok(1)
+    } else {
+        Ok(0)
+    }
 }
 
 fn cmd_info(args: &Parsed) -> Result<i32> {
@@ -456,6 +484,19 @@ fn print_verdict(verdict: &Value) {
     text(field(judge, "judged")),
     text(field(judge, "agreement_rate")),
     text(field(judge, "failed")));
+    let best = field(verdict, "best_review");
+    if json_truthy(field(best, "enabled")) {
+        outln!(
+            "    best review:   {} reviewed={}, labels nonsensical={}, \
+             judge opinions nonsensical={}, failed={}, sensible={}",
+            text(field(best, "model")),
+            text(field(best, "reviewed")),
+            text(field(best, "label_nonsensical")),
+            text(field(best, "judge_nonsensical")),
+            text(field(best, "failed")),
+            text(field(best, "sensible"))
+        );
+    }
     if let Value::Array(records) = field(verdict, "sessions") {
         for record in records {
             let mark = if text(field(record, "verdict")) == evaluate::JUDGE_VALUES[0] {
@@ -468,6 +509,9 @@ fn print_verdict(verdict: &Value) {
             text(field(record, "gold")),
             text(field(record, "prediction")),
             text(field(record, "confidence")));
+            if json_truthy(field(record, "best_review")) {
+                outln!("             final review={}", text(field(record, "best_review")));
+            }
         }
     }
     if let Value::Array(failures) = field(verdict, "failures") {
@@ -741,7 +785,15 @@ fn build_specs() -> Vec<Spec> {
             name: "job_file",
             help: "path to the job spec YAML".to_string(),
         }],
-        opts: Vec::new(),
+        opts: vec![option(
+            "--compute-target",
+            "COMPUTE_TARGET",
+            Kind::Text,
+            "export the selected lake rows, submit this run to that canonical \
+             Stado compute target, follow it to completion, and run evaluate \
+             --best after training"
+                .to_string(),
+        )],
     };
 
     let evaluate = Spec {
@@ -783,6 +835,15 @@ fn build_specs() -> Vec<Spec> {
                 "report the frozen-holdout scores only, without asking the teacher".to_string(),
             ),
             option("--json", "", Kind::Flag, "print machine-readable JSON".to_string()),
+            option(
+                "--best",
+                "",
+                Kind::Flag,
+                "after the configured judge, use Brama's -best route to audit \
+                 whether every ground-truth label and judge opinion is sensible; \
+                 exit nonzero when the audit finds an issue"
+                    .to_string(),
+            ),
         ],
     };
 
@@ -847,6 +908,15 @@ fn build_specs() -> Vec<Spec> {
                 "MODEL_ID",
                 Kind::Text,
                 format!("Brama-routed teacher model (default: {teacher})"),
+            ),
+            option(
+                "--best",
+                "",
+                Kind::Flag,
+                "have Brama's -best route audit every proposed label before it \
+                 reaches Transcript Lake; reject nonsensical labels and exit \
+                 nonzero when the audit finds an issue"
+                    .to_string(),
             ),
             option("--limit", "LIMIT", Kind::Int, "cap the number of sessions labeled".to_string()),
             option("--runtime", "RUNTIME", Kind::Text, "only sessions of this runtime".to_string()),
