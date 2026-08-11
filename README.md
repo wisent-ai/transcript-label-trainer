@@ -382,9 +382,10 @@ export.
 A successful job publishes F16 and Q8_0 GGUF files, metrics, held-out
 predictions, the full final audit, the canonical prompt, dependency lock, and
 checksums under the content-addressed URI printed as `model artifact:
-stado://models/jeden/goal-qwen3-0.6b/<dataset-sha256>`. Stado also retains its
-canonical `status/<job-id>/output/` copy. All model calls use `brama.rs`; the
-pipeline has no direct provider credentials or second auth implementation.
+stado://probierz/artifacts/models/jeden/goal-qwen3-0.6b/<dataset-sha256>`.
+Stado also retains its canonical `status/<job-id>/output/` copy. All model calls
+use `brama.rs`; the pipeline has no direct provider credentials or second auth
+implementation.
 
 ## Placement: Stado decides where this runs
 
@@ -423,10 +424,11 @@ transcript-label-trainer run jobs/example-topic.yaml \
 
 The submitter resolves the job against the local Transcript Lake, exports only
 the selected labels and their capped transcript text, and uploads that
-read-only, content-addressed bundle plus the validated YAML through
-`stado://datasets`. Stado then clones this repository at one exact commit,
-pins the job with `--pinned-host`, injects the Brama signing and bearer
-references through `--secret-env`, and streams `stado job watch --follow`
+read-only, content-addressed bundle plus the validated YAML through Probierz's
+`inputs/transcript-label-trainer/` object boundary. Stado then clones this
+repository at one exact commit, pins the job with `--pinned-host`, injects the
+Brama signing and bearer references through `--secret-env`, and streams
+`stado job watch --follow`
 until the target reports a terminal state. The remote command trains under the
 target's declared `training.models_dir`; when the default split and judge are
 enabled, it immediately runs `evaluate <name> --best`, so nonsensical labels

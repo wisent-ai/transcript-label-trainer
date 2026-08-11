@@ -1,8 +1,8 @@
 //! Submit a declarative trainer run to one canonical Stado compute target.
 //!
 //! The submitter exports only the job's selected labels and transcript text,
-//! stores that read-only dataset plus the job spec through `stado://datasets`,
-//! and pins a source checkout at one exact commit to the requested target.
+//! stores that read-only dataset in Probierz's input boundary, and pins a
+//! source checkout at one exact commit to the requested target.
 
 use std::ffi::OsString;
 use std::io::{self, Write};
@@ -179,7 +179,7 @@ pub fn execute(job_path: &str, job: &Job, compute_target: &str) -> Result<i32> {
     let dataset_bytes = std::fs::read(&dataset_path)?;
     let spec_bytes = std::fs::read(&spec_path)?;
     let key = digest(&[dataset_bytes.as_slice(), spec_bytes.as_slice()].concat());
-    let base = format!("stado://datasets/transcript-label-trainer/{key}");
+    let base = format!("stado://probierz/inputs/transcript-label-trainer/{key}");
     let dataset_uri = format!("{base}/dataset.json");
     let spec_uri = format!("{base}/job.yaml");
     let stado = stado_bin();
@@ -241,8 +241,10 @@ pub fn execute_goal_model(dataset_path: &Path, compute_target: &str) -> Result<G
     }
     let dataset_bytes = std::fs::read(dataset_path)?;
     let key = digest(&dataset_bytes);
-    let dataset_uri = format!("stado://datasets/transcript-label-trainer/goal-model/{key}.jsonl");
-    let output_uri = format!("stado://models/jeden/goal-qwen3-0.6b/{key}");
+    let dataset_uri =
+        format!("stado://probierz/inputs/transcript-label-trainer/goal-model/{key}.jsonl");
+    let output_uri =
+        format!("stado://probierz/artifacts/models/jeden/goal-qwen3-0.6b/{key}");
     let stado = stado_bin();
     upload(&stado, &dataset_uri, dataset_path, "application/x-ndjson")?;
     let source_ref = repo_ref()?;
