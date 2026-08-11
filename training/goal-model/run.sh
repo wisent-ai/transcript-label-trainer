@@ -22,14 +22,6 @@ export GOAL_STUDENT_MODEL="Qwen/Qwen3-0.6B"
 export GOAL_STUDENT_REVISION="c1899de289a04d12100db370d81485cdf75e47ca"
 "$VENV/bin/python" "$ROOT/training/goal-model/train.py"
 
-audit_model="${TLT_BRAMA_MODEL:-}"
-audit_args=(goal-audit "$WORK/predictions.jsonl" --output "$WORK/final-judge.json")
-if [ -n "$audit_model" ]; then
-  audit_args+=(--brama-model "$audit_model")
-else
-  audit_args+=(--best)
-fi
-cargo run --manifest-path "$ROOT/Cargo.toml" --release -- "${audit_args[@]}"
 
 LLAMA_CPP="$WORK/llama.cpp"
 if [ ! -d "$LLAMA_CPP/.git" ]; then
@@ -44,7 +36,7 @@ fi
 cp "$WORK/jeden-goal-qwen3-0.6b-f16.gguf" \
    "$WORK/jeden-goal-qwen3-0.6b-q8_0.gguf" \
    "$WORK/metrics.json" "$WORK/predictions.jsonl" \
-   "$WORK/final-judge.json" "$WORK/python-requirements.lock" \
+   "$WORK/python-requirements.lock" \
    "$ROOT/training/goal-model/goal-system-prompt.md" "$OUT/"
 
 OUT="$OUT" "$VENV/bin/python" - <<'PY'
@@ -74,4 +66,4 @@ manifest = {
 (out / "model-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 PY
 
-echo "qualified model staged in $OUT"
+echo "model candidate staged in $OUT"

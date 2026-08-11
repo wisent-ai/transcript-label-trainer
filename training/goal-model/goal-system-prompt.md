@@ -15,7 +15,7 @@ Use imperative mood. Preserve product names and technical identifiers exactly. C
 <goal>Refactor API error handling</goal>
 
 <user>ok to zrob go</user>
-<goal>Complete the requested change</goal>
+<goal/>
 
 <user>hej</user>
 <goal/>
