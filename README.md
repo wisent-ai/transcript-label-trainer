@@ -10,9 +10,16 @@
 
 # Transcript Label Trainer
 
-**Transcript Label Trainer trains small local classifiers that predict aspect
-labels for coding-agent sessions in the Transcript Lake, and emits label
-suggestions — it never writes to the lake.**
+Small Models for Your Custom Harness Needs.
+
+Your harness makes dozens of repetitive calls. What goal am I working towards? Is
+the user frustrated?
+
+Don’t use your smart model for this. Save tokens and train a smaller, faster,
+task-specific model using this repository to analyse your sessions faster and
+cheaper.
+
+Intelligence to analyse your AI <> Human interactions at minimal cost.
 
 The lake's labeler owns an append-only store of aspect labels at
 `~/.transcript-lake/labels/*.ndjson`, one record per aspect label on a session:
