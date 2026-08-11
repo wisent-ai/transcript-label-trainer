@@ -338,8 +338,13 @@ pub fn build_dataset(output: &Path, limit: usize, teacher_model: Option<&str>) -
         .count();
     let teacher_accepted = accepted.len().saturating_sub(gold_accepted);
     if gold_accepted < 20 || teacher_accepted < 100 {
+        let rejected = total.saturating_sub(accepted.len() + failures.len());
+        let first_failure = failures.first().map(String::as_str).unwrap_or("none");
         bail!(
-            "reviewed goal dataset is too small: {gold_accepted} gold and {teacher_accepted} teacher rows"
+            "reviewed goal dataset is too small: {gold_accepted} gold and \
+             {teacher_accepted} teacher rows; {rejected} rejected, {} failed; \
+             first failure: {first_failure}",
+            failures.len()
         )
     }
     if let Some(parent) = output.parent() {

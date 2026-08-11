@@ -57,7 +57,7 @@ pub const BEST_MODEL: &str = "-best";
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const STADO_TIMEOUT: Duration = Duration::from_secs(20);
-const ANSWER_MAX_TOKENS: u32 = 16;
+const ANSWER_MAX_TOKENS: u32 = 64;
 
 /// One OpenAI chat message. Field order is `role` then `content`, matching the
 /// dicts the Python client built and hashed.
