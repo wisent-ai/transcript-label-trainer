@@ -29,12 +29,15 @@ if [ ! -d "$LLAMA_CPP/.git" ]; then
 fi
 "$VENV/bin/python" "$LLAMA_CPP/convert_hf_to_gguf.py" "$WORK/student" \
   --outfile "$WORK/jeden-goal-qwen3-0.6b-f16.gguf" --outtype f16
-"$VENV/bin/python" "$LLAMA_CPP/convert_hf_to_gguf.py" "$WORK/student" \
-  --outfile "$WORK/jeden-goal-qwen3-0.6b-q8_0.gguf" --outtype q8_0
+cmake -S "$LLAMA_CPP" -B "$LLAMA_CPP/build" \
+  -DLLAMA_CURL=OFF -DGGML_CUDA=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build "$LLAMA_CPP/build" --target llama-quantize -j "$(nproc)"
+"$LLAMA_CPP/build/bin/llama-quantize" \
+  "$WORK/jeden-goal-qwen3-0.6b-f16.gguf" \
+  "$WORK/jeden-goal-qwen3-0.6b-q4_k_m.gguf" Q4_K_M
 
 "$VENV/bin/python" -m pip freeze > "$WORK/python-requirements.lock"
-cp "$WORK/jeden-goal-qwen3-0.6b-f16.gguf" \
-   "$WORK/jeden-goal-qwen3-0.6b-q8_0.gguf" \
+cp "$WORK/jeden-goal-qwen3-0.6b-q4_k_m.gguf" \
    "$WORK/metrics.json" "$WORK/predictions.jsonl" \
    "$WORK/python-requirements.lock" \
    "$ROOT/training/goal-model/goal-system-prompt.md" "$OUT/"
@@ -57,10 +60,10 @@ for path in sorted(out.iterdir()):
 manifest = {
     "product": "Jeden goal model",
     "format": "GGUF",
-    "default_artifact": "jeden-goal-qwen3-0.6b-q8_0.gguf",
+    "default_artifact": "jeden-goal-qwen3-0.6b-q4_k_m.gguf",
     "base_model": "Qwen/Qwen3-0.6B",
     "base_revision": "c1899de289a04d12100db370d81485cdf75e47ca",
-    "quality_gate": "final-judge.json",
+    "required_quality_gate": "final-judge.json",
     "files": files,
 }
 (out / "model-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
