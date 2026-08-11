@@ -52,8 +52,8 @@ pub const DEFAULT_TOKEN_ITEM: &str = "jeden-model-router";
 // through this client. When the subscription is exhausted, the free local route
 // is `wisent-backend/chat/primary`. Override either way with --brama-model.
 pub const DEFAULT_MODEL: &str = "codex/gpt-5.6-sol";
-/// Strongest operator-approved subscription route exposed by Brama.
-pub const BEST_MODEL: &str = "-best";
+/// Strongest active operator subscription route exposed by Brama.
+pub const BEST_MODEL: &str = "codex/gpt-5.6-sol";
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const STADO_TIMEOUT: Duration = Duration::from_secs(20);
