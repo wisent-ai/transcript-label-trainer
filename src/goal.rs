@@ -28,7 +28,7 @@ const AUDIT_VALUES: [&str; 4] = [
     "student-nonsensical",
     "both-nonsensical",
 ];
-const WORKERS: usize = 8;
+const WORKERS: usize = 24;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GoalRow {
