@@ -8,9 +8,9 @@ import random
 from pathlib import Path
 
 SEED = 17
-BASE_MODEL = os.environ.get("GOAL_STUDENT_MODEL", "Qwen/Qwen3-0.6B")
+BASE_MODEL = os.environ.get("GOAL_STUDENT_MODEL", "Qwen/Qwen3-1.7B")
 BASE_REVISION = os.environ.get(
-    "GOAL_STUDENT_REVISION", "c1899de289a04d12100db370d81485cdf75e47ca"
+    "GOAL_STUDENT_REVISION", "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
 )
 EPOCHS = float(os.environ.get("GOAL_STUDENT_EPOCHS", "3"))
 LEARNING_RATE = float(os.environ.get("GOAL_STUDENT_LR", "1e-5"))

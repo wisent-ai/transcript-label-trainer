@@ -18,8 +18,8 @@ python3 -m venv "$VENV"
   'accelerate>=1.6,<2' 'sentencepiece>=0.2,<1' 'safetensors>=0.5,<1'
 
 export GOAL_DATASET="$WORK/reviewed-goals.jsonl"
-export GOAL_STUDENT_MODEL="Qwen/Qwen3-0.6B"
-export GOAL_STUDENT_REVISION="c1899de289a04d12100db370d81485cdf75e47ca"
+export GOAL_STUDENT_MODEL="Qwen/Qwen3-1.7B"
+export GOAL_STUDENT_REVISION="70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
 "$VENV/bin/python" "$ROOT/training/goal-model/train.py"
 
 
@@ -28,16 +28,16 @@ if [ ! -d "$LLAMA_CPP/.git" ]; then
   git clone --depth 1 https://github.com/ggml-org/llama.cpp "$LLAMA_CPP"
 fi
 "$VENV/bin/python" "$LLAMA_CPP/convert_hf_to_gguf.py" "$WORK/student" \
-  --outfile "$WORK/jeden-goal-qwen3-0.6b-f16.gguf" --outtype f16
+  --outfile "$WORK/jeden-goal-qwen3-1.7b-f16.gguf" --outtype f16
 cmake -S "$LLAMA_CPP" -B "$LLAMA_CPP/build" \
   -DLLAMA_CURL=OFF -DGGML_CUDA=OFF -DCMAKE_BUILD_TYPE=Release
 cmake --build "$LLAMA_CPP/build" --target llama-quantize -j "$(nproc)"
 "$LLAMA_CPP/build/bin/llama-quantize" \
-  "$WORK/jeden-goal-qwen3-0.6b-f16.gguf" \
-  "$WORK/jeden-goal-qwen3-0.6b-q4_k_m.gguf" Q4_K_M
+  "$WORK/jeden-goal-qwen3-1.7b-f16.gguf" \
+  "$WORK/jeden-goal-qwen3-1.7b-q4_k_m.gguf" Q4_K_M
 
 "$VENV/bin/python" -m pip freeze > "$WORK/python-requirements.lock"
-cp "$WORK/jeden-goal-qwen3-0.6b-q4_k_m.gguf" \
+cp "$WORK/jeden-goal-qwen3-1.7b-q4_k_m.gguf" \
    "$WORK/metrics.json" "$WORK/predictions.jsonl" \
    "$WORK/python-requirements.lock" \
    "$ROOT/training/goal-model/goal-system-prompt.md" "$OUT/"
@@ -60,9 +60,9 @@ for path in sorted(out.iterdir()):
 manifest = {
     "product": "Jeden goal model",
     "format": "GGUF",
-    "default_artifact": "jeden-goal-qwen3-0.6b-q4_k_m.gguf",
-    "base_model": "Qwen/Qwen3-0.6B",
-    "base_revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+    "default_artifact": "jeden-goal-qwen3-1.7b-q4_k_m.gguf",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "base_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
     "required_quality_gate": "final-judge.json",
     "files": files,
 }
