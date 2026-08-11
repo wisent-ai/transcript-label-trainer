@@ -4,6 +4,7 @@ mod autolabel;
 mod brama;
 mod cli;
 mod evaluate;
+mod goal;
 #[cfg(feature = "hf")]
 mod hf;
 mod jobs;

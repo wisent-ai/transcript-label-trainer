@@ -226,3 +226,76 @@ pub fn execute(job_path: &str, job: &Job, compute_target: &str) -> Result<i32> {
         .map_err(|error| Error(format!("could not follow Stado job {id}: {error}")))?;
     Ok(status.code().unwrap_or(1))
 }
+
+pub struct GoalModelJob {
+    pub job_id: String,
+    pub output_uri: String,
+    pub status: i32,
+}
+
+/// Submit the reviewed goal dataset to one exclusive Stado GPU target.
+pub fn execute_goal_model(dataset_path: &Path, compute_target: &str) -> Result<GoalModelJob> {
+    let compute_target = compute_target.trim();
+    if compute_target.is_empty() {
+        return Err(Error("--compute-target cannot be empty".to_string()));
+    }
+    let dataset_bytes = std::fs::read(dataset_path)?;
+    let key = digest(&dataset_bytes);
+    let dataset_uri = format!("stado://datasets/transcript-label-trainer/goal-model/{key}.jsonl");
+    let output_uri = format!("stado://models/jeden/goal-qwen3-0.6b/{key}");
+    let stado = stado_bin();
+    upload(&stado, &dataset_uri, dataset_path, "application/x-ndjson")?;
+    let source_ref = repo_ref()?;
+    let command = format!(
+        "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/jeden-goal-{key}\"; \
+         mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
+         \"$stado\" storage get '{dataset_uri}' \"$work/reviewed-goals.jsonl\"; \
+         ./training/goal-model/run.sh \"$work/reviewed-goals.jsonl\""
+    );
+    let args = vec![
+        OsString::from("submit"),
+        OsString::from("--pinned-host"),
+        OsString::from(compute_target),
+        OsString::from("--priority"),
+        OsString::from("20"),
+        OsString::from("--exclusive"),
+        OsString::from("--repo"),
+        OsString::from(REPOSITORY),
+        OsString::from("--repo-ref"),
+        OsString::from(source_ref),
+        OsString::from("--repo-workdir"),
+        OsString::from(REPO_WORKDIR),
+        OsString::from("--repo-extras"),
+        OsString::new(),
+        OsString::from("--output-uri"),
+        OsString::from(&output_uri),
+        OsString::from("--secret-env"),
+        OsString::from(SIGNING_SECRET),
+        OsString::from("--secret-env"),
+        OsString::from(BEARER_SECRET),
+        OsString::from(command),
+    ];
+    let submitted = run(&stado, &args)?;
+    io::stdout().write_all(&submitted.stdout)?;
+    io::stderr().write_all(&submitted.stderr)?;
+    if !submitted.status.success() {
+        return Err(command_error(
+            &stado,
+            "submitting goal-model job",
+            &submitted,
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&submitted.stdout);
+    let id = job_id(&stdout)
+        .ok_or_else(|| Error("Stado accepted the goal-model job but reported no id".to_string()))?
+        .to_string();
+    let status = Command::new(&stado)
+        .args(["job", "watch", &id, "--follow"])
+        .status()
+        .map_err(|error| Error(format!("could not follow Stado job {id}: {error}")))?;
+    Ok(GoalModelJob {
+        job_id: id,
+        output_uri,
+        status: status.code().unwrap_or(1),
+    })
+}

@@ -357,6 +357,35 @@ scope:
   aspect: tasktype
 ```
 
+## Reviewed Jeden goal model
+
+`goal-model` owns the complete small-model pipeline that turns coding-agent
+messages into the 3–7 word task goals Jeden displays. It reads messages only
+from Transcript Lake's normalized `events` view; raw agent session files are
+not an input, so the lake's masking boundary remains intact.
+
+```sh
+transcript-label-trainer goal-model \
+  --compute-target ubuntu-server-rtx-pro-6000 \
+  --limit 1500
+```
+
+The command reviews existing Omp titles and Brama-teacher goals through the
+independent `-best` route before either enters the dataset. It then submits the
+reviewed JSONL and the exact trainer commit to the named Stado target as an
+exclusive full-finetune, using the pinned
+`Qwen/Qwen3-0.6B@c1899de289a04d12100db370d81485cdf75e47ca` base. Held-out Omp
+title pairs never enter training. Every student prediction over that holdout
+must receive `both-sensible` from a final `-best` audit or the job fails before
+export.
+
+A successful job publishes F16 and Q8_0 GGUF files, metrics, held-out
+predictions, the full final audit, the canonical prompt, dependency lock, and
+checksums under the content-addressed URI printed as `model artifact:
+stado://models/jeden/goal-qwen3-0.6b/<dataset-sha256>`. Stado also retains its
+canonical `status/<job-id>/output/` copy. All model calls use `brama.rs`; the
+pipeline has no direct provider credentials or second auth implementation.
+
 ## Placement: Stado decides where this runs
 
 Stado owns the canonical compute-target registry, and that registry — not this

@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 use serde_json::Value;
 
 use crate::util::{float_repr, json_text, json_truthy, Error, Result, TrainFailure};
-use crate::{autolabel, brama, evaluate, jobs, model, placement, stado};
+use crate::{autolabel, brama, evaluate, goal, jobs, model, placement, stado};
 
 /// `println!` that does not panic when the reader has closed the pipe.
 ///
@@ -127,6 +127,8 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "infer" => cmd_infer(&parsed),
         "autolabel" => cmd_autolabel(&parsed),
         "info" => cmd_info(&parsed),
+        "goal-model" => cmd_goal_model(&parsed),
+        "goal-audit" => cmd_goal_audit(&parsed),
         other => Err(Error(format!("unknown command '{other}'"))),
     }
 }
@@ -273,6 +275,43 @@ fn cmd_autolabel(args: &Parsed) -> Result<i32> {
     } else {
         Ok(0)
     }
+}
+
+fn cmd_goal_model(args: &Parsed) -> Result<i32> {
+    let root = placement::resolve_placement()
+        .training_root
+        .join("goal-model")
+        .join("datasets");
+    std::fs::create_dir_all(&root)?;
+    let stamp = crate::util::now_iso().replace([':', '-'], "");
+    let dataset = root.join(format!("reviewed-goals-{stamp}.jsonl"));
+    let summary = goal::build_dataset(
+        &dataset,
+        count(args.int("--limit"), 1_500),
+        args.text("--teacher-model"),
+    )?;
+    outln!("{}", dumps(&summary));
+    let job = stado::execute_goal_model(
+        &dataset,
+        args.text("--compute-target").unwrap_or_default(),
+    )?;
+    outln!("Stado job: {}", job.job_id);
+    outln!("model artifact: {}", job.output_uri);
+    Ok(job.status)
+}
+
+fn cmd_goal_audit(args: &Parsed) -> Result<i32> {
+    if !args.flag("--best") {
+        return Err(Error("goal-audit requires --best".to_string()));
+    }
+    let result = goal::audit_predictions(
+        std::path::Path::new(args.positional(0)),
+        std::path::Path::new(args.text("--output").unwrap_or_default()),
+    )?;
+    outln!("{}", dumps(&result));
+    Ok(i32::from(
+        result.get("passed").and_then(Value::as_bool) != Some(true),
+    ))
 }
 
 fn cmd_info(args: &Parsed) -> Result<i32> {
@@ -923,7 +962,74 @@ fn build_specs() -> Vec<Spec> {
         ],
     };
 
-    vec![train, run, evaluate, infer, info, autolabel]
+    let goal_model = Spec {
+        name: "goal-model",
+        help: "build and train the reviewed Jeden goal model on Stado".to_string(),
+        description: Some(
+            "Read only privacy-masked Transcript Lake events, use a Brama teacher \
+             to label task goals, require an independent Brama -best review, then \
+             train on the named exclusive Stado GPU target. The held-out gold \
+             predictions must all pass a second -best audit before GGUF artifacts \
+             are published."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            required(
+                "--compute-target",
+                "COMPUTE_TARGET",
+                Kind::Text,
+                "canonical Stado GPU target that trains and exports the model".to_string(),
+            ),
+            option(
+                "--limit",
+                "LIMIT",
+                Kind::Int,
+                "maximum teacher-labeled candidates (default: 1500)".to_string(),
+            ),
+            option(
+                "--teacher-model",
+                "MODEL_ID",
+                Kind::Text,
+                format!("Brama-routed goal teacher (default: {teacher})"),
+            ),
+        ],
+    };
+
+    let goal_audit = Spec {
+        name: "goal-audit",
+        help: "apply the final Brama audit to held-out goal predictions".to_string(),
+        description: None,
+        positionals: vec![Positional {
+            name: "predictions",
+            help: "JSONL containing message, reference goal, and student output".to_string(),
+        }],
+        opts: vec![
+            required(
+                "--output",
+                "PATH",
+                Kind::Text,
+                "write the complete independent audit record here".to_string(),
+            ),
+            option(
+                "--best",
+                "",
+                Kind::Flag,
+                "require Brama's strongest operator-approved subscription route".to_string(),
+            ),
+        ],
+    };
+
+    vec![
+        train,
+        run,
+        evaluate,
+        infer,
+        info,
+        autolabel,
+        goal_model,
+        goal_audit,
+    ]
 }
 
 #[derive(Default)]

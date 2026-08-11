@@ -250,6 +250,7 @@ fn skarbiec_read(item: &str, field: &str) -> String {
     }
 }
 
+#[derive(Clone)]
 pub struct BramaClient {
     pub url: String,
     pub agent_id: String,
