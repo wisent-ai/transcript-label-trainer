@@ -18,7 +18,7 @@ use crate::{lake, model};
 
 const REPOSITORY: &str = "https://github.com/wisent-ai/transcript-label-trainer.git";
 const REPO_WORKDIR: &str = "transcript-label-trainer";
-const SIGNING_SECRET: &str = "WISENT_APP_AGENT_AUTH_SECRET=agent:wisent-app#value";
+const SIGNING_SECRET: &str = "WISENT_APP_AGENT_AUTH_SECRET=jeden-agent-auth#agent_auth_secret";
 const BEARER_SECRET: &str = "BRAMA_TOKEN=jeden-model-router#token";
 
 struct TempDir(PathBuf);
