@@ -301,12 +301,20 @@ fn cmd_goal_model(args: &Parsed) -> Result<i32> {
 }
 
 fn cmd_goal_audit(args: &Parsed) -> Result<i32> {
-    if !args.flag("--best") {
-        return Err(Error("goal-audit requires --best".to_string()));
-    }
+    let review_model = match (args.flag("--best"), args.text("--brama-model")) {
+        (true, None) => crate::brama::BEST_MODEL,
+        (false, Some(model)) => model,
+        (true, Some(_)) => return Err(Error("use either --best or --brama-model".to_string())),
+        (false, None) => {
+            return Err(Error(
+                "goal-audit requires --best or --brama-model".to_string(),
+            ))
+        }
+    };
     let result = goal::audit_predictions(
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),
+        review_model,
     )?;
     outln!("{}", dumps(&result));
     Ok(i32::from(
@@ -1016,6 +1024,13 @@ fn build_specs() -> Vec<Spec> {
                 "",
                 Kind::Flag,
                 "require Brama's strongest operator-approved subscription route".to_string(),
+            ),
+            option(
+                "--brama-model",
+                "MODEL_ID",
+                Kind::Text,
+                "use an explicit Brama-routed model when the best subscription is unavailable"
+                    .to_string(),
             ),
         ],
     };

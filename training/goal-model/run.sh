@@ -22,8 +22,14 @@ export GOAL_STUDENT_MODEL="Qwen/Qwen3-0.6B"
 export GOAL_STUDENT_REVISION="c1899de289a04d12100db370d81485cdf75e47ca"
 "$VENV/bin/python" "$ROOT/training/goal-model/train.py"
 
-cargo run --manifest-path "$ROOT/Cargo.toml" --release -- \
-  goal-audit "$WORK/predictions.jsonl" --output "$WORK/final-judge.json" --best
+audit_model="${TLT_BRAMA_MODEL:-}"
+audit_args=(goal-audit "$WORK/predictions.jsonl" --output "$WORK/final-judge.json")
+if [ -n "$audit_model" ]; then
+  audit_args+=(--brama-model "$audit_model")
+else
+  audit_args+=(--best)
+fi
+cargo run --manifest-path "$ROOT/Cargo.toml" --release -- "${audit_args[@]}"
 
 LLAMA_CPP="$WORK/llama.cpp"
 if [ ! -d "$LLAMA_CPP/.git" ]; then

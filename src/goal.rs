@@ -389,7 +389,7 @@ fn audit_prompt(prediction: &Prediction) -> [Message; 2] {
     )
 }
 
-pub fn audit_predictions(input: &Path, output: &Path) -> Result<Value> {
+pub fn audit_predictions(input: &Path, output: &Path, review_model: &str) -> Result<Value> {
     let reader = BufReader::new(fs::File::open(input)?);
     let predictions: Vec<Prediction> = reader
         .lines()
@@ -405,7 +405,7 @@ pub fn audit_predictions(input: &Path, output: &Path) -> Result<Value> {
     let mut records = Vec::with_capacity(predictions.len());
     let mut failures = Vec::new();
     for (index, prediction) in predictions.iter().enumerate() {
-        match chat_retry(&client, BEST_MODEL, &audit_prompt(prediction)) {
+        match chat_retry(&client, review_model, &audit_prompt(prediction)) {
             Ok(answer) => {
                 let verdict = crate::brama::parse_answer(&answer, &AUDIT_VALUES)
                     .map(|(value, _)| value)
@@ -445,7 +445,7 @@ pub fn audit_predictions(input: &Path, output: &Path) -> Result<Value> {
     }
     let result = serde_json::json!({
         "created_at": now_iso(),
-        "review_model": BEST_MODEL,
+        "review_model": review_model,
         "passed": passed,
         "counts": counts,
         "records": records,
