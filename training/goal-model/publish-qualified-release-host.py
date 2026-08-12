@@ -29,6 +29,7 @@ chunk_path.write_text(json.dumps(chunk_manifest, indent=2) + "\n", encoding="utf
 stado = "/root/.stado/bin/stado"
 environment = os.environ.copy()
 environment["STADO_API_TOKEN_FILE"] = "/root/.stado/jeden-desktop-release-publisher-token"
+environment.pop("STADO_API_TOKEN", None)
 for name in ("model-manifest.json", "final-judge.json", "metrics.json", "predictions.jsonl", "goal-system-prompt.md", "python-requirements.lock"):
     subprocess.run([stado, "storage", "put", f"{base}/{name}", str(SOURCE / name)], check=True, env=environment)
 subprocess.run([stado, "storage", "put", f"{base}/large-output/manifest.json", str(chunk_path)], check=True, env=environment)
