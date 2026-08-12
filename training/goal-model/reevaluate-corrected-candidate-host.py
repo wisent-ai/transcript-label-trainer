@@ -11,7 +11,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 WORK = Path("/mnt/wd16tb/stado/jobs/jeden-goal-prompt-v5")
 PROMPT = Path.home().joinpath(".stado/files/goal-system-prompt.md").read_text().strip()
 SOURCE = WORK / "predictions.jsonl"
-OUTPUT = WORK / "predictions-corrected-v2.jsonl"
+OUTPUT = WORK / "predictions-corrected-v3.jsonl"
 POLISH = {
     "aplikacje", "aplikacji", "czemu", "czy", "dlaczego", "gdzie", "jakie", "ktore",
     "ktory", "mamy", "moj", "nasz", "naszego", "naszych", "przed", "prosze", "sie",
@@ -96,7 +96,7 @@ with OUTPUT.open("w", encoding="utf-8") as destination:
             )
             first = words(answer.removeprefix("<goal>"))[0] if words(answer.removeprefix("<goal>")) else ""
             action = ACTION_PREFIX.get(first, "Sprawdź") if polish_issue else ""
-            prefix = f"<goal>{action}" if action else ""
+            prefix = f"<goal>{action} " if action else ""
             answer = generate(row["message"], correction, prefix)
         row["student"] = answer
         destination.write(json.dumps(row, ensure_ascii=False) + "\n")
