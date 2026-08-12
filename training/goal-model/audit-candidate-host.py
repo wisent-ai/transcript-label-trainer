@@ -6,8 +6,11 @@ import os
 from pathlib import Path
 import urllib.request
 
-WORK = Path("/mnt/wd16tb/stado/jobs/jeden-goal-568ebd79663775c9")
-BINARY = WORK / "cargo-target/release/transcript-label-trainer"
+WORK = Path(os.environ.get(
+    "GOAL_AUDIT_WORK",
+    "/mnt/wd16tb/stado/jobs/jeden-goal-prompt-v2",
+))
+BINARY = Path("/mnt/wd16tb/stado/jobs/jeden-goal-568ebd79663775c9/cargo-target/release/transcript-label-trainer")
 GRANT = Path("/root/.stado/files/stado-agent-grant.env")
 values = {}
 for raw in GRANT.read_text().splitlines():
@@ -47,9 +50,9 @@ os.execve(
     [
         str(BINARY),
         "goal-audit",
-        str(WORK / "predictions-prompt-v2.jsonl"),
+        str(WORK / "predictions.jsonl"),
         "--output",
-        str(WORK / "final-judge-prompt-v2.json"),
+        str(WORK / "final-judge.json"),
         "--best",
     ],
     environment,
