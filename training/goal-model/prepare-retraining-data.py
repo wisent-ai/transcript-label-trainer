@@ -37,6 +37,11 @@ examples = [
     ("czy możesz znaleźć rozmowę o uploadzie z naszego RTX boxa?", "Znajdź rozmowę o uploadzie RTX boxa"),
     ("znajdź transkrypt o uploadzie aktywacji z RTX boxa", "Znajdź transkrypt o uploadzie RTX boxa"),
     ("odszukaj transkrypt, gdzie omawialiśmy upload z RTX boxa", "Odszukaj transkrypt o uploadzie RTX boxa"),
+    ("czy Brama i Skarbiec mają aplikacje desktopowe?", "Sprawdź aplikacje desktopowe Brama i Skarbiec"),
+    ("sprawdź, czy Brama oraz Skarbiec mają aplikacje", "Sprawdź aplikacje Brama i Skarbiec"),
+    ("które aplikacje w repozytoriach trzeba aktualizować?", "Policz aplikacje wymagające aktualizacji"),
+    ("mamy zainstalowane aplikacje jak Stado; ile wymaga aktualizacji?", "Policz aplikacje wymagające aktualizacji"),
+    ("sprawdź repozytoria i policz aplikacje, które trzeba update'ować", "Policz aplikacje wymagające aktualizacji"),
 ]
 
 rows = []
