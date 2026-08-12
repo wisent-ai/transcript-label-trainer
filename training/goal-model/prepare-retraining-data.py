@@ -34,7 +34,7 @@ examples = [
 ]
 
 rows = []
-for raw in source.read_text(encoding="utf-8").splitlines():
+for raw in source.read_text(encoding="utf-8").split("\n"):
     if not raw.strip():
         continue
     row = json.loads(raw)
