@@ -22,6 +22,28 @@ do
   fi
 done
 
+if [ -s "$work/final-judge.json" ] && [ -s "$work/predictions.jsonl" ]; then
+  printf '%s\n' '=== rejected predictions ==='
+  /usr/bin/python3 - "$work/final-judge.json" "$work/predictions.jsonl" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    judge = json.load(source)
+with open(sys.argv[2], encoding="utf-8") as source:
+    predictions = {
+        record["session_id"]: record
+        for line in source
+        if (record := json.loads(line))
+    }
+for audit in judge.get("records", []):
+    if audit.get("verdict") == "both-sensible":
+        continue
+    record = predictions.get(audit.get("session_id"), {})
+    print(json.dumps({"verdict": audit.get("verdict"), **record}, sort_keys=True))
+PY
+fi
+
 printf '%s\n' '=== staged outputs ==='
 found=false
 for output in /tmp/wc-*/output
