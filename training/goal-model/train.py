@@ -8,11 +8,11 @@ import random
 from pathlib import Path
 
 SEED = 17
-BASE_MODEL = os.environ.get("GOAL_STUDENT_MODEL", "Qwen/Qwen3-1.7B")
+BASE_MODEL = os.environ.get("GOAL_STUDENT_MODEL", "Qwen/Qwen3-4B")
 BASE_REVISION = os.environ.get(
-    "GOAL_STUDENT_REVISION", "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
+    "GOAL_STUDENT_REVISION", "1cfa9a7208912126459214e8b04321603b3df60c"
 )
-EPOCHS = float(os.environ.get("GOAL_STUDENT_EPOCHS", "3"))
+EPOCHS = float(os.environ.get("GOAL_STUDENT_EPOCHS", "4"))
 LEARNING_RATE = float(os.environ.get("GOAL_STUDENT_LR", "1e-5"))
 MAX_LENGTH = int(os.environ.get("GOAL_STUDENT_MAX_LENGTH", "2048"))
 HERE = Path(__file__).resolve().parent
@@ -68,7 +68,7 @@ def main():
             add_generation_prompt=True,
             enable_thinking=False,
         )
-        answer = f"<goal>{row['goal']}</goal>"
+        answer = f"<goal>{row['goal']}</goal>" if row.get("goal") else "<goal/>"
         full = prompt + answer + tokenizer.eos_token
         prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
         encoded = tokenizer(full, add_special_tokens=False, truncation=True, max_length=MAX_LENGTH)
@@ -103,9 +103,9 @@ def main():
         output_dir="student-checkpoints",
         num_train_epochs=EPOCHS,
         learning_rate=LEARNING_RATE,
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
-        gradient_accumulation_steps=8,
+        per_device_train_batch_size=2,
+        per_device_eval_batch_size=2,
+        gradient_accumulation_steps=16,
         gradient_checkpointing=True,
         lr_scheduler_type="cosine",
         warmup_ratio=0.03,
@@ -148,12 +148,12 @@ def main():
                 pad_token_id=tokenizer.eos_token_id,
             )
         student = tokenizer.decode(generated[0][encoded["input_ids"].shape[1]:], skip_special_tokens=True).strip()
-        expected = f"<goal>{row['goal']}</goal>"
+        expected = f"<goal>{row['goal']}</goal>" if row.get("goal") else "<goal/>"
         exact += int(student == expected)
         predictions.append({
             "session_id": row["session_id"],
             "message": row["message"],
-            "goal": row["goal"],
+            "goal": row.get("goal") or "",
             "student": student,
         })
         if index % 25 == 0 or index == len(gold):

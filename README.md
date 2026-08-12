@@ -377,19 +377,19 @@ transcript-label-trainer goal-model \
   --limit 1500
 ```
 
-The command reviews existing Omp titles and Brama-teacher goals through the
-independent `-best` route before either enters the dataset. It then submits the
-reviewed JSONL and the exact trainer commit to the named Stado target as an
-exclusive full-finetune, using the pinned
-`Qwen/Qwen3-0.6B@c1899de289a04d12100db370d81485cdf75e47ca` base. Held-out Omp
-title pairs never enter training. Every student prediction over that holdout
-must receive `both-sensible` from a final `-best` audit or the job fails before
-export.
+The command generates task and no-task labels with a Brama teacher, then requires
+two independent `-best` review passes before any row enters the dataset. It
+holds out reviewed OMP titles plus 32 teacher task rows and 32 teacher no-task
+rows, submits the remaining JSONL and exact trainer commit to the named Stado
+target, and performs an exclusive full fine-tune from pinned
+`Qwen/Qwen3-4B@1cfa9a7208912126459214e8b04321603b3df60c`. Held-out rows never
+enter training. Every student prediction over that holdout must receive
+`both-sensible` from a final `-best` audit or the model remains unqualified.
 
-A successful job publishes F16 and Q8_0 GGUF files, metrics, held-out
-predictions, the full final audit, the canonical prompt, dependency lock, and
-checksums under the content-addressed URI printed as `model artifact:
-stado://probierz/artifacts/models/jeden/goal-qwen3-0.6b/<dataset-sha256>`.
+A qualified job publishes the Q4_K_M GGUF, metrics, held-out predictions, the
+full final audit, canonical prompt, dependency lock, and checksums under the
+content-addressed URI printed as `model artifact:
+stado://probierz/artifacts/models/jeden/goal-qwen3-4b/<dataset-sha256>`.
 Stado also retains its canonical `status/<job-id>/output/` copy. All model calls
 use `brama.rs`; the pipeline has no direct provider credentials or second auth
 implementation.

@@ -244,7 +244,7 @@ pub fn execute_goal_model(dataset_path: &Path, compute_target: &str) -> Result<G
     let dataset_uri =
         format!("stado://probierz/inputs/transcript-label-trainer/goal-model/{key}.jsonl");
     let output_uri =
-        format!("stado://probierz/artifacts/models/jeden/goal-qwen3-0.6b/{key}");
+        format!("stado://probierz/artifacts/models/jeden/goal-qwen3-4b/{key}");
     let stado = stado_bin();
     upload(&stado, &dataset_uri, dataset_path, "application/x-ndjson")?;
     let source_ref = repo_ref()?;
