@@ -31,9 +31,15 @@ environment = os.environ.copy()
 environment["STADO_API_TOKEN_FILE"] = "/root/.stado/jeden-desktop-release-publisher-token"
 environment.pop("STADO_API_TOKEN", None)
 environment["STADO_API_URL"] = "https://charless-mac-mini.tail6443b3.ts.net:8443"
+def publish(name, source):
+    uri = f"{base}/{name}"
+    probe = subprocess.run([stado, "storage", "get", uri, "/tmp/stado-release-existing"], env=environment)
+    if probe.returncode == 0:
+        return
+    subprocess.run([stado, "storage", "put", uri, str(source)], check=True, env=environment)
 for name in ("model-manifest.json", "final-judge.json", "metrics.json", "predictions.jsonl", "goal-system-prompt.md", "python-requirements.lock"):
-    subprocess.run([stado, "storage", "put", f"{base}/{name}", str(SOURCE / name)], check=True, env=environment)
-subprocess.run([stado, "storage", "put", f"{base}/large-output/manifest.json", str(chunk_path)], check=True, env=environment)
+    publish(name, SOURCE / name)
+publish("large-output/manifest.json", chunk_path)
 for name in parts:
-    subprocess.run([stado, "storage", "put", f"{base}/large-output/{name}", str(SOURCE / name)], check=True, env=environment)
+    publish(f"large-output/{name}", SOURCE / name)
 print(json.dumps({"base": base, "digest": digest, "parts": len(parts)}, sort_keys=True))
