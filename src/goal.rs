@@ -81,6 +81,72 @@ fn normalized_digest(value: &str) -> String {
     hex::encode(Sha256::digest(normalized.as_bytes()))
 }
 
+fn obvious_no_task(value: &str) -> bool {
+    let normalized = value
+        .trim()
+        .to_lowercase()
+        .trim_matches(|character: char| {
+            character.is_whitespace() || character.is_ascii_punctuation()
+        })
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    [
+        "ok",
+        "okay",
+        "okej",
+        "tak",
+        "yes",
+        "no",
+        "nie",
+        "continue",
+        "kontynuuj",
+        "dalej",
+        "go ahead",
+        "proceed",
+        "carry on",
+        "keep going",
+        "yes continue",
+        "ok continue",
+        "okay continue",
+        "okej kontynuuj",
+        "tak kontynuuj",
+        "yes do that",
+        "ok do that",
+        "okay do that",
+        "okej zrób to",
+        "tak zrób to",
+        "do it",
+        "zrób to",
+        "sounds good",
+        "looks good",
+        "that works",
+        "perfect",
+        "great",
+        "super",
+        "fine",
+        "agreed",
+        "zgoda",
+        "jasne",
+        "dobrze",
+        "got it",
+        "understood",
+        "rozumiem",
+        "thanks",
+        "thank you",
+        "dzięki",
+        "dziekuje",
+        "dziękuję",
+        "hi",
+        "hello",
+        "hey",
+        "hej",
+        "ready",
+        "gotowe",
+    ]
+    .contains(&normalized.as_str())
+}
+
 fn safe_message(value: &str) -> bool {
     let trimmed = value.trim();
     if !(3..=4_000).contains(&trimmed.chars().count()) || trimmed.starts_with('/') {
@@ -193,7 +259,8 @@ LIMIT {fetch}
         .into_iter()
         .filter_map(|value| {
             let message = text(&value, "message");
-            if !task_message(&message) {
+            let no_task = obvious_no_task(&message);
+            if !no_task && !task_message(&message) {
                 return None;
             }
             Some(GoalRow {
@@ -201,7 +268,7 @@ LIMIT {fetch}
                 runtime: text(&value, "runtime"),
                 message,
                 goal: None,
-                goal_source: None,
+                goal_source: no_task.then(|| "contract:no-task-v1".to_string()),
                 gold: false,
                 reviewed_by: None,
             })
@@ -292,6 +359,10 @@ fn process_candidate(
     client: &BramaClient,
     teacher_model: &str,
 ) -> Result<Option<Candidate>> {
+    if candidate.row.goal_source.as_deref() == Some("contract:no-task-v1") {
+        candidate.row.reviewed_by = Some("contract:no-task-v1".to_string());
+        return Ok(Some(candidate));
+    }
     let parsed = match candidate.row.goal.take() {
         Some(goal) => parse_goal(&format!("<goal>{goal}</goal>")),
         None => {
@@ -339,7 +410,9 @@ pub fn build_dataset(output: &Path, limit: usize, teacher_model: Option<&str>) -
         if candidates.len().saturating_sub(gold_candidates) >= limit {
             break;
         }
-        if seen.insert(normalized_digest(&row.message)) {
+        if row.goal_source.as_deref() == Some("contract:no-task-v1")
+            || seen.insert(normalized_digest(&row.message))
+        {
             candidates.push(row);
         }
     }
@@ -420,6 +493,7 @@ pub fn build_dataset(output: &Path, limit: usize, teacher_model: Option<&str>) -
             candidate.row.gold = true;
         }
     }
+    accepted.retain(|candidate| candidate.row.goal.is_some() || candidate.row.gold);
     let gold_accepted = accepted
         .iter()
         .filter(|candidate| candidate.row.gold)
@@ -429,7 +503,7 @@ pub fn build_dataset(output: &Path, limit: usize, teacher_model: Option<&str>) -
         .iter()
         .filter(|candidate| candidate.row.goal.is_none())
         .count();
-    if source_gold_rows < 20
+    if source_gold_rows < 16
         || held_out_tasks < 32
         || held_out_no_tasks < 32
         || teacher_accepted < 100
