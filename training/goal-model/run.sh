@@ -50,7 +50,7 @@ fi
 
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORK/cargo-target}"
 set +e
-cargo run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
+"$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
   goal-audit "$WORK/predictions.jsonl" \
   --output "$WORK/final-judge.json" \
   --best
