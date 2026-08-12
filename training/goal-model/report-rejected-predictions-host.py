@@ -12,9 +12,14 @@ roots = sorted(
 if not roots:
     raise SystemExit("no Jeden goal-model work directory found")
 work = roots[0]
-with work.joinpath("final-judge.json").open(encoding="utf-8") as source:
+judge_path = work / "final-judge-prompt-v2.json"
+predictions_path = work / "predictions-prompt-v2.jsonl"
+if not judge_path.is_file():
+    judge_path = work / "final-judge.json"
+    predictions_path = work / "predictions.jsonl"
+with judge_path.open(encoding="utf-8") as source:
     judge = json.load(source)
-with work.joinpath("predictions.jsonl").open(encoding="utf-8") as source:
+with predictions_path.open(encoding="utf-8") as source:
     predictions = {
         record["session_id"]: record
         for line in source
