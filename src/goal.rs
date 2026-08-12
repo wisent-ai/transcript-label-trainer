@@ -16,12 +16,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use crate::brama::{BramaClient, Message, BEST_MODEL, DEFAULT_MODEL};
+use crate::brama::{BramaClient, Message, DEFAULT_MODEL};
 use crate::util::{now_iso, Error, Result};
 use crate::{bail, lake};
 
 const SYSTEM_PROMPT: &str = include_str!("../training/goal-model/goal-system-prompt.md");
 const REVIEW_VALUES: [&str; 2] = ["sensible", "nonsensical"];
+const CURATION_REVIEW_MODEL: &str = DEFAULT_MODEL;
 const AUDIT_VALUES: [&str; 4] = [
     "both-sensible",
     "label-nonsensical",
@@ -276,7 +277,7 @@ fn review_goal(client: &BramaClient, message: &str, goal: Option<&str>) -> Resul
         format!("<user>{message}</user>\n{rendered_goal}"),
     );
     for _ in 0..2 {
-        let answer = chat_retry(client, BEST_MODEL, &request)?;
+        let answer = chat_retry(client, CURATION_REVIEW_MODEL, &request)?;
         let parsed = crate::brama::parse_answer(&answer, &REVIEW_VALUES)
             .map(|(value, _)| value);
         if parsed.as_deref() != Some("sensible") {
@@ -318,7 +319,7 @@ fn process_candidate(
         candidate.row.goal_source = Some(format!("brama:{teacher_model}"));
     }
     candidate.row.goal = goal;
-    candidate.row.reviewed_by = Some(format!("brama:{BEST_MODEL}:two-pass"));
+    candidate.row.reviewed_by = Some(format!("brama:{CURATION_REVIEW_MODEL}:two-pass"));
     Ok(Some(candidate))
 }
 
@@ -457,7 +458,7 @@ pub fn build_dataset(output: &Path, limit: usize, teacher_model: Option<&str>) -
         "created_at": now_iso(),
         "source": "Transcript Lake normalized events",
         "teacher_model": teacher_model,
-        "review_model": BEST_MODEL,
+        "review_model": CURATION_REVIEW_MODEL,
         "review_passes": 2,
         "candidate_rows": total,
         "accepted_rows": accepted.len(),

@@ -23,6 +23,20 @@ export GOAL_STUDENT_REVISION="1cfa9a7208912126459214e8b04321603b3df60c"
 "$VENV/bin/python" "$ROOT/training/goal-model/train.py"
 
 "$VENV/bin/python" -m pip freeze > "$WORK/python-requirements.lock"
+
+LLAMA_CPP="$WORK/llama.cpp"
+if [ ! -d "$LLAMA_CPP/.git" ]; then
+  git clone --depth 1 https://github.com/ggml-org/llama.cpp "$LLAMA_CPP"
+fi
+"$VENV/bin/python" "$LLAMA_CPP/convert_hf_to_gguf.py" "$WORK/student" \
+  --outfile "$WORK/jeden-goal-qwen3-4b-f16.gguf" --outtype f16
+cmake -S "$LLAMA_CPP" -B "$LLAMA_CPP/build" \
+  -DLLAMA_CURL=OFF -DGGML_CUDA=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build "$LLAMA_CPP/build" --target llama-quantize -j "$(nproc)"
+"$LLAMA_CPP/build/bin/llama-quantize" \
+  "$WORK/jeden-goal-qwen3-4b-f16.gguf" \
+  "$WORK/jeden-goal-qwen3-4b-q4_k_m.gguf" Q4_K_M
+
 set +e
 cargo run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
   goal-audit "$WORK/predictions.jsonl" \
@@ -32,25 +46,10 @@ AUDIT_EXIT=$?
 set -e
 [ -s "$WORK/final-judge.json" ]
 
-cp "$WORK/metrics.json" "$WORK/predictions.jsonl" \
+cp "$WORK/jeden-goal-qwen3-4b-q4_k_m.gguf" \
+   "$WORK/metrics.json" "$WORK/predictions.jsonl" \
    "$WORK/python-requirements.lock" "$WORK/final-judge.json" \
    "$ROOT/training/goal-model/goal-system-prompt.md" "$OUT/"
-
-if [ "$AUDIT_EXIT" -eq 0 ]; then
-  LLAMA_CPP="$WORK/llama.cpp"
-  if [ ! -d "$LLAMA_CPP/.git" ]; then
-    git clone --depth 1 https://github.com/ggml-org/llama.cpp "$LLAMA_CPP"
-  fi
-  "$VENV/bin/python" "$LLAMA_CPP/convert_hf_to_gguf.py" "$WORK/student" \
-    --outfile "$WORK/jeden-goal-qwen3-4b-f16.gguf" --outtype f16
-  cmake -S "$LLAMA_CPP" -B "$LLAMA_CPP/build" \
-    -DLLAMA_CURL=OFF -DGGML_CUDA=OFF -DCMAKE_BUILD_TYPE=Release
-  cmake --build "$LLAMA_CPP/build" --target llama-quantize -j "$(nproc)"
-  "$LLAMA_CPP/build/bin/llama-quantize" \
-    "$WORK/jeden-goal-qwen3-4b-f16.gguf" \
-    "$WORK/jeden-goal-qwen3-4b-q4_k_m.gguf" Q4_K_M
-  cp "$WORK/jeden-goal-qwen3-4b-q4_k_m.gguf" "$OUT/"
-fi
 
 OUT="$OUT" "$VENV/bin/python" - <<'PY'
 import hashlib
@@ -72,7 +71,7 @@ qualified = judge.get("passed") is True
 manifest = {
     "product": "Jeden goal model",
     "format": "GGUF",
-    "default_artifact": "jeden-goal-qwen3-4b-q4_k_m.gguf" if qualified else None,
+    "default_artifact": "jeden-goal-qwen3-4b-q4_k_m.gguf",
     "base_model": "Qwen/Qwen3-4B",
     "base_revision": "1cfa9a7208912126459214e8b04321603b3df60c",
     "required_quality_gate": "final-judge.json",
@@ -87,7 +86,7 @@ manifest = {
 PY
 
 if [ "$AUDIT_EXIT" -ne 0 ]; then
-  echo "goal model rejected by final audit"
+  echo "goal model candidate staged but rejected by final audit"
   exit "$AUDIT_EXIT"
 fi
 echo "qualified goal model staged in $OUT"

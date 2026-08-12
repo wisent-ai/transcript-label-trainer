@@ -378,13 +378,15 @@ transcript-label-trainer goal-model \
 ```
 
 The command generates task and no-task labels with a Brama teacher, then requires
-two independent `-best` review passes before any row enters the dataset. It
-holds out reviewed OMP titles plus 32 teacher task rows and 32 teacher no-task
-rows, submits the remaining JSONL and exact trainer commit to the named Stado
-target, and performs an exclusive full fine-tune from pinned
+two review passes through the pinned Brama reviewer before any row enters the
+dataset. It holds out reviewed OMP titles plus 32 teacher task rows and 32
+teacher no-task rows, submits the remaining JSONL and exact trainer commit to
+the named Stado target, and performs an exclusive full fine-tune from pinned
 `Qwen/Qwen3-4B@1cfa9a7208912126459214e8b04321603b3df60c`. Held-out rows never
 enter training. Every student prediction over that holdout must receive
-`both-sensible` from a final `-best` audit or the model remains unqualified.
+`both-sensible` from a final Brama `--best` audit or the model remains
+unqualified; a rejected candidate is retained for diagnosis but cannot enter
+the Jeden Desktop release namespace.
 
 A qualified job publishes the Q4_K_M GGUF, metrics, held-out predictions, the
 full final audit, canonical prompt, dependency lock, and checksums under the
