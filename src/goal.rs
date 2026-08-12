@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -565,22 +565,108 @@ fn audit_prompt(prediction: &Prediction) -> [Message; 2] {
     )
 }
 
+fn audit_result(
+    review_model: &str,
+    input_sha256: &str,
+    total: usize,
+    records: &[Value],
+    failures: &[Value],
+    complete: bool,
+) -> Value {
+    let passed = complete
+        && records.len() == total
+        && failures.is_empty()
+        && records
+            .iter()
+            .all(|record| text(record, "verdict") == "both-sensible");
+    let mut counts = Map::new();
+    for value in AUDIT_VALUES
+        .into_iter()
+        .chain(std::iter::once("unparseable"))
+    {
+        let count = records
+            .iter()
+            .filter(|record| text(record, "verdict") == value)
+            .count();
+        counts.insert(value.to_string(), Value::Number(count.into()));
+    }
+    serde_json::json!({
+        "created_at": now_iso(),
+        "review_model": review_model,
+        "input_sha256": input_sha256,
+        "complete": complete,
+        "audited_rows": records.len() + failures.len(),
+        "total_rows": total,
+        "passed": passed,
+        "counts": counts,
+        "records": records,
+        "failures": failures,
+    })
+}
+
+fn write_audit_result(output: &Path, result: &Value) -> Result<()> {
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let temporary = output.with_extension("tmp");
+    fs::write(&temporary, serde_json::to_string_pretty(result)? + "\n")?;
+    fs::rename(temporary, output)?;
+    Ok(())
+}
+
 pub fn audit_predictions(input: &Path, output: &Path, review_model: &str) -> Result<Value> {
-    let reader = BufReader::new(fs::File::open(input)?);
-    let predictions: Vec<Prediction> = reader
+    let source = fs::read_to_string(input)?;
+    let input_sha256 = hex::encode(Sha256::digest(source.as_bytes()));
+    let predictions: Vec<Prediction> = source
         .lines()
-        .filter_map(|line| match line {
-            Ok(line) if !line.trim().is_empty() => Some(serde_json::from_str(&line)),
-            _ => None,
-        })
+        .filter(|line| !line.trim().is_empty())
+        .map(serde_json::from_str)
         .collect::<std::result::Result<_, _>>()?;
     if predictions.is_empty() {
         bail!("goal audit input contains no predictions")
     }
+
+    let existing = fs::read_to_string(output)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .filter(|result| {
+            text(result, "review_model") == review_model
+                && text(result, "input_sha256") == input_sha256
+        });
+    let mut records = existing
+        .as_ref()
+        .and_then(|result| result.get("records"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let prediction_ids: HashSet<&str> = predictions
+        .iter()
+        .map(|prediction| prediction.session_id.as_str())
+        .collect();
+    records.retain(|record| {
+        prediction_ids.contains(text(record, "session_id").as_str())
+            && AUDIT_VALUES
+                .iter()
+                .chain(std::iter::once(&"unparseable"))
+                .any(|value| *value == text(record, "verdict"))
+    });
+    let mut completed: HashSet<String> = records
+        .iter()
+        .map(|record| text(record, "session_id"))
+        .collect();
+    records.retain(|record| completed.remove(&text(record, "session_id")));
+    let completed: HashSet<String> = records
+        .iter()
+        .map(|record| text(record, "session_id"))
+        .collect();
+
     let client = BramaClient::from_env()?;
-    let mut records = Vec::with_capacity(predictions.len());
     let mut failures = Vec::new();
-    for (index, prediction) in predictions.iter().enumerate() {
+    let mut audited = records.len();
+    for prediction in predictions
+        .iter()
+        .filter(|prediction| !completed.contains(&prediction.session_id))
+    {
         match chat_retry(&client, review_model, &audit_prompt(prediction)) {
             Ok(answer) => {
                 let verdict = crate::brama::parse_answer(&answer, &AUDIT_VALUES)
@@ -596,40 +682,33 @@ pub fn audit_predictions(input: &Path, output: &Path, review_model: &str) -> Res
                 "error": error.to_string(),
             })),
         }
-        if (index + 1) % 25 == 0 || index + 1 == predictions.len() {
+        audited += 1;
+        let complete = audited == predictions.len();
+        let result = audit_result(
+            review_model,
+            &input_sha256,
+            predictions.len(),
+            &records,
+            &failures,
+            complete,
+        );
+        write_audit_result(output, &result)?;
+        if audited % 25 == 0 || complete {
             eprintln!(
                 "audited {}/{} held-out predictions",
-                index + 1,
+                audited,
                 predictions.len()
             );
         }
     }
-    let passed = failures.is_empty()
-        && records
-            .iter()
-            .all(|record| text(record, "verdict") == "both-sensible");
-    let mut counts = Map::new();
-    for value in AUDIT_VALUES
-        .into_iter()
-        .chain(std::iter::once("unparseable"))
-    {
-        let count = records
-            .iter()
-            .filter(|record| text(record, "verdict") == value)
-            .count();
-        counts.insert(value.to_string(), Value::Number(count.into()));
-    }
-    let result = serde_json::json!({
-        "created_at": now_iso(),
-        "review_model": review_model,
-        "passed": passed,
-        "counts": counts,
-        "records": records,
-        "failures": failures,
-    });
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(output, serde_json::to_string_pretty(&result)? + "\n")?;
+    let result = audit_result(
+        review_model,
+        &input_sha256,
+        predictions.len(),
+        &records,
+        &failures,
+        audited == predictions.len(),
+    );
+    write_audit_result(output, &result)?;
     Ok(result)
 }
