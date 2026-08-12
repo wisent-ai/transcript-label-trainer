@@ -40,6 +40,7 @@ environment["BRAMA_TOKEN"] = read_secret("jeden-model-router", "token")
 environment["WISENT_APP_AGENT_AUTH_SECRET"] = read_secret(
     "jeden-agent-auth", "agent_auth_secret"
 )
+environment["BRAMA_URL"] = "http://127.0.0.1:17601"
 environment["TLT_STADO_BIN"] = "/root/.stado/bin/stado"
 os.execve(
     BINARY,
