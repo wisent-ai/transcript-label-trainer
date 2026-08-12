@@ -14,10 +14,15 @@ OUTPUT = WORK / "predictions-prompt-v2.jsonl"
 MODEL = WORK / "student"
 
 rows = [json.loads(line) for line in SOURCE.read_text().splitlines() if line.strip()]
+completed = []
+if OUTPUT.is_file():
+    completed = [json.loads(line) for line in OUTPUT.read_text().splitlines() if line.strip()]
+if len(completed) > len(rows):
+    raise SystemExit("prediction output has more rows than its source")
 tokenizer = AutoTokenizer.from_pretrained(MODEL)
 model = AutoModelForCausalLM.from_pretrained(MODEL, torch_dtype=torch.bfloat16).to("cuda").eval()
-with OUTPUT.open("w", encoding="utf-8") as destination:
-    for index, row in enumerate(rows, 1):
+with OUTPUT.open("a", encoding="utf-8") as destination:
+    for index, row in enumerate(rows[len(completed):], len(completed) + 1):
         messages = [
             {"role": "system", "content": PROMPT},
             {"role": "user", "content": f"<user>{row['message']}</user>"},
