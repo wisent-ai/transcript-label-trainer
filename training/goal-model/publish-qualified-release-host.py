@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Publish a qualified staged goal model under its immutable digest coordinate."""
 
-import hashlib
 import json
 import os
 import subprocess
@@ -26,8 +25,7 @@ chunk_manifest = {
 }
 chunk_path = SOURCE / "large-output-manifest.json"
 chunk_path.write_text(json.dumps(chunk_manifest, indent=2) + "\n", encoding="utf-8")
-transport_digest = hashlib.sha256(chunk_path.read_bytes()).hexdigest()
-base = f"stado://releases/jeden-desktop/models/goal-qwen3-4b/{digest}/transports/{transport_digest}"
+base = f"stado://releases/jeden-desktop/models/goal-qwen3-4b/{digest}"
 stado = "/root/.stado/bin/stado"
 environment = os.environ.copy()
 environment["STADO_API_TOKEN_FILE"] = "/root/.stado/jeden-desktop-release-publisher-token"
@@ -35,13 +33,14 @@ environment.pop("STADO_API_TOKEN", None)
 environment["STADO_API_URL"] = "https://charless-mac-mini.tail6443b3.ts.net:8443"
 def publish(name, source):
     uri = f"{base}/{name}"
-    probe = subprocess.run([stado, "storage", "get", uri, "/tmp/stado-release-existing"], env=environment)
+    probe = subprocess.run([stado, "storage", "stat", uri], env=environment)
     if probe.returncode == 0:
         return
     subprocess.run([stado, "storage", "put", uri, str(source)], check=True, env=environment)
-for name in ("model-manifest.json", "final-judge.json", "metrics.json", "predictions.jsonl", "goal-system-prompt.md", "python-requirements.lock"):
-    publish(name, SOURCE / name)
-publish("large-output/manifest.json", chunk_path)
 for name in parts:
     publish(f"large-output/{name}", SOURCE / name)
+for name in ("final-judge.json", "metrics.json", "predictions.jsonl", "goal-system-prompt.md", "python-requirements.lock"):
+    publish(name, SOURCE / name)
+publish("large-output/manifest-v2.json", chunk_path)
+publish("model-manifest-v2.json", SOURCE / "model-manifest.json")
 print(json.dumps({"base": base, "digest": digest, "parts": len(parts)}, sort_keys=True))
