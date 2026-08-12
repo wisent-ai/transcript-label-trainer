@@ -10,7 +10,7 @@ WORK = Path(os.environ.get(
     "GOAL_AUDIT_WORK",
     "/mnt/wd16tb/stado/jobs/jeden-goal-prompt-v5",
 ))
-BINARY = Path("/mnt/wd16tb/stado/jobs/jeden-goal-568ebd79663775c9/cargo-target/release/transcript-label-trainer")
+BINARY = Path("/root/.stado/files/transcript-label-trainer-audit")
 GRANT = Path("/root/.stado/files/stado-agent-grant.env")
 values = {}
 for raw in GRANT.read_text().splitlines():
@@ -50,9 +50,9 @@ os.execve(
     [
         str(BINARY),
         "goal-audit",
-        str(WORK / "predictions-corrected-v3.jsonl"),
+        str(WORK / "predictions.jsonl"),
         "--output",
-        str(WORK / "final-judge-corrected-v3.json"),
+        str(WORK / "final-judge-semantic.json"),
         "--best",
     ],
     environment,
