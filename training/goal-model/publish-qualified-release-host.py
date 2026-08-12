@@ -33,8 +33,14 @@ environment.pop("STADO_API_TOKEN", None)
 environment["STADO_API_URL"] = "https://charless-mac-mini.tail6443b3.ts.net:8443"
 def publish(name, source):
     uri = f"{base}/{name}"
-    probe = subprocess.run([stado, "storage", "stat", uri], env=environment)
-    if probe.returncode == 0:
+    probe = subprocess.run(
+        [stado, "storage", "stat", uri, "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    if json.loads(probe.stdout).get("state") == "present":
         return
     subprocess.run([stado, "storage", "put", uri, str(source)], check=True, env=environment)
 for name in parts:
