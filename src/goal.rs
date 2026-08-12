@@ -4,7 +4,7 @@
 //! agent session files are deliberately outside this boundary: the lake owns
 //! masking, while this module owns teacher/reviewer provenance and model gates.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -30,6 +30,7 @@ const AUDIT_VALUES: [&str; 4] = [
     "both-nonsensical",
 ];
 const WORKERS: usize = 24;
+const AUDIT_WORKERS: usize = 4;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GoalRow {
@@ -661,45 +662,89 @@ pub fn audit_predictions(input: &Path, output: &Path, review_model: &str) -> Res
         .collect();
 
     let client = BramaClient::from_env()?;
-    let mut failures = Vec::new();
-    let mut audited = records.len();
-    for prediction in predictions
+    let prediction_order: HashMap<&str, usize> = predictions
+        .iter()
+        .enumerate()
+        .map(|(index, prediction)| (prediction.session_id.as_str(), index))
+        .collect();
+    let remaining: Vec<&Prediction> = predictions
         .iter()
         .filter(|prediction| !completed.contains(&prediction.session_id))
-    {
-        match chat_retry(&client, review_model, &audit_prompt(prediction)) {
-            Ok(answer) => {
-                let verdict = crate::brama::parse_answer(&answer, &AUDIT_VALUES)
-                    .map(|(value, _)| value)
-                    .unwrap_or_else(|| "unparseable".to_string());
-                records.push(serde_json::json!({
-                    "session_id": prediction.session_id,
-                    "verdict": verdict,
+        .collect();
+    let mut failures = Vec::new();
+    let mut audited = records.len();
+    if !remaining.is_empty() {
+        let chunk_size = remaining.len().div_ceil(AUDIT_WORKERS);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| -> Result<()> {
+            let mut handles = Vec::new();
+            for chunk in remaining.chunks(chunk_size) {
+                let client = client.clone();
+                let sender = sender.clone();
+                handles.push(scope.spawn(move || {
+                    for prediction in chunk {
+                        let outcome = chat_retry(&client, review_model, &audit_prompt(prediction));
+                        if sender
+                            .send((prediction.session_id.as_str(), outcome))
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
                 }));
             }
-            Err(error) => failures.push(serde_json::json!({
-                "session_id": prediction.session_id,
-                "error": error.to_string(),
-            })),
-        }
-        audited += 1;
-        let complete = audited == predictions.len();
-        let result = audit_result(
-            review_model,
-            &input_sha256,
-            predictions.len(),
-            &records,
-            &failures,
-            complete,
-        );
-        write_audit_result(output, &result)?;
-        if audited % 25 == 0 || complete {
-            eprintln!(
-                "audited {}/{} held-out predictions",
-                audited,
-                predictions.len()
-            );
-        }
+            drop(sender);
+            for (session_id, outcome) in receiver {
+                match outcome {
+                    Ok(answer) => {
+                        let verdict = crate::brama::parse_answer(&answer, &AUDIT_VALUES)
+                            .map(|(value, _)| value)
+                            .unwrap_or_else(|| "unparseable".to_string());
+                        records.push(serde_json::json!({
+                            "session_id": session_id,
+                            "verdict": verdict,
+                        }));
+                        records.sort_by_key(|record| {
+                            prediction_order
+                                .get(text(record, "session_id").as_str())
+                                .copied()
+                                .unwrap_or(usize::MAX)
+                        });
+                    }
+                    Err(error) => failures.push(serde_json::json!({
+                        "session_id": session_id,
+                        "error": error.to_string(),
+                    })),
+                }
+                audited += 1;
+                let complete = audited == predictions.len();
+                let result = audit_result(
+                    review_model,
+                    &input_sha256,
+                    predictions.len(),
+                    &records,
+                    &failures,
+                    complete,
+                );
+                write_audit_result(output, &result)?;
+                if audited % 25 == 0 || complete {
+                    eprintln!(
+                        "audited {}/{} held-out predictions",
+                        audited,
+                        predictions.len()
+                    );
+                }
+            }
+            for handle in handles {
+                if handle.join().is_err() {
+                    failures.push(serde_json::json!({
+                        "session_id": "",
+                        "error": "goal audit worker panicked",
+                    }));
+                }
+            }
+            Ok(())
+        })?;
     }
     let result = audit_result(
         review_model,
