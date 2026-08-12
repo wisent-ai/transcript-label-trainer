@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-job_id=${1:?usage: report-qualification-job-host JOB_ID}
+job_id=${1:-1a459c5f}
 work="/mnt/wd16tb/stado/jobs/jeden-goal-568ebd79663775c9"
 printf 'job_id=%s\n' "$job_id"
 printf '%s\n' '=== matching processes ==='
