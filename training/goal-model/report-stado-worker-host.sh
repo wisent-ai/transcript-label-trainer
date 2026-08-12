@@ -47,4 +47,13 @@ for pid in $(nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits);
   done
   printf '%s\n' '-- cgroup --'
   cat "/proc/$pid/cgroup"
+  scope=$(cat "/proc/$pid/cgroup")
+  container=${scope#*docker-}
+  container=${container%.scope}
+  if [ "$container" != "$scope" ]; then
+    printf '%s\n' '-- container --'
+    docker inspect --format \
+      'name={{.Name}} image={{.Config.Image}} created={{.Created}} restart={{.HostConfig.RestartPolicy.Name}} labels={{json .Config.Labels}}' \
+      "$container"
+  fi
 done
