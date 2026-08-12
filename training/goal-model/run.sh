@@ -58,18 +58,32 @@ AUDIT_EXIT=$?
 set -e
 [ -s "$WORK/final-judge.json" ]
 
-cp "$WORK/jeden-goal-qwen3-4b-q4_k_m.gguf" \
-   "$WORK/metrics.json" "$WORK/predictions.jsonl" \
+MODEL="$WORK/jeden-goal-qwen3-4b-q4_k_m.gguf"
+MODEL_NAME="$(basename "$MODEL")"
+rm -f "$OUT/$MODEL_NAME".part-*
+split -b "${GOAL_MODEL_PART_BYTES:-128M}" -d -a 3 \
+  "$MODEL" "$OUT/$MODEL_NAME.part-"
+cp "$WORK/metrics.json" "$WORK/predictions.jsonl" \
    "$WORK/python-requirements.lock" "$WORK/final-judge.json" \
    "$ROOT/training/goal-model/goal-system-prompt.md" "$OUT/"
 
-OUT="$OUT" "$VENV/bin/python" - <<'PY'
+OUT="$OUT" MODEL="$MODEL" MODEL_NAME="$MODEL_NAME" "$VENV/bin/python" - <<'PY'
 import hashlib
 import json
 import os
 from pathlib import Path
 
 out = Path(os.environ["OUT"])
+model = Path(os.environ["MODEL"])
+model_name = os.environ["MODEL_NAME"]
+parts = sorted(path.name for path in out.glob(f"{model_name}.part-*"))
+
+def digest(path):
+    value = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(8 * 1024 * 1024):
+            value.update(chunk)
+    return value.hexdigest()
 judge = json.loads((out / "final-judge.json").read_text(encoding="utf-8"))
 files = {}
 for path in sorted(out.iterdir()):
@@ -77,19 +91,25 @@ for path in sorted(out.iterdir()):
         continue
     files[path.name] = {
         "bytes": path.stat().st_size,
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "sha256": digest(path),
     }
 qualified = judge.get("passed") is True
 manifest = {
     "product": "Jeden goal model",
     "format": "GGUF",
-    "default_artifact": "jeden-goal-qwen3-4b-q4_k_m.gguf",
+    "default_artifact": model_name,
     "base_model": "Qwen/Qwen3-4B",
     "base_revision": "1cfa9a7208912126459214e8b04321603b3df60c",
     "required_quality_gate": "final-judge.json",
     "qualified": qualified,
     "review_model": judge.get("review_model"),
     "files": files,
+    "transport": {
+        "kind": "ordered-parts",
+        "parts": parts,
+        "assembled_bytes": model.stat().st_size,
+        "assembled_sha256": digest(model),
+    },
 }
 (out / "model-manifest.json").write_text(
     json.dumps(manifest, indent=2) + "\n",
