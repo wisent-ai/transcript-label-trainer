@@ -2,7 +2,7 @@
 set -eu
 
 source_work=/mnt/wd16tb/stado/jobs/jeden-goal-568ebd79663775c9
-work=/mnt/wd16tb/stado/jobs/jeden-goal-prompt-v3
+work=/mnt/wd16tb/stado/jobs/jeden-goal-prompt-v4
 venv="$source_work/venv"
 train=/root/.stado/files/goal-train.py
 prepare=/root/.stado/files/goal-prepare-retraining-data.py

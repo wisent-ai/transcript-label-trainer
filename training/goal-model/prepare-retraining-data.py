@@ -31,6 +31,12 @@ examples = [
     ("czy Lem ma natywną aplikację na Maca?", "Sprawdź aplikację desktopową Lem"),
     ("odszukaj transkrypt o publikowaniu artefaktów z serwera GPU", "Odszukaj transkrypt o publikowaniu artefaktów"),
     ("znajdź starą rozmowę o adaptacyjnym interfejsie i kontynuuj implementację", "Znajdź i kontynuuj rozmowę o interfejsie"),
+    ("co zamknęło mój VS Code i go zrestartowało?", "Sprawdź przyczynę restartu VS Code"),
+    ("ustal, dlaczego VS Code nagle się zamknął", "Ustal przyczynę zamknięcia VS Code"),
+    ("sprawdź przyczynę ostatniego restartu VS Code", "Sprawdź przyczynę restartu VS Code"),
+    ("czy możesz znaleźć rozmowę o uploadzie z naszego RTX boxa?", "Znajdź rozmowę o uploadzie RTX boxa"),
+    ("znajdź transkrypt o uploadzie aktywacji z RTX boxa", "Znajdź transkrypt o uploadzie RTX boxa"),
+    ("odszukaj transkrypt, gdzie omawialiśmy upload z RTX boxa", "Odszukaj transkrypt o uploadzie RTX boxa"),
 ]
 
 rows = []
