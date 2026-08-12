@@ -20,23 +20,35 @@ python3 -m venv "$VENV"
 export GOAL_DATASET="$WORK/reviewed-goals.jsonl"
 export GOAL_STUDENT_MODEL="Qwen/Qwen3-4B"
 export GOAL_STUDENT_REVISION="1cfa9a7208912126459214e8b04321603b3df60c"
-"$VENV/bin/python" "$ROOT/training/goal-model/train.py"
+if [ ! -s "$WORK/student/config.json" ] \
+  || [ ! -s "$WORK/predictions.jsonl" ] \
+  || [ ! -s "$WORK/metrics.json" ]; then
+  "$VENV/bin/python" "$ROOT/training/goal-model/train.py"
+fi
 
-"$VENV/bin/python" -m pip freeze > "$WORK/python-requirements.lock"
+if [ ! -s "$WORK/python-requirements.lock" ]; then
+  "$VENV/bin/python" -m pip freeze > "$WORK/python-requirements.lock"
+fi
 
 LLAMA_CPP="$WORK/llama.cpp"
 if [ ! -d "$LLAMA_CPP/.git" ]; then
   git clone --depth 1 https://github.com/ggml-org/llama.cpp "$LLAMA_CPP"
 fi
-"$VENV/bin/python" "$LLAMA_CPP/convert_hf_to_gguf.py" "$WORK/student" \
-  --outfile "$WORK/jeden-goal-qwen3-4b-f16.gguf" --outtype f16
+if [ ! -s "$WORK/jeden-goal-qwen3-4b-f16.gguf" ]; then
+  "$VENV/bin/python" "$LLAMA_CPP/convert_hf_to_gguf.py" "$WORK/student" \
+    --outfile "$WORK/jeden-goal-qwen3-4b-f16.gguf" --outtype f16
+fi
 cmake -S "$LLAMA_CPP" -B "$LLAMA_CPP/build" \
   -DLLAMA_CURL=OFF -DGGML_CUDA=OFF -DCMAKE_BUILD_TYPE=Release
-cmake --build "$LLAMA_CPP/build" --target llama-quantize -j "$(nproc)"
-"$LLAMA_CPP/build/bin/llama-quantize" \
-  "$WORK/jeden-goal-qwen3-4b-f16.gguf" \
-  "$WORK/jeden-goal-qwen3-4b-q4_k_m.gguf" Q4_K_M
+cmake --build "$LLAMA_CPP/build" --target llama-quantize \
+  -j "${GOAL_LLAMA_BUILD_JOBS:-8}"
+if [ ! -s "$WORK/jeden-goal-qwen3-4b-q4_k_m.gguf" ]; then
+  "$LLAMA_CPP/build/bin/llama-quantize" \
+    "$WORK/jeden-goal-qwen3-4b-f16.gguf" \
+    "$WORK/jeden-goal-qwen3-4b-q4_k_m.gguf" Q4_K_M
+fi
 
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORK/cargo-target}"
 set +e
 cargo run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
   goal-audit "$WORK/predictions.jsonl" \
