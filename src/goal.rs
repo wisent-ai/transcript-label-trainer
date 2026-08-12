@@ -22,7 +22,7 @@ use crate::{bail, lake};
 
 const SYSTEM_PROMPT: &str = include_str!("../training/goal-model/goal-system-prompt.md");
 const REVIEW_VALUES: [&str; 2] = ["sensible", "nonsensical"];
-const CURATION_REVIEW_MODEL: &str = DEFAULT_MODEL;
+const CURATION_REVIEW_MODEL: &str = "wisent-backend/chat/primary";
 const AUDIT_VALUES: [&str; 4] = [
     "both-sensible",
     "label-nonsensical",
