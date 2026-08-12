@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Publish a qualified staged goal model under its immutable digest coordinate."""
 
+import hashlib
 import json
 import os
 import subprocess
@@ -16,7 +17,6 @@ if judge.get("passed") is not True or judge.get("complete") is not True:
 model = manifest["default_artifact"]
 digest = manifest["transport"]["assembled_sha256"]
 parts = manifest["transport"]["parts"]
-base = f"stado://releases/jeden-desktop/models/goal-qwen3-4b/{digest}"
 chunk_manifest = {
     "filename": model,
     "sha256": digest,
@@ -26,6 +26,8 @@ chunk_manifest = {
 }
 chunk_path = SOURCE / "large-output-manifest.json"
 chunk_path.write_text(json.dumps(chunk_manifest, indent=2) + "\n", encoding="utf-8")
+transport_digest = hashlib.sha256(chunk_path.read_bytes()).hexdigest()
+base = f"stado://releases/jeden-desktop/models/goal-qwen3-4b/{digest}/transports/{transport_digest}"
 stado = "/root/.stado/bin/stado"
 environment = os.environ.copy()
 environment["STADO_API_TOKEN_FILE"] = "/root/.stado/jeden-desktop-release-publisher-token"
