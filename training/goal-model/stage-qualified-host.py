@@ -9,7 +9,7 @@ from pathlib import Path
 
 WORK = Path("/mnt/wd16tb/stado/jobs/jeden-goal-prompt-v5")
 OUT = Path(os.environ["OUTPUT_DIR"])
-MODEL = WORK / "jeden-goal-qwen3-4b-q4_k_m.gguf"
+MODEL = Path("/mnt/wd16tb/stado/jobs/jeden-goal-568ebd79663775c9/jeden-goal-qwen3-4b-q4_k_m.gguf")
 JUDGE = WORK / "final-judge-semantic.json"
 PROMPT = Path("/root/.stado/files/goal-system-prompt.md")
 OUT.mkdir(parents=True, exist_ok=True)
