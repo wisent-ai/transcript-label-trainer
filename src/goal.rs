@@ -184,7 +184,7 @@ WITH users AS (
 )
 SELECT session_id, runtime, text AS message
 FROM users
-WHERE message_rank <= 3 AND length(text) BETWEEN 3 AND 4000
+WHERE message_rank <= 10 AND length(text) BETWEEN 3 AND 4000
 ORDER BY ts DESC
 LIMIT {fetch}
 "#
