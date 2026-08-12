@@ -238,7 +238,7 @@ WHERE users.rank = 1 AND titles.rank = 1
 }
 
 fn unlabeled_rows(limit: usize) -> Result<Vec<GoalRow>> {
-    let fetch = limit.saturating_mul(3).max(limit);
+    let fetch = limit.saturating_mul(20).max(limit);
     let sql = format!(
         r#"
 WITH users AS (
@@ -255,7 +255,7 @@ ORDER BY ts DESC
 LIMIT {fetch}
 "#
     );
-    Ok(lake::query(&sql)?
+    let mut rows: Vec<GoalRow> = lake::query(&sql)?
         .into_iter()
         .filter_map(|value| {
             let message = text(&value, "message");
@@ -273,7 +273,9 @@ LIMIT {fetch}
                 reviewed_by: None,
             })
         })
-        .collect())
+        .collect();
+    rows.sort_by_key(|row| row.goal_source.is_none());
+    Ok(rows)
 }
 
 fn messages(system: String, user: String) -> [Message; 2] {
