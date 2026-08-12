@@ -28,3 +28,13 @@ journalctl -u wisent-agent.service --no-pager -n 30 -o cat | cut -c 1-500
 printf '%s\n' '=== gpu state ==='
 nvidia-smi --query-gpu=memory.total,memory.used,memory.free,utilization.gpu \
   --format=csv,noheader,nounits
+
+printf '%s\n' '=== gpu compute processes ==='
+nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory \
+  --format=csv,noheader,nounits
+
+printf '%s\n' '=== gpu process ownership ==='
+for pid in $(nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits); do
+  ps -p "$pid" -o user= -o pid= -o ppid= -o etime= -o comm= -o args= \
+    | cut -c 1-500
+done
