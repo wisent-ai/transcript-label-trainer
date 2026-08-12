@@ -38,7 +38,7 @@ with MODEL.open("rb") as source:
 for source, name in (
     (WORK / "metrics.json", "metrics.json"),
     (WORK / "predictions.jsonl", "predictions.jsonl"),
-    (WORK / "python-requirements.lock", "python-requirements.lock"),
+    (Path("/mnt/wd16tb/stado/jobs/jeden-goal-568ebd79663775c9/python-requirements.lock"), "python-requirements.lock"),
     (JUDGE, "final-judge.json"),
     (PROMPT, "goal-system-prompt.md"),
 ):
