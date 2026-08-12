@@ -50,9 +50,9 @@ os.execve(
     [
         str(BINARY),
         "goal-audit",
-        str(WORK / "predictions.jsonl"),
+        str(WORK / "predictions-corrected-v3.jsonl"),
         "--output",
-        str(WORK / "final-judge.json"),
+        str(WORK / "final-judge-corrected-v3.json"),
         "--best",
     ],
     environment,
