@@ -6,9 +6,9 @@ work="/mnt/wd16tb/stado/jobs/jeden-goal-568ebd79663775c9"
 printf 'job_id=%s\n' "$job_id"
 printf '%s\n' '=== matching processes ==='
 /usr/bin/ps ax -o pid=,ppid=,etime=,stat=,command= \
-  | /usr/bin/awk -v job="$job_id" 'index($0, job) || index($0, "goal-audit") || index($0, "llama-quantize") { print }'
+  | /usr/bin/awk -v job="$job_id" 'index($0, job) || index($0, "goal-audit") || index($0, "llama-quantize") || index($0, "reevaluate-candidate") { print }'
 printf '%s\n' '=== work products ==='
-for name in final-judge.json metrics.json predictions.jsonl; do
+for name in final-judge.json metrics.json predictions.jsonl predictions-prompt-v2.jsonl; do
  path="$work/$name"
  if [ -s "$path" ]; then
   printf '%s %s\n' "$name" "$(/usr/bin/stat --format '%s' "$path")"
