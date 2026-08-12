@@ -11,7 +11,10 @@ print(json.dumps({
     "epochs": metrics.get("epochs"),
     "learning_rate": metrics.get("learning_rate"),
     "exact_match": metrics.get("exact_match"),
-    "history": metrics.get("log_history"),
+    "evaluations": [
+        item for item in metrics.get("log_history", [])
+        if "eval_loss" in item
+    ],
 }, sort_keys=True))
 for output in sorted(Path("/tmp").glob("wc-*/output"), key=lambda path: path.stat().st_mtime):
     judge_path = output / "final-judge.json"
