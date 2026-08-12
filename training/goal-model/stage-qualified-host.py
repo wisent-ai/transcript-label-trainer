@@ -30,7 +30,7 @@ for path in OUT.glob(f"{model_name}.part-*"):
 part_names = []
 with MODEL.open("rb") as source:
     index = 0
-    while chunk := source.read(128 * 1024 * 1024):
+    while chunk := source.read(64 * 1024 * 1024):
         name = f"{model_name}.part-{index:03d}"
         (OUT / name).write_bytes(chunk)
         part_names.append(name)
