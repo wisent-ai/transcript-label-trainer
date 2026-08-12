@@ -2,7 +2,7 @@
 set -eu
 work=/mnt/wd16tb/stado/jobs/jeden-goal-prompt-v5
 repo="$work/audit-source"
-commit=5dde942e5a6cecd338dbf110a7703291933d0778
+commit=93f41459f3693326c8e213820b4ef47a79df9de2
 rm -rf "$repo"
 git init -q "$repo"
 git -C "$repo" remote add origin https://github.com/wisent-ai/transcript-label-trainer.git
