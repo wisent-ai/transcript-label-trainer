@@ -396,6 +396,13 @@ Stado also retains its canonical `status/<job-id>/output/` copy. All model calls
 use `brama.rs`; the pipeline has no direct provider credentials or second auth
 implementation.
 
+The qualified 4B release is also public at
+[`lbartoszcze/jeden-goal-qwen3-4b`](https://huggingface.co/lbartoszcze/jeden-goal-qwen3-4b),
+revision `d9ce79f106ead1176b74bb0d9fb875521ca712b1`. Its 2,497,280,320-byte
+GGUF has SHA-256
+`2512d7a455a50a16742b75d8fe38bf02b46b5d6b607f785be32a6345d999d310`,
+the same immutable artifact consumed by Jeden Desktop.
+
 ## Placement: Stado decides where this runs
 
 Stado owns the canonical compute-target registry, and that registry — not this
