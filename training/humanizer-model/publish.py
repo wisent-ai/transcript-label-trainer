@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish one qualified personal-voice model to a private immutable HF revision."""
+"""Publish one qualified personal-voice LoRA adapter to a private immutable HF revision."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def main() -> None:
     token = os.environ["HF_TOKEN"].strip()
     if not token:
         raise SystemExit("HF_TOKEN is empty")
-    repo_id = os.environ.get("HUMANIZER_HF_REPO", "lbartoszcze/lukasz-humanizer-qwen3-4b")
+    repo_id = os.environ.get("HUMANIZER_HF_REPO", "lbartoszcze/lukasz-humanizer-cydonia-24b-lora")
     model_dir = Path(os.environ.get("HUMANIZER_MODEL_DIR", "student"))
     metrics_path = Path(os.environ.get("HUMANIZER_METRICS", "metrics.json"))
     audit_path = Path(os.environ.get("HUMANIZER_AUDIT_OUTPUT", "audit.json"))
@@ -41,7 +41,7 @@ def main() -> None:
         path_in_repo="",
         repo_id=repo_id,
         repo_type="model",
-        commit_message="Publish qualified Łukasz humanizer model",
+        commit_message="Publish qualified Łukasz humanizer LoRA adapter",
     )
     for source, destination in (
         (metrics_path, "evaluation/metrics.json"),
@@ -57,7 +57,13 @@ def main() -> None:
         )
     api.update_repo_settings(repo_id=repo_id, repo_type="model", private=True)
     info = api.model_info(repo_id=repo_id, revision=result.oid, files_metadata=True)
-    required = {"config.json", "tokenizer.json", "evaluation/metrics.json", "evaluation/audit.json"}
+    required = {
+        "adapter_config.json",
+        "adapter_model.safetensors",
+        "tokenizer.json",
+        "evaluation/metrics.json",
+        "evaluation/audit.json",
+    }
     files = {item.rfilename: item.size for item in info.siblings}
     missing = sorted(required - files.keys())
     if missing:

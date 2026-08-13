@@ -407,7 +407,7 @@ pub fn execute_humanizer_model(
     let targets_uri =
         format!("stado://probierz/inputs/transcript-label-trainer/humanizer-model/{key}/targets.jsonl");
     let output_uri =
-        format!("stado://probierz/artifacts/models/echo/lukasz-humanizer-qwen3-4b/{key}");
+        format!("stado://probierz/artifacts/models/echo/lukasz-humanizer-cydonia-24b-lora/{key}");
     let stado = stado_bin();
     upload(
         &stado,
