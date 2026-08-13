@@ -9,7 +9,6 @@ import hmac
 import json
 import os
 import re
-import subprocess
 import time
 from collections import Counter
 from pathlib import Path
@@ -51,17 +50,7 @@ def resolve_url() -> str:
         value = os.environ.get(name, "").strip()
         if value:
             return value.rstrip("/")
-    stado = os.environ.get("STADO_BIN", str(Path.home() / ".stado/bin/stado"))
-    result = subprocess.run(
-        [stado, "service", "directory", "connect", "--json", "brama"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    value = json.loads(result.stdout).get("url", "").strip()
-    if not value:
-        raise RuntimeError("Stado returned no Brama service URL")
-    return value.rstrip("/")
+    return "https://brama.wisent.com"
 
 
 class Brama:
