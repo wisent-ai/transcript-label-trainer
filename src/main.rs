@@ -6,6 +6,7 @@ mod cli;
 mod evaluate;
 mod goal;
 mod lifecycle;
+mod humanizer;
 #[cfg(feature = "hf")]
 mod hf;
 mod jobs;

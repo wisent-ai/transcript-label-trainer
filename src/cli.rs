@@ -130,6 +130,7 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "goal-model" => cmd_goal_model(&parsed),
         "lifecycle-review" => cmd_lifecycle_review(&parsed),
         "lifecycle-model" => cmd_lifecycle_model(&parsed),
+        "humanizer-model" => cmd_humanizer_model(&parsed),
         "lifecycle-audit" => cmd_lifecycle_audit(&parsed),
         "goal-audit" => cmd_goal_audit(&parsed),
         other => Err(Error(format!("unknown command '{other}'"))),
@@ -342,6 +343,28 @@ fn cmd_lifecycle_model(args: &Parsed) -> Result<i32> {
     let job = stado::execute_lifecycle_model(
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.positional(1)),
+        args.text("--compute-target").unwrap_or_default(),
+    )?;
+    outln!("Stado job: {}", job.job_id);
+    outln!("model artifact: {}", job.output_uri);
+    Ok(job.status)
+}
+
+fn cmd_humanizer_model(args: &Parsed) -> Result<i32> {
+    let root = placement::resolve_placement()
+        .training_root
+        .join("humanizer-model")
+        .join("datasets");
+    std::fs::create_dir_all(&root)?;
+    let stamp = crate::util::now_iso().replace([':', '-'], "");
+    let targets = root.join(format!("lukasz-targets-{stamp}.jsonl"));
+    let summary = crate::humanizer::export_targets(
+        &targets,
+        count(args.int("--limit"), 1_500),
+    )?;
+    outln!("{}", dumps(&summary));
+    let job = stado::execute_humanizer_model(
+        &targets,
         args.text("--compute-target").unwrap_or_default(),
     )?;
     outln!("Stado job: {}", job.job_id);
@@ -1133,6 +1156,35 @@ fn build_specs() -> Vec<Spec> {
         )],
     };
 
+    let humanizer_model = Spec {
+        name: "humanizer-model",
+        help: "train and qualify Echo's personal-voice humanizer on Stado".to_string(),
+        description: Some(
+            "Export only privacy-masked likely-authored user turns from Transcript Lake, \
+             derive inverse style-transfer inputs through Brama, freeze session-separated \
+             train, validation, and test splits, fine-tune Qwen3-4B on the named exclusive \
+             Stado GPU target, compare it with the base model, require an independent Brama \
+             audit, and publish only a qualified private model revision."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            required(
+                "--compute-target",
+                "COMPUTE_TARGET",
+                Kind::Text,
+                "canonical Stado GPU target that curates, trains, audits, and publishes the model"
+                    .to_string(),
+            ),
+            option(
+                "--limit",
+                "LIMIT",
+                Kind::Int,
+                "maximum clean authored targets (default: 1500; minimum: 1000)".to_string(),
+            ),
+        ],
+    };
+
     let lifecycle_audit = Spec {
         name: "lifecycle-audit",
         help: "apply the final Brama semantic audit to lifecycle predictions".to_string(),
@@ -1174,6 +1226,7 @@ fn build_specs() -> Vec<Spec> {
         goal_audit,
         lifecycle_review,
         lifecycle_model,
+        humanizer_model,
         lifecycle_audit,
     ]
 }

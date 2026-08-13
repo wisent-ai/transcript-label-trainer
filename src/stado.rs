@@ -20,6 +20,7 @@ const REPOSITORY: &str = "https://github.com/wisent-ai/transcript-label-trainer.
 const REPO_WORKDIR: &str = "transcript-label-trainer";
 const SIGNING_SECRET: &str = "WISENT_APP_AGENT_AUTH_SECRET=jeden-agent-auth#agent_auth_secret";
 const BEARER_SECRET: &str = "BRAMA_TOKEN=jeden-model-router#token";
+const HUGGINGFACE_SECRET: &str = "HF_TOKEN=stado-huggingface#token";
 
 struct TempDir(PathBuf);
 
@@ -387,6 +388,89 @@ pub fn execute_lifecycle_model(
         .map_err(|error| Error(format!("could not follow Stado job {id}: {error}")))?;
     Ok(GoalModelJob {
         job_id: id,
+        output_uri,
+        status: status.code().unwrap_or(1),
+    })
+}
+
+/// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
+pub fn execute_humanizer_model(
+    targets_path: &Path,
+    compute_target: &str,
+) -> Result<GoalModelJob> {
+    let compute_target = compute_target.trim();
+    if compute_target.is_empty() {
+        return Err(Error("--compute-target cannot be empty".to_string()));
+    }
+    let targets_bytes = std::fs::read(targets_path)?;
+    let key = digest(&targets_bytes);
+    let targets_uri =
+        format!("stado://probierz/inputs/transcript-label-trainer/humanizer-model/{key}/targets.jsonl");
+    let output_uri =
+        format!("stado://probierz/artifacts/models/echo/lukasz-humanizer-qwen3-4b/{key}");
+    let stado = stado_bin();
+    upload(
+        &stado,
+        &targets_uri,
+        targets_path,
+        "application/x-ndjson",
+    )?;
+    let source_ref = repo_ref()?;
+    let command = format!(
+        "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/echo-humanizer-{key}\"; \
+         mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
+         \"$stado\" storage get '{targets_uri}' \"$work/targets.jsonl\"; \
+         ./training/humanizer-model/run.sh \"$work/targets.jsonl\""
+    );
+    let args = vec![
+        OsString::from("submit"),
+        OsString::from("--pinned-host"),
+        OsString::from(compute_target),
+        OsString::from("--priority"),
+        OsString::from("20"),
+        OsString::from("--gpu-type"),
+        OsString::from("nvidia-rtx-pro-6000"),
+        OsString::from("--vram-gb"),
+        OsString::from("80"),
+        OsString::from("--exclusive"),
+        OsString::from("--repo"),
+        OsString::from(REPOSITORY),
+        OsString::from("--repo-ref"),
+        OsString::from(source_ref),
+        OsString::from("--repo-workdir"),
+        OsString::from(REPO_WORKDIR),
+        OsString::from("--repo-extras"),
+        OsString::new(),
+        OsString::from("--output-uri"),
+        OsString::from(&output_uri),
+        OsString::from("--secret-env"),
+        OsString::from(SIGNING_SECRET),
+        OsString::from("--secret-env"),
+        OsString::from(BEARER_SECRET),
+        OsString::from("--secret-env"),
+        OsString::from(HUGGINGFACE_SECRET),
+        OsString::from(command),
+    ];
+    let submitted = run(&stado, &args)?;
+    io::stdout().write_all(&submitted.stdout)?;
+    io::stderr().write_all(&submitted.stderr)?;
+    if !submitted.status.success() {
+        return Err(command_error(
+            &stado,
+            "submitting humanizer-model job",
+            &submitted,
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&submitted.stdout);
+    let id = job_id(&stdout).ok_or_else(|| {
+        Error("Stado accepted the humanizer-model job but reported no id".to_string())
+    })?;
+    let status = Command::new(&stado)
+        .args(["job", "watch", id, "--follow"])
+        .status()
+        .map_err(|error| Error(format!("could not follow Stado job {id}: {error}")))?;
+    Ok(GoalModelJob {
+        job_id: id.to_string(),
         output_uri,
         status: status.code().unwrap_or(1),
     })
