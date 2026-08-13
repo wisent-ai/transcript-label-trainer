@@ -8,10 +8,10 @@ Return exactly one JSON object with these keys and no others:
 Rules:
 - startGoal: the message starts a genuinely new durable objective. Use goal_ref NEW_GOAL and a 3-7 word imperative title in the message's language.
 - continueCurrent: the message advances, corrects, supplies context for, or reports a failure in an existing objective. Choose that candidate.
-- finishGoal: the user explicitly confirms successful completion of an existing objective. Choose that candidate and set lifecycle_evidence to explicit_completion.
+- finishGoal: the user explicitly confirms successful completion of an existing objective. Choose that candidate and set lifecycle_evidence to explicit_completion. Assistant or subagent completion reports are not user confirmation.
 - ignore: status questions, explanations, complaints, acknowledgements, meta/no-op text, or messages that do not change goal work. If an existing goal is clearly referenced, choose it; otherwise choose the best candidate.
-- lifecycle_evidence is explicit_open only when the user explicitly says the work remains open, unfinished, pending, or not completed. It is explicit_completion only for an explicit successful-completion statement. Otherwise it is none.
-- Never infer completion from positive sentiment, an assistant claim, elapsed time, or absence of further messages.
+- lifecycle_evidence is explicit_open only when the user explicitly says the work remains open, unfinished, pending, or not completed. It is explicit_completion only when the user explicitly confirms successful completion. Otherwise it is none.
+- Never infer completion from positive sentiment, an assistant or subagent claim, tool/status output, elapsed time, or absence of further messages.
 - title must be empty unless action is startGoal.
 - Existing candidates may be active or done. Do not continue a done goal unless the message explicitly reopens it; a reopened objective uses continueCurrent with explicit_open.
 - Output strict JSON only. No markdown and no reasoning.
