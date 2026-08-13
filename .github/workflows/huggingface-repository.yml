@@ -31,13 +31,13 @@ jobs:
           import os
           from pathlib import Path
           from urllib.parse import urlencode
-          from urllib.request import Request, urlopen
+          from urllib.request import urlopen
 
           from huggingface_hub import HfApi, hf_hub_download
           from huggingface_hub.utils import RepositoryNotFoundError
 
           SOURCE_REPO_ID = "wisent-ai/jeden-goal-qwen3-4b"
-          REPO_NAME = "jeden-goal-qwen3-4b"
+          REPO_ID = "lbartoszcze/jeden-goal-qwen3-4b"
           MODEL_NAME = "jeden-goal-qwen3-4b-q4_k_m.gguf"
           MODEL_BYTES = 2_497_280_320
           MODEL_SHA256 = "2512d7a455a50a16742b75d8fe38bf02b46b5d6b607f785be32a6345d999d310"
@@ -49,19 +49,11 @@ jobs:
               f"{MODEL_SHA256}"
           )
           token = os.environ["HF_TOKEN"]
-          headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
           api = HfApi(token=token)
-
-          identity_request = Request("https://huggingface.co/api/whoami-v2", headers=headers)
-          with urlopen(identity_request, timeout=60) as response:
-              identity = json.load(response)
-          organizations = {organization["name"] for organization in identity.get("orgs", [])}
-          if "wisent-ai" not in organizations:
-              raise SystemExit("token owner is not a member of wisent-ai")
-          REPO_ID = f"{identity['name']}/{REPO_NAME}"
+          public_api = HfApi(token=False)
 
           try:
-              info = api.model_info(repo_id=REPO_ID, files_metadata=True)
+              info = public_api.model_info(repo_id=REPO_ID, files_metadata=True)
           except RepositoryNotFoundError:
               try:
                   api.move_repo(from_id=SOURCE_REPO_ID, to_id=REPO_ID, repo_type="model")
@@ -69,10 +61,8 @@ jobs:
                   api.create_repo(
                       repo_id=REPO_ID, repo_type="model", private=True, exist_ok=True
                   )
-              info = api.model_info(repo_id=REPO_ID, files_metadata=True)
-
-          api.update_repo_settings(repo_id=REPO_ID, repo_type="model", private=False)
-          info = api.model_info(repo_id=REPO_ID, files_metadata=True)
+              api.update_repo_settings(repo_id=REPO_ID, repo_type="model", private=False)
+              info = public_api.model_info(repo_id=REPO_ID, files_metadata=True)
           published = {item.rfilename: item.size for item in info.siblings}
           required_files = {
               MODEL_NAME,
