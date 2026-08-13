@@ -4,7 +4,8 @@
 //! this module replaces historical silver answers with reviewed decisions and
 //! records the exact route used for provenance.
 
-use std::fs::{self, File};
+use std::collections::HashSet;
+use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -220,6 +221,25 @@ fn reviewed_row(
     );
     Ok(value)
 }
+fn reviewed_ids(path: &Path) -> Result<HashSet<String>> {
+    if !path.is_file() {
+        return Ok(HashSet::new());
+    }
+    let file = File::open(path)?;
+    BufReader::new(file)
+        .lines()
+        .filter(|line| line.as_ref().map_or(true, |value| !value.trim().is_empty()))
+        .map(|line| {
+            let line = line?;
+            let value: Value = serde_json::from_str(&line)?;
+            value
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| Error("reviewed lifecycle row has no id".to_string()))
+        })
+        .collect()
+}
 
 pub fn review_dataset(
     input: &Path,
@@ -237,6 +257,23 @@ pub fn review_dataset(
     }
     if rows.is_empty() {
         return Err(Error("lifecycle dataset input is empty".to_string()));
+    }
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let existing_ids = reviewed_ids(output)?;
+    let existing = existing_ids.len();
+    rows.retain(|row| !existing_ids.contains(&row.id));
+    if rows.is_empty() {
+        return Ok(serde_json::json!({
+            "input": input,
+            "output": output,
+            "split": split,
+            "review_model": model,
+            "rows": existing,
+            "resumed": existing,
+            "contract": "oko-goal-lifecycle-v1"
+        }));
     }
     let client = BramaClient::from_env()?;
     let rows = Arc::new(rows);
@@ -268,17 +305,23 @@ pub fn review_dataset(
             .join()
             .map_err(|_| Error("lifecycle review worker panicked".to_string()))?;
     }
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let file = File::create(output)?;
+    let file = OpenOptions::new().create(true).append(true).open(output)?;
     let mut writer = BufWriter::new(file);
     let mut counts = serde_json::Map::new();
     let mut written = 0usize;
+    let mut failures = Vec::new();
     for result in results.lock().expect("lifecycle result lock").iter_mut() {
-        let value = result
-            .take()
-            .ok_or_else(|| Error("lifecycle review produced a missing row".to_string()))??;
+        let Some(result) = result.take() else {
+            failures.push("lifecycle review produced a missing row".to_string());
+            continue;
+        };
+        let value = match result {
+            Ok(value) => value,
+            Err(error) => {
+                failures.push(error.to_string());
+                continue;
+            }
+        };
         let action = value
             .pointer("/messages/2/content")
             .and_then(Value::as_str)
@@ -297,12 +340,22 @@ pub fn review_dataset(
         written += 1;
     }
     writer.flush()?;
+    if !failures.is_empty() {
+        return Err(Error(format!(
+            "lifecycle review failed for {} row(s); preserved {} newly reviewed row(s) in {}: {}",
+            failures.len(),
+            written,
+            output.display(),
+            failures[0]
+        )));
+    }
     Ok(serde_json::json!({
         "input": input,
         "output": output,
         "split": split,
         "review_model": model,
-        "rows": written,
+        "rows": existing + written,
+        "resumed": existing,
         "actions": counts,
         "contract": "oko-goal-lifecycle-v1"
     }))
