@@ -74,12 +74,6 @@ def main() -> None:
     if actual_sha256 != expected_sha256:
         raise SystemExit("model SHA-256 does not match the qualified manifest")
 
-    retry_rate_limit(
-        lambda: api.create_repo(
-            repo_id=repo_id, repo_type="model", private=True, exist_ok=True
-        )
-    )
-
     uploads = [
         (model, model.name),
         (prompt, "goal-system-prompt.md"),

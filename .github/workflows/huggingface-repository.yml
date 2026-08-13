@@ -1,4 +1,4 @@
-name: Create Hugging Face goal-model repository
+name: Publish qualified goal model to Hugging Face
 
 on:
   workflow_dispatch:
@@ -7,21 +7,49 @@ permissions:
   contents: read
 
 jobs:
-  create:
+  publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Create private model repository
+      - uses: actions/checkout@v4
+
+      - name: Join the artifact tailnet
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          ping: lukaszs-macbook-pro-4007-2.tail6443b3.ts.net
+
+      - name: Install Hugging Face client
+        run: python3 -m pip install --disable-pip-version-check huggingface_hub hf-xet
+
+      - name: Publish immutable model and metadata
         env:
           HF_TOKEN: ${{ secrets.HF_PUBLISH_TOKEN }}
         run: |
           python3 - <<'PY'
+          import hashlib
           import json
           import os
+          from pathlib import Path
           from urllib.error import HTTPError
+          from urllib.parse import urlencode
           from urllib.request import Request, urlopen
 
+          from huggingface_hub import HfApi, hf_hub_download
+
+          REPO_ID = "wisent-ai/jeden-goal-qwen3-4b"
+          MODEL_NAME = "jeden-goal-qwen3-4b-q4_k_m.gguf"
+          MODEL_BYTES = 2_497_280_320
+          MODEL_SHA256 = "2512d7a455a50a16742b75d8fe38bf02b46b5d6b607f785be32a6345d999d310"
+          OBJECT_ENDPOINT = (
+              "https://lukaszs-macbook-pro-4007-2.tail6443b3.ts.net/api/release/object"
+          )
+          OBJECT_PREFIX = (
+              "stado://releases/jeden-desktop/models/goal-qwen3-4b/"
+              f"{MODEL_SHA256}"
+          )
           token = os.environ["HF_TOKEN"]
           headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
           identity_request = Request("https://huggingface.co/api/whoami-v2", headers=headers)
           with urlopen(identity_request, timeout=60) as response:
               identity = json.load(response)
@@ -29,7 +57,7 @@ jobs:
           if "wisent-ai" not in organizations:
               raise SystemExit("token owner is not a member of wisent-ai")
 
-          request = Request(
+          create_request = Request(
               "https://huggingface.co/api/repos/create",
               data=json.dumps({
                   "name": "jeden-goal-qwen3-4b",
@@ -41,11 +69,78 @@ jobs:
               method="POST",
           )
           try:
-              with urlopen(request, timeout=60) as response:
-                  result = json.load(response)
+              with urlopen(create_request, timeout=60):
+                  pass
           except HTTPError as error:
               if error.code != 409:
                   raise
-              result = {"url": "https://huggingface.co/wisent-ai/jeden-goal-qwen3-4b", "status": "exists"}
-          print(json.dumps(result, sort_keys=True))
+
+          def object_url(relative_path):
+              uri = f"{OBJECT_PREFIX}/{relative_path}"
+              return f"{OBJECT_ENDPOINT}?{urlencode({'uri': uri})}"
+
+          work = Path("/tmp/jeden-goal-huggingface")
+          work.mkdir(parents=True, exist_ok=True)
+          model = work / MODEL_NAME
+          digest = hashlib.sha256()
+          with model.open("wb") as destination:
+              for index in range(38):
+                  relative = f"large-output/{MODEL_NAME}.part-{index:03d}"
+                  with urlopen(object_url(relative), timeout=300) as source:
+                      while chunk := source.read(8 * 1024 * 1024):
+                          destination.write(chunk)
+                          digest.update(chunk)
+          if model.stat().st_size != MODEL_BYTES:
+              raise SystemExit("assembled model byte count does not match the release")
+          if digest.hexdigest() != MODEL_SHA256:
+              raise SystemExit("assembled model SHA-256 does not match the release")
+
+          metadata = {}
+          for name in ("goal-system-prompt.md", "metrics.json"):
+              target = work / name
+              with urlopen(object_url(name), timeout=60) as source:
+                  target.write_bytes(source.read())
+              metadata[name] = target
+          license_file = Path(
+              hf_hub_download(
+                  repo_id="Qwen/Qwen3-4B",
+                  filename="LICENSE",
+                  repo_type="model",
+                  token=token,
+              )
+          )
+
+          api = HfApi(token=token)
+          uploads = [
+              (model, MODEL_NAME),
+              (metadata["goal-system-prompt.md"], "goal-system-prompt.md"),
+              (metadata["metrics.json"], "metrics.json"),
+              (license_file, "LICENSE"),
+              (Path("training/goal-model/model-card.md"), "README.md"),
+          ]
+          revision = None
+          for source, destination in uploads:
+              result = api.upload_file(
+                  path_or_fileobj=source,
+                  path_in_repo=destination,
+                  repo_id=REPO_ID,
+                  repo_type="model",
+                  commit_message=f"Publish {destination}",
+              )
+              revision = result.oid
+
+          api.update_repo_settings(repo_id=REPO_ID, repo_type="model", private=False)
+          info = api.model_info(repo_id=REPO_ID, files_metadata=True)
+          published = {item.rfilename: item.size for item in info.siblings}
+          expected = {destination: source.stat().st_size for source, destination in uploads}
+          if any(published.get(name) != size for name, size in expected.items()):
+              raise SystemExit("published Hugging Face files do not match source artifacts")
+          print(json.dumps({
+              "repo": f"https://huggingface.co/{REPO_ID}",
+              "revision": revision,
+              "model_sha256": MODEL_SHA256,
+              "model_bytes": MODEL_BYTES,
+              "files": expected,
+              "private": info.private,
+          }, sort_keys=True))
           PY
