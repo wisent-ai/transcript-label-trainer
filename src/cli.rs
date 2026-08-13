@@ -1162,9 +1162,9 @@ fn build_specs() -> Vec<Spec> {
         description: Some(
             "Export only privacy-masked likely-authored user turns from Transcript Lake, \
              derive inverse style-transfer inputs through Brama, freeze session-separated \
-             train, validation, and test splits, fine-tune Qwen3-4B on the named exclusive \
-             Stado GPU target, compare it with the base model, require an independent Brama \
-             audit, and publish only a qualified private model revision."
+             train, validation, and test splits, train a LoRA adapter on the pinned Cydonia-24B \
+             deployment base on the named exclusive Stado GPU target, compare it with the base \
+             model, require an independent Brama audit, and publish only a qualified private adapter revision."
                 .to_string(),
         ),
         positionals: Vec::new(),

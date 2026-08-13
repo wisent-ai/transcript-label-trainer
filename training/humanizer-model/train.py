@@ -12,12 +12,12 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 SEED = 47
-BASE_MODEL = os.environ.get("HUMANIZER_BASE_MODEL", "Qwen/Qwen3-4B")
+BASE_MODEL = os.environ.get("HUMANIZER_BASE_MODEL", "TheDrummer/Cydonia-24B-v4.3")
 BASE_REVISION = os.environ.get(
-    "HUMANIZER_BASE_REVISION", "1cfa9a7208912126459214e8b04321603b3df60c"
+    "HUMANIZER_BASE_REVISION", "db0426d39d4bd4a6d34fdc71db97569da68f55e1"
 )
 EPOCHS = float(os.environ.get("HUMANIZER_EPOCHS", "3"))
-LEARNING_RATE = float(os.environ.get("HUMANIZER_LR", "1e-5"))
+LEARNING_RATE = float(os.environ.get("HUMANIZER_LR", "2e-4"))
 MAX_LENGTH = int(os.environ.get("HUMANIZER_MAX_LENGTH", "1024"))
 
 
@@ -64,7 +64,14 @@ def mean(values: list[dict], key: str) -> float:
 def main() -> None:
     import torch
     from datasets import Dataset
-    from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
+    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    from transformers import (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        BitsAndBytesConfig,
+        Trainer,
+        TrainingArguments,
+    )
 
     train_path = Path(os.environ.get("HUMANIZER_TRAIN_DATASET", "train.jsonl"))
     validation_path = Path(os.environ.get("HUMANIZER_VALIDATION_DATASET", "validation.jsonl"))
@@ -127,11 +134,20 @@ def main() -> None:
             "labels": torch.tensor(labels, dtype=torch.long),
         }
 
+    quantization = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+    )
     model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL, revision=BASE_REVISION, torch_dtype=torch.bfloat16
+        BASE_MODEL,
+        revision=BASE_REVISION,
+        torch_dtype=torch.bfloat16,
+        quantization_config=quantization,
+        device_map="auto",
     )
     model.config.use_cache = True
-    model.to("cuda")
 
     def generate(candidate_model, row: dict) -> str:
         encoded = tokenizer(prompt(row), return_tensors="pt").to("cuda")
@@ -154,15 +170,39 @@ def main() -> None:
         if index % 25 == 0 or index == len(test_rows):
             print(f"base predictions {index}/{len(test_rows)}", flush=True)
 
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    model = get_peft_model(
+        model,
+        LoraConfig(
+            base_model_name_or_path=BASE_MODEL,
+            revision=BASE_REVISION,
+            task_type="CAUSAL_LM",
+            r=32,
+            lora_alpha=64,
+            lora_dropout=0.05,
+            bias="none",
+            target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+        ),
+    )
     model.config.use_cache = False
+    model.print_trainable_parameters()
     arguments = TrainingArguments(
         output_dir="student-checkpoints",
         num_train_epochs=EPOCHS,
         learning_rate=LEARNING_RATE,
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=2,
-        gradient_accumulation_steps=8,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
+        gradient_accumulation_steps=16,
         gradient_checkpointing=True,
+        optim="paged_adamw_8bit",
         lr_scheduler_type="cosine",
         warmup_ratio=0.03,
         logging_steps=10,
