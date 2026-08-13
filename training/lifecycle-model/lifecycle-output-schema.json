@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OkoGoalLifecycleDecision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action", "goal_ref", "title", "lifecycle_evidence"],
+  "properties": {
+    "action": {
+      "enum": ["startGoal", "continueCurrent", "finishGoal", "ignore"]
+    },
+    "goal_ref": {
+      "type": "string",
+      "pattern": "^(NEW_GOAL|C[1-9][0-9]*)$"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "lifecycle_evidence": {
+      "enum": ["none", "explicit_open", "explicit_completion"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"action": {"const": "startGoal"}}},
+      "then": {
+        "properties": {
+          "goal_ref": {"const": "NEW_GOAL"},
+          "title": {"minLength": 3}
+        }
+      },
+      "else": {"properties": {"title": {"const": ""}}}
+    },
+    {
+      "if": {"properties": {"action": {"const": "finishGoal"}}},
+      "then": {"properties": {"lifecycle_evidence": {"const": "explicit_completion"}}}
+    }
+  ]
+}

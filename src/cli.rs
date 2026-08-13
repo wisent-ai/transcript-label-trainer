@@ -128,6 +128,9 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "autolabel" => cmd_autolabel(&parsed),
         "info" => cmd_info(&parsed),
         "goal-model" => cmd_goal_model(&parsed),
+        "lifecycle-review" => cmd_lifecycle_review(&parsed),
+        "lifecycle-model" => cmd_lifecycle_model(&parsed),
+        "lifecycle-audit" => cmd_lifecycle_audit(&parsed),
         "goal-audit" => cmd_goal_audit(&parsed),
         other => Err(Error(format!("unknown command '{other}'"))),
     }
@@ -320,6 +323,48 @@ fn cmd_goal_audit(args: &Parsed) -> Result<i32> {
     Ok(i32::from(
         result.get("passed").and_then(Value::as_bool) != Some(true),
     ))
+}
+
+fn cmd_lifecycle_review(args: &Parsed) -> Result<i32> {
+    let model = args.text("--brama-model").unwrap_or("wisent-backend/chat/primary");
+    let result = crate::lifecycle::review_dataset(
+        std::path::Path::new(args.positional(0)),
+        std::path::Path::new(args.text("--output").unwrap_or_default()),
+        args.text("--split").unwrap_or_default(),
+        model,
+        args.int("--limit").map(|value| value as usize),
+    )?;
+    outln!("{}", dumps(&result));
+    Ok(0)
+}
+
+fn cmd_lifecycle_model(args: &Parsed) -> Result<i32> {
+    let job = stado::execute_lifecycle_model(
+        std::path::Path::new(args.positional(0)),
+        std::path::Path::new(args.positional(1)),
+        args.text("--compute-target").unwrap_or_default(),
+    )?;
+    outln!("Stado job: {}", job.job_id);
+    outln!("model artifact: {}", job.output_uri);
+    Ok(job.status)
+}
+
+fn cmd_lifecycle_audit(args: &Parsed) -> Result<i32> {
+    let review_model = match (args.flag("--best"), args.text("--brama-model")) {
+        (true, None) => crate::brama::BEST_MODEL,
+        (false, Some(model)) => model,
+        (true, Some(_)) => return Err(Error("use either --best or --brama-model".to_string())),
+        (false, None) => return Err(Error(
+            "lifecycle-audit requires --best or --brama-model".to_string(),
+        )),
+    };
+    let result = crate::lifecycle::audit_predictions(
+        std::path::Path::new(args.positional(0)),
+        std::path::Path::new(args.text("--output").unwrap_or_default()),
+        review_model,
+    )?;
+    outln!("{}", dumps(&result));
+    Ok(i32::from(result.get("passed").and_then(Value::as_bool) != Some(true)))
 }
 
 fn cmd_info(args: &Parsed) -> Result<i32> {
@@ -1035,6 +1080,89 @@ fn build_specs() -> Vec<Spec> {
         ],
     };
 
+    let lifecycle_review = Spec {
+        name: "lifecycle-review",
+        help: "replace Oko lifecycle silver answers with Brama-reviewed decisions".to_string(),
+        description: Some(
+            "Read masked Oko training envelopes, classify each one through a named Brama route, \
+             enforce the oko-goal-lifecycle-v1 contract, and write ordered JSONL with reviewer \
+             provenance."
+                .to_string(),
+        ),
+        positionals: vec![Positional {
+            name: "input",
+            help: "JSONL of Oko lifecycle training envelopes".to_string(),
+        }],
+        opts: vec![
+            required("--output", "PATH", Kind::Text, "write reviewed lifecycle JSONL here".to_string()),
+            required("--split", "train|eval", Kind::Text, "record the immutable dataset split".to_string()),
+            option(
+                "--brama-model",
+                "MODEL_ID",
+                Kind::Text,
+                "Brama route used to review every decision (default: wisent-backend/chat/primary)".to_string(),
+            ),
+            option("--limit", "LIMIT", Kind::Int, "cap reviewed rows".to_string()),
+        ],
+    };
+
+    let lifecycle_model = Spec {
+        name: "lifecycle-model",
+        help: "train and qualify Oko's reviewed lifecycle model on Stado".to_string(),
+        description: Some(
+            "Upload immutable reviewed train and held-out datasets, fine-tune on the named \
+             exclusive Stado GPU target, audit every held-out decision through Brama -best, \
+             and publish the complete candidate only when the lifecycle quality gate passes."
+                .to_string(),
+        ),
+        positionals: vec![
+            Positional {
+                name: "train",
+                help: "reviewed lifecycle training JSONL".to_string(),
+            },
+            Positional {
+                name: "eval",
+                help: "reviewed held-out lifecycle JSONL".to_string(),
+            },
+        ],
+        opts: vec![required(
+            "--compute-target",
+            "COMPUTE_TARGET",
+            Kind::Text,
+            "canonical Stado GPU target that trains, audits, and exports the model".to_string(),
+        )],
+    };
+
+    let lifecycle_audit = Spec {
+        name: "lifecycle-audit",
+        help: "apply the final Brama semantic audit to lifecycle predictions".to_string(),
+        description: Some(
+            "Judge every held-out student decision independently, reject inferred completion, \
+             retain the full verdict record, and fail the lifecycle quality gate when more than \
+             two percent are semantically wrong."
+                .to_string(),
+        ),
+        positionals: vec![Positional {
+            name: "predictions",
+            help: "JSONL containing masked input, reference, and student decision".to_string(),
+        }],
+        opts: vec![
+            required("--output", "PATH", Kind::Text, "write the complete lifecycle audit record here".to_string()),
+            option(
+                "--best",
+                "",
+                Kind::Flag,
+                "require Brama's strongest operator-approved subscription route".to_string(),
+            ),
+            option(
+                "--brama-model",
+                "MODEL_ID",
+                Kind::Text,
+                "use an explicit Brama-routed independent judge".to_string(),
+            ),
+        ],
+    };
+
     vec![
         train,
         run,
@@ -1044,6 +1172,9 @@ fn build_specs() -> Vec<Spec> {
         autolabel,
         goal_model,
         goal_audit,
+        lifecycle_review,
+        lifecycle_model,
+        lifecycle_audit,
     ]
 }
 

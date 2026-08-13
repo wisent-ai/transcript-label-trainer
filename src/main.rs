@@ -5,6 +5,7 @@ mod brama;
 mod cli;
 mod evaluate;
 mod goal;
+mod lifecycle;
 #[cfg(feature = "hf")]
 mod hf;
 mod jobs;
