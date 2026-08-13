@@ -403,6 +403,46 @@ GGUF has SHA-256
 `2512d7a455a50a16742b75d8fe38bf02b46b5d6b607f785be32a6345d999d310`,
 the same immutable artifact consumed by Jeden Desktop.
 
+## Reviewed Oko goal-lifecycle model
+
+Oko uses a separate contextual model for lifecycle decisions. Its
+`oko-goal-lifecycle-v1` contract classifies each prompt as `startGoal`,
+`continueCurrent`, `finishGoal`, or `ignore`, selects an existing goal by
+reference when required, and records only explicit open/completion evidence.
+The existing title model remains the sole source of titles for newly started
+goals.
+
+The two source splits are reviewed independently through Brama, with resumable
+JSONL outputs:
+
+```sh
+transcript-label-trainer lifecycle-review path/to/train.jsonl \
+  --output ~/.transcript-label-trainer/lifecycle-model/reviewed-train.jsonl \
+  --split train --brama-model=-best
+transcript-label-trainer lifecycle-review path/to/eval.jsonl \
+  --output ~/.transcript-label-trainer/lifecycle-model/reviewed-eval.jsonl \
+  --split eval --brama-model=-best
+```
+
+The reviewed files are then submitted together to one exclusive Stado GPU
+target:
+
+```sh
+transcript-label-trainer lifecycle-model \
+  ~/.transcript-label-trainer/lifecycle-model/reviewed-train.jsonl \
+  ~/.transcript-label-trainer/lifecycle-model/reviewed-eval.jsonl \
+  --compute-target ubuntu-server-rtx-pro-6000
+```
+
+The job fine-tunes the pinned Qwen3-4B base, evaluates the untouched reviewed
+split, converts and quantizes the model to Q4_K_M GGUF, and runs an independent
+Brama `--best` audit over every held-out prediction. Publication requires at
+least 99% valid JSON, 90% action accuracy, 88% joint accuracy, perfect finish
+precision, and a passing independent audit. Qualified artifacts are
+content-addressed under
+`stado://releases/oko/models/lifecycle-qwen3-4b/<model-sha256>`; an unqualified
+candidate remains available for diagnosis but cannot enter that namespace.
+
 ## Placement: Stado decides where this runs
 
 Stado owns the canonical compute-target registry, and that registry — not this
