@@ -209,8 +209,12 @@ def main() -> None:
                 accepted.append(value)
             else:
                 rejected[reason or "unknown"] += 1
-            if index % 100 == 0 or index == len(futures):
-                print(f"prepared {index}/{len(futures)}; accepted {len(accepted)}", flush=True)
+            if index % 50 == 0 or index == len(futures):
+                print(
+                    f"prepared {index}/{len(futures)}; accepted {len(accepted)}; "
+                    f"rejected {dict(sorted(rejected.items()))}",
+                    flush=True,
+                )
     accepted.sort(key=lambda row: row["id"])
     split_rows = {
         name: [row for row in accepted if row["metadata"]["split"] == name]
