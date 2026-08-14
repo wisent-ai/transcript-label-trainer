@@ -50,7 +50,7 @@ def resolve_url() -> str:
         value = os.environ.get(name, "").strip()
         if value:
             return value.rstrip("/")
-    return "https://brama.wisent.com"
+    return "http://127.0.0.1:17601"
 
 
 class Brama:
