@@ -18,10 +18,14 @@ LEARNING_RATE = float(os.environ.get("LIFECYCLE_STUDENT_LR", "1e-5"))
 MAX_LENGTH = int(os.environ.get("LIFECYCLE_STUDENT_MAX_LENGTH", "3072"))
 MIN_TRAIN_ROWS_BY_ACTION = {
     "continueCurrent": 0,
-    "finishGoal": int(os.environ.get("LIFECYCLE_MIN_FINISH_ROWS", "64")),
-    "ignore": int(os.environ.get("LIFECYCLE_MIN_IGNORE_ROWS", "768")),
-    "startGoal": int(os.environ.get("LIFECYCLE_MIN_START_ROWS", "768")),
+    "finishGoal": 0,
+    "ignore": int(os.environ.get("LIFECYCLE_MIN_IGNORE_ROWS", "512")),
+    "startGoal": int(os.environ.get("LIFECYCLE_MIN_START_ROWS", "512")),
 }
+MIN_EXPLICIT_OPEN_ROWS = int(os.environ.get("LIFECYCLE_MIN_EXPLICIT_OPEN_ROWS", "512"))
+MIN_COMPLETION_NEGATIVE_ROWS = int(
+    os.environ.get("LIFECYCLE_MIN_COMPLETION_NEGATIVE_ROWS", "768")
+)
 SYSTEM_PROMPT = (Path(__file__).resolve().parent / "lifecycle-system-prompt.txt").read_text(
     encoding="utf-8"
 ).strip()
@@ -62,23 +66,64 @@ def target_for(row):
     return value
 
 
+def input_for(row):
+    users = [item for item in row["messages"] if item["role"] == "user"]
+    if len(users) != 1:
+        raise ValueError(f"{row['id']} must contain one user input")
+    return json.loads(users[0]["content"])
+
+
+def is_completion_negative(row):
+    if target_for(row)["action"] == "finishGoal":
+        return False
+    text = input_for(row)["text"].casefold()
+    return any(
+        token in text
+        for token in (
+            "commit",
+            "complete",
+            "done",
+            "finished",
+            "installed",
+            "subagent_notification",
+            "success",
+            "working",
+        )
+    )
+
+
 def augment_train_rows(rows):
-    buckets = defaultdict(list)
+    action_buckets = defaultdict(list)
     for row in rows:
-        buckets[target_for(row)["action"]].append(row)
+        action_buckets[target_for(row)["action"]].append(row)
     required = set(MIN_TRAIN_ROWS_BY_ACTION)
-    missing = required - buckets.keys()
+    missing = required - action_buckets.keys()
     if missing:
         raise ValueError(f"training split is missing actions: {', '.join(sorted(missing))}")
     augmented = list(rows)
     for action in sorted(required):
-        bucket = buckets[action]
+        bucket = action_buckets[action]
         minimum = MIN_TRAIN_ROWS_BY_ACTION[action]
         for index in range(max(0, minimum - len(bucket))):
             augmented.append(bucket[index % len(bucket)])
-    raw_counts = {action: len(buckets[action]) for action in sorted(required)}
+    hard_buckets = {
+        "completion_negative": [row for row in rows if is_completion_negative(row)],
+        "explicit_open": [
+            row for row in rows if target_for(row)["lifecycle_evidence"] == "explicit_open"
+        ],
+    }
+    hard_minimums = {
+        "completion_negative": MIN_COMPLETION_NEGATIVE_ROWS,
+        "explicit_open": MIN_EXPLICIT_OPEN_ROWS,
+    }
+    for name, bucket in hard_buckets.items():
+        minimum = hard_minimums[name]
+        for index in range(max(0, minimum - len(bucket))):
+            augmented.append(bucket[index % len(bucket)])
+    raw_counts = {action: len(action_buckets[action]) for action in sorted(required)}
+    hard_counts = {name: len(bucket) for name, bucket in sorted(hard_buckets.items())}
     effective_counts = dict(Counter(target_for(row)["action"] for row in augmented))
-    return augmented, raw_counts, effective_counts
+    return augmented, raw_counts, effective_counts, hard_counts
 
 
 def prompt_messages(row):
@@ -111,9 +156,12 @@ def main():
         )
     if len(eval_rows) < 100:
         raise SystemExit(f"need at least 100 reviewed eval rows, found {len(eval_rows)}")
-    train_rows, train_action_counts, effective_train_action_counts = augment_train_rows(
-        unique_train_rows
-    )
+    (
+        train_rows,
+        train_action_counts,
+        effective_train_action_counts,
+        train_hard_example_counts,
+    ) = augment_train_rows(unique_train_rows)
     eval_action_counts = Counter(target_for(row)["action"] for row in eval_rows)
     missing_eval_actions = {
         "startGoal", "continueCurrent", "finishGoal", "ignore"
@@ -130,6 +178,7 @@ def main():
         f"held-out rows: {len(eval_rows)}; "
         f"train actions: {train_action_counts}; "
         f"effective train actions: {dict(sorted(effective_train_action_counts.items()))}; "
+        f"hard examples: {train_hard_example_counts}; "
         f"held-out actions: {dict(sorted(eval_action_counts.items()))}",
         flush=True,
     )
@@ -284,6 +333,7 @@ def main():
         "unique_train_rows": len(unique_train_rows),
         "train_action_counts": train_action_counts,
         "effective_train_action_counts": dict(sorted(effective_train_action_counts.items())),
+        "train_hard_example_counts": train_hard_example_counts,
         "eval_action_counts": dict(sorted(eval_action_counts.items())),
         "eval_rows": total,
         "valid_json": metrics["valid_json"] / total,

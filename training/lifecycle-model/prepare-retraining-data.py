@@ -12,7 +12,7 @@ USAGE = (
     "usage: prepare-retraining-data.py OLD_TRAIN OLD_EVAL EVAL_DAY "
     "NEW_TRAIN NEW_EVAL [--goal-dataset REVIEWED_GOALS_JSONL]"
 )
-GOAL_AUGMENTATION_LIMIT = 512
+GOAL_AUGMENTATION_LIMIT = 256
 
 if len(sys.argv) not in {6, 8} or (len(sys.argv) == 8 and sys.argv[6] != "--goal-dataset"):
     raise SystemExit(USAGE)
