@@ -16,9 +16,12 @@ BASE_REVISION = os.environ.get(
 EPOCHS = float(os.environ.get("LIFECYCLE_STUDENT_EPOCHS", "3"))
 LEARNING_RATE = float(os.environ.get("LIFECYCLE_STUDENT_LR", "1e-5"))
 MAX_LENGTH = int(os.environ.get("LIFECYCLE_STUDENT_MAX_LENGTH", "3072"))
-MIN_TRAIN_ROWS_PER_ACTION = int(
-    os.environ.get("LIFECYCLE_MIN_TRAIN_ROWS_PER_ACTION", "256")
-)
+MIN_TRAIN_ROWS_BY_ACTION = {
+    "continueCurrent": 0,
+    "finishGoal": int(os.environ.get("LIFECYCLE_MIN_FINISH_ROWS", "64")),
+    "ignore": int(os.environ.get("LIFECYCLE_MIN_IGNORE_ROWS", "768")),
+    "startGoal": int(os.environ.get("LIFECYCLE_MIN_START_ROWS", "768")),
+}
 SYSTEM_PROMPT = (Path(__file__).resolve().parent / "lifecycle-system-prompt.txt").read_text(
     encoding="utf-8"
 ).strip()
@@ -63,18 +66,19 @@ def augment_train_rows(rows):
     buckets = defaultdict(list)
     for row in rows:
         buckets[target_for(row)["action"]].append(row)
-    required = {"startGoal", "continueCurrent", "finishGoal", "ignore"}
+    required = set(MIN_TRAIN_ROWS_BY_ACTION)
     missing = required - buckets.keys()
     if missing:
         raise ValueError(f"training split is missing actions: {', '.join(sorted(missing))}")
     augmented = list(rows)
     for action in sorted(required):
         bucket = buckets[action]
-        for index in range(max(0, MIN_TRAIN_ROWS_PER_ACTION - len(bucket))):
+        minimum = MIN_TRAIN_ROWS_BY_ACTION[action]
+        for index in range(max(0, minimum - len(bucket))):
             augmented.append(bucket[index % len(bucket)])
-    return augmented, {action: len(buckets[action]) for action in sorted(required)}
-
-
+    raw_counts = {action: len(buckets[action]) for action in sorted(required)}
+    effective_counts = dict(Counter(target_for(row)["action"] for row in augmented))
+    return augmented, raw_counts, effective_counts
 
 
 def prompt_messages(row):
@@ -107,7 +111,9 @@ def main():
         )
     if len(eval_rows) < 100:
         raise SystemExit(f"need at least 100 reviewed eval rows, found {len(eval_rows)}")
-    train_rows, train_action_counts = augment_train_rows(unique_train_rows)
+    train_rows, train_action_counts, effective_train_action_counts = augment_train_rows(
+        unique_train_rows
+    )
     eval_action_counts = Counter(target_for(row)["action"] for row in eval_rows)
     missing_eval_actions = {
         "startGoal", "continueCurrent", "finishGoal", "ignore"
@@ -123,6 +129,7 @@ def main():
         f"effective balanced rows: {len(train_rows)}; "
         f"held-out rows: {len(eval_rows)}; "
         f"train actions: {train_action_counts}; "
+        f"effective train actions: {dict(sorted(effective_train_action_counts.items()))}; "
         f"held-out actions: {dict(sorted(eval_action_counts.items()))}",
         flush=True,
     )
@@ -276,6 +283,7 @@ def main():
         "train_rows": len(train_rows),
         "unique_train_rows": len(unique_train_rows),
         "train_action_counts": train_action_counts,
+        "effective_train_action_counts": dict(sorted(effective_train_action_counts.items())),
         "eval_action_counts": dict(sorted(eval_action_counts.items())),
         "eval_rows": total,
         "valid_json": metrics["valid_json"] / total,
