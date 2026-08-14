@@ -387,6 +387,13 @@ fn read_predictions(path: &Path) -> Result<Vec<AuditPrediction>> {
         .collect()
 }
 
+fn retryable_audit_error(error: &Error) -> bool {
+    error.0.contains("\"retryable\":true")
+        || ["HTTP 429", "HTTP 503", "HTTP 504"]
+            .iter()
+            .any(|status| error.0.contains(status))
+}
+
 fn audit_one(
     client: &BramaClient,
     model: &str,
@@ -416,7 +423,7 @@ fn audit_one(
         },
     ];
     let mut last = Error("lifecycle audit did not run".to_string());
-    for attempt in 0..3 {
+    for attempt in 0..6 {
         match client
             .chat(model, &request)
             .and_then(|answer| parse_json_object(&answer))
@@ -430,6 +437,10 @@ fn audit_one(
             }
             Ok(_) => last = Error(format!("{} has an unknown audit verdict", prediction.id)),
             Err(error) => last = error,
+        }
+        let retryable = attempt < 2 || retryable_audit_error(&last);
+        if attempt == 5 || !retryable {
+            break;
         }
         thread::sleep(Duration::from_secs(1 << attempt));
     }
