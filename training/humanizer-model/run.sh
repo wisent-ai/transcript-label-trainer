@@ -9,7 +9,9 @@ WORK="${HUMANIZER_WORK_DIR:-/tmp/echo-humanizer-$JOB_ID}"
 OUT="/tmp/wc-$JOB_ID/output"
 VENV="$WORK/venv"
 mkdir -p "$WORK" "$OUT"
-cp "$TARGETS" "$WORK/targets.jsonl"
+if [[ ! "$TARGETS" -ef "$WORK/targets.jsonl" ]]; then
+  cp "$TARGETS" "$WORK/targets.jsonl"
+fi
 cd "$WORK"
 
 python3 -m venv "$VENV"
