@@ -316,11 +316,17 @@ pub fn execute_lifecycle_model(
     train_path: &Path,
     eval_path: &Path,
     compute_target: &str,
+    brama_url: &str,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
         return Err(Error("--compute-target cannot be empty".to_string()));
     }
+    let brama_url = brama_url.trim();
+    if brama_url.is_empty() {
+        return Err(Error("--brama-url cannot be empty".to_string()));
+    }
+    let brama_url = shell_quote(brama_url);
     let train_bytes = std::fs::read(train_path)?;
     let eval_bytes = std::fs::read(eval_path)?;
     let key = digest(
@@ -340,6 +346,7 @@ pub fn execute_lifecycle_model(
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{train_uri}' \"$work/reviewed-train.jsonl\"; \
          \"$stado\" storage get '{eval_uri}' \"$work/reviewed-eval.jsonl\"; \
+         export BRAMA_URL={brama_url}; \
          ./training/lifecycle-model/run.sh \
          \"$work/reviewed-train.jsonl\" \"$work/reviewed-eval.jsonl\""
     );

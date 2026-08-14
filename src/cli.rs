@@ -344,6 +344,7 @@ fn cmd_lifecycle_model(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.positional(1)),
         args.text("--compute-target").unwrap_or_default(),
+        args.text("--brama-url").unwrap_or_default(),
     )?;
     outln!("Stado job: {}", job.job_id);
     outln!("model artifact: {}", job.output_uri);
@@ -1148,12 +1149,20 @@ fn build_specs() -> Vec<Spec> {
                 help: "reviewed held-out lifecycle JSONL".to_string(),
             },
         ],
-        opts: vec![required(
-            "--compute-target",
-            "COMPUTE_TARGET",
-            Kind::Text,
-            "canonical Stado GPU target that trains, audits, and exports the model".to_string(),
-        )],
+        opts: vec![
+            required(
+                "--compute-target",
+                "COMPUTE_TARGET",
+                Kind::Text,
+                "canonical Stado GPU target that trains, audits, and exports the model".to_string(),
+            ),
+            required(
+                "--brama-url",
+                "URL",
+                Kind::Text,
+                "Brama endpoint reachable from the compute target".to_string(),
+            ),
+        ],
     };
 
     let humanizer_model = Spec {

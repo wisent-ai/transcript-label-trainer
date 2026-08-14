@@ -16,6 +16,9 @@ BASE_REVISION = os.environ.get(
 EPOCHS = float(os.environ.get("LIFECYCLE_STUDENT_EPOCHS", "3"))
 LEARNING_RATE = float(os.environ.get("LIFECYCLE_STUDENT_LR", "1e-5"))
 MAX_LENGTH = int(os.environ.get("LIFECYCLE_STUDENT_MAX_LENGTH", "3072"))
+MIN_TRAIN_ROWS_PER_ACTION = int(
+    os.environ.get("LIFECYCLE_MIN_TRAIN_ROWS_PER_ACTION", "256")
+)
 SYSTEM_PROMPT = (Path(__file__).resolve().parent / "lifecycle-system-prompt.txt").read_text(
     encoding="utf-8"
 ).strip()
@@ -56,6 +59,24 @@ def target_for(row):
     return value
 
 
+def augment_train_rows(rows):
+    buckets = defaultdict(list)
+    for row in rows:
+        buckets[target_for(row)["action"]].append(row)
+    required = {"startGoal", "continueCurrent", "finishGoal", "ignore"}
+    missing = required - buckets.keys()
+    if missing:
+        raise ValueError(f"training split is missing actions: {', '.join(sorted(missing))}")
+    augmented = list(rows)
+    for action in sorted(required):
+        bucket = buckets[action]
+        for index in range(max(0, MIN_TRAIN_ROWS_PER_ACTION - len(bucket))):
+            augmented.append(bucket[index % len(bucket)])
+    return augmented, {action: len(buckets[action]) for action in sorted(required)}
+
+
+
+
 def prompt_messages(row):
     messages = [item for item in row["messages"] if item["role"] != "assistant"]
     if len(messages) != 2 or messages[0]["role"] != "system" or messages[1]["role"] != "user":
@@ -78,15 +99,31 @@ def main():
 
     train_path = Path(os.environ.get("LIFECYCLE_TRAIN_DATASET", "reviewed-train.jsonl"))
     eval_path = Path(os.environ.get("LIFECYCLE_EVAL_DATASET", "reviewed-eval.jsonl"))
-    train_rows = read_rows(train_path)
+    unique_train_rows = read_rows(train_path)
     eval_rows = read_rows(eval_path)
-    if len(train_rows) < 500:
-        raise SystemExit(f"need at least 500 reviewed train rows, found {len(train_rows)}")
+    if len(unique_train_rows) < 500:
+        raise SystemExit(
+            f"need at least 500 reviewed train rows, found {len(unique_train_rows)}"
+        )
     if len(eval_rows) < 100:
         raise SystemExit(f"need at least 100 reviewed eval rows, found {len(eval_rows)}")
+    train_rows, train_action_counts = augment_train_rows(unique_train_rows)
+    eval_action_counts = Counter(target_for(row)["action"] for row in eval_rows)
+    missing_eval_actions = {
+        "startGoal", "continueCurrent", "finishGoal", "ignore"
+    } - eval_action_counts.keys()
+    if missing_eval_actions:
+        raise SystemExit(
+            "held-out split is missing actions: "
+            + ", ".join(sorted(missing_eval_actions))
+        )
     random.Random(SEED).shuffle(train_rows)
     print(
-        f"reviewed train rows: {len(train_rows)}; held-out rows: {len(eval_rows)}",
+        f"reviewed train rows: {len(unique_train_rows)}; "
+        f"effective balanced rows: {len(train_rows)}; "
+        f"held-out rows: {len(eval_rows)}; "
+        f"train actions: {train_action_counts}; "
+        f"held-out actions: {dict(sorted(eval_action_counts.items()))}",
         flush=True,
     )
 
@@ -237,6 +274,9 @@ def main():
         "epochs": EPOCHS,
         "learning_rate": LEARNING_RATE,
         "train_rows": len(train_rows),
+        "unique_train_rows": len(unique_train_rows),
+        "train_action_counts": train_action_counts,
+        "eval_action_counts": dict(sorted(eval_action_counts.items())),
         "eval_rows": total,
         "valid_json": metrics["valid_json"] / total,
         "action_accuracy": metrics["action_correct"] / total,
