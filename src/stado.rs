@@ -84,6 +84,10 @@ fn digest(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
 fn repo_ref() -> Result<String> {
     let candidate = std::env::var("TLT_REPO_REF").unwrap_or_default();
     let candidate = if candidate.trim().is_empty() {
@@ -416,11 +420,16 @@ pub fn execute_humanizer_model(
         "application/x-ndjson",
     )?;
     let source_ref = repo_ref()?;
+    let work_root = crate::placement::resolve_placement()
+        .training_root
+        .join("humanizer-model")
+        .join("jobs");
+    let work_root = shell_quote(&work_root.to_string_lossy());
     let command = format!(
-        "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/echo-humanizer-{key}\"; \
+        "set -euo pipefail; work={work_root}/echo-humanizer-{key}; \
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{targets_uri}' \"$work/targets.jsonl\"; \
-         ./training/humanizer-model/run.sh \"$work/targets.jsonl\""
+         HUMANIZER_WORK_DIR=\"$work\" ./training/humanizer-model/run.sh \"$work/targets.jsonl\""
     );
     let args = vec![
         OsString::from("submit"),
