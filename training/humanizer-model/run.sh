@@ -36,10 +36,63 @@ export HUMANIZER_BASE_REVISION="db0426d39d4bd4a6d34fdc71db97569da68f55e1"
 "$VENV/bin/python" "$ROOT/training/humanizer-model/prepare.py"
 "$VENV/bin/python" "$ROOT/training/humanizer-model/train.py"
 "$VENV/bin/python" "$ROOT/training/humanizer-model/audit.py"
+"$VENV/bin/python" "$ROOT/training/humanizer-model/publish.py"
 "$VENV/bin/python" -m pip freeze > "$WORK/python-requirements.lock"
 
 cp "$WORK/preparation.json" "$WORK/metrics.json" "$WORK/audit.json" \
-   "$WORK/predictions.jsonl" "$WORK/python-requirements.lock" "$OUT/"
+   "$WORK/predictions.jsonl" "$WORK/publication.json" \
+   "$WORK/python-requirements.lock" "$OUT/"
 cp -R "$WORK/student" "$OUT/adapter"
+
+OUT="$OUT" "$VENV/bin/python" - <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+
+out = Path(os.environ["OUT"])
+publication = json.loads((out / "publication.json").read_text(encoding="utf-8"))
+metrics = json.loads((out / "metrics.json").read_text(encoding="utf-8"))
+audit = json.loads((out / "audit.json").read_text(encoding="utf-8"))
+
+def digest(path):
+    value = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(8 * 1024 * 1024):
+            value.update(chunk)
+    return value.hexdigest()
+
+qualified = publication.get("qualified") is True and audit.get("passed") is True
+manifest = {
+    "schema_version": 1,
+    "product": "Echo Łukasz humanizer",
+    "contract": "echo-lukasz-humanizer-v1",
+    "format": "vLLM LoRA adapter",
+    "base_model": metrics.get("base_model"),
+    "base_revision": metrics.get("base_revision"),
+    "repo_id": publication.get("repo_id"),
+    "revision": publication.get("revision"),
+    "private": publication.get("private"),
+    "qualified": qualified,
+    "metrics": {
+        "base": metrics.get("base"),
+        "student": metrics.get("student"),
+        "target_chrf_gain": metrics.get("target_chrf_gain"),
+        "audit_base": audit.get("base"),
+        "audit_student": audit.get("student"),
+        "voice_match_gain": audit.get("voice_match_gain"),
+        "semantic_fidelity_delta": audit.get("semantic_fidelity_delta"),
+    },
+    "evidence": {
+        path.name: {"bytes": path.stat().st_size, "sha256": digest(path)}
+        for path in sorted(out.iterdir()) if path.is_file()
+    },
+}
+(out / "model-manifest.json").write_text(
+    json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+)
+if not qualified:
+    raise SystemExit("humanizer model did not satisfy its publication gate")
+PY
 
 echo "qualified private humanizer model and evidence staged in $OUT"

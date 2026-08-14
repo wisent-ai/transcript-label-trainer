@@ -20,6 +20,7 @@ const REPOSITORY: &str = "https://github.com/wisent-ai/transcript-label-trainer.
 const REPO_WORKDIR: &str = "transcript-label-trainer";
 const SIGNING_SECRET: &str = "WISENT_APP_AGENT_AUTH_SECRET=jeden-agent-auth#agent_auth_secret";
 const BEARER_SECRET: &str = "BRAMA_TOKEN=jeden-model-router#token";
+const HUGGINGFACE_SECRET: &str = "HF_TOKEN=stado-huggingface#token";
 
 struct TempDir(PathBuf);
 
@@ -446,6 +447,8 @@ pub fn execute_humanizer_model(
         OsString::from(SIGNING_SECRET),
         OsString::from("--secret-env"),
         OsString::from(BEARER_SECRET),
+        OsString::from("--secret-env"),
+        OsString::from(HUGGINGFACE_SECRET),
         OsString::from(command),
     ];
     let submitted = run(&stado, &args)?;
