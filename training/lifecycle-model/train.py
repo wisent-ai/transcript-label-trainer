@@ -18,7 +18,7 @@ LEARNING_RATE = float(os.environ.get("LIFECYCLE_STUDENT_LR", "1e-5"))
 MAX_LENGTH = int(os.environ.get("LIFECYCLE_STUDENT_MAX_LENGTH", "3072"))
 MIN_TRAIN_ROWS_BY_ACTION = {
     "continueCurrent": 0,
-    "finishGoal": 0,
+    "finishGoal": int(os.environ.get("LIFECYCLE_MIN_FINISH_ROWS", "256")),
     "ignore": int(os.environ.get("LIFECYCLE_MIN_IGNORE_ROWS", "512")),
     "startGoal": int(os.environ.get("LIFECYCLE_MIN_START_ROWS", "512")),
 }
