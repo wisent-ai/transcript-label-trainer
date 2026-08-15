@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -423,7 +423,7 @@ fn audit_one(
         },
     ];
     let mut last = Error("lifecycle audit did not run".to_string());
-    for attempt in 0..6 {
+    for attempt in 0..3 {
         match client
             .chat(model, &request)
             .and_then(|answer| parse_json_object(&answer))
@@ -438,8 +438,7 @@ fn audit_one(
             Ok(_) => last = Error(format!("{} has an unknown audit verdict", prediction.id)),
             Err(error) => last = error,
         }
-        let retryable = attempt < 2 || retryable_audit_error(&last);
-        if attempt == 5 || !retryable {
+        if attempt == 2 || !retryable_audit_error(&last) {
             break;
         }
         thread::sleep(Duration::from_secs(1 << attempt));
@@ -455,6 +454,7 @@ pub fn audit_predictions(input: &Path, output: &Path, model: &str) -> Result<Val
     let client = BramaClient::from_env()?;
     let predictions = Arc::new(predictions);
     let next = Arc::new(AtomicUsize::new(0));
+    let aborted = Arc::new(AtomicBool::new(false));
     let results: Arc<Mutex<Vec<Option<Result<AuditDecision>>>>> =
         Arc::new(Mutex::new((0..predictions.len()).map(|_| None).collect()));
     let workers = usize::from(4_u8).min(predictions.len());
@@ -463,15 +463,23 @@ pub fn audit_predictions(input: &Path, output: &Path, model: &str) -> Result<Val
         let client = client.clone();
         let predictions = Arc::clone(&predictions);
         let next = Arc::clone(&next);
+        let aborted = Arc::clone(&aborted);
         let results = Arc::clone(&results);
         let model = model.to_string();
         handles.push(thread::spawn(move || loop {
+            if aborted.load(Ordering::Relaxed) {
+                break;
+            }
             let index = next.fetch_add(1, Ordering::Relaxed);
             if index >= predictions.len() {
                 break;
             }
             let result = audit_one(&client, &model, &predictions[index]);
+            let failed = result.is_err();
             results.lock().expect("lifecycle audit result lock")[index] = Some(result);
+            if failed {
+                aborted.store(true, Ordering::Relaxed);
+            }
         }));
     }
     for handle in handles {
@@ -492,11 +500,8 @@ pub fn audit_predictions(input: &Path, output: &Path, model: &str) -> Result<Val
         .iter_mut()
         .enumerate()
     {
-        match result
-            .take()
-            .ok_or_else(|| Error("lifecycle audit produced a missing row".to_string()))?
-        {
-            Ok(decision) => {
+        match result.take() {
+            Some(Ok(decision)) => {
                 match decision.verdict.as_str() {
                     "student-sensible" => sensible += 1,
                     "student-wrong" => wrong += 1,
@@ -508,11 +513,19 @@ pub fn audit_predictions(input: &Path, output: &Path, model: &str) -> Result<Val
                     "decision": decision,
                 }));
             }
-            Err(error) => {
+            Some(Err(error)) => {
                 failures.push(error.to_string());
                 records.push(serde_json::json!({
                     "id": predictions[index].id,
                     "error": error.to_string(),
+                }));
+            }
+            None => {
+                let error = "audit skipped after an earlier audit failure".to_string();
+                failures.push(error.clone());
+                records.push(serde_json::json!({
+                    "id": predictions[index].id,
+                    "error": error,
                 }));
             }
         }
