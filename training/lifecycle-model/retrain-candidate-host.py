@@ -13,7 +13,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-REVISION = "e3dd6f65be729c7e75f12b518b28953cb738f66c"
+REVISION = "11a04eb07c31fa7bb80c6406c2a121b789f84f6c"
 JOB_ID = "b5de55bd"
 WORK = Path(f"/mnt/wd16tb/wisent-staging/oko-lifecycle-model-{JOB_ID}")
 SOURCE = WORK / "audit-source"
