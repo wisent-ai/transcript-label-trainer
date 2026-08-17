@@ -2,7 +2,7 @@
 set -eu
 
 work=$(
-  /usr/bin/find /mnt/wd16tb/stado/jobs -maxdepth 1 -type d -name 'jeden-goal-*' -printf '%T@ %p\n' \
+  /usr/bin/find /mnt/wisent-staging/stado/jobs -maxdepth 1 -type d -name 'jeden-goal-*' -printf '%T@ %p\n' \
     | /usr/bin/sort -nr \
     | /usr/bin/awk 'NR == 1 { print $2 }'
 )

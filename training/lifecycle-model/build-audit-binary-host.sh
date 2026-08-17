@@ -2,7 +2,7 @@
 set -eu
 
 revision=f6be63e200e5f463ba41b0cf7087846664977c5e
-candidate=/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd
+candidate=/mnt/wisent-staging/oko-lifecycle-model-b5de55bd
 source_root="$candidate/audit-source"
 target_root="$candidate/audit-target"
 if [ ! -d "$source_root/.git" ]; then

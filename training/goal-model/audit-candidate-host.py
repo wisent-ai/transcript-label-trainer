@@ -8,7 +8,7 @@ import urllib.request
 
 WORK = Path(os.environ.get(
     "GOAL_AUDIT_WORK",
-    "/mnt/wd16tb/stado/jobs/jeden-goal-prompt-v5",
+    "/mnt/wisent-staging/stado/jobs/jeden-goal-prompt-v5",
 ))
 BINARY = Path("/root/.stado/files/transcript-label-trainer-audit")
 GRANT = Path("/root/.stado/files/stado-agent-grant.env")

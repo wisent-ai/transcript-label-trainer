@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-work=/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd
+work=/mnt/wisent-staging/oko-lifecycle-model-b5de55bd
 "$HOME/.stado/bin/oko-lifecycle-prepare-split" \
   "$work/reviewed-train.jsonl" \
   "$work/reviewed-eval.jsonl" \

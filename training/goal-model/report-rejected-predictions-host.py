@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 roots = sorted(
-    Path("/mnt/wd16tb/stado/jobs").glob("jeden-goal-*"),
+    Path("/mnt/wisent-staging/stado/jobs").glob("jeden-goal-*"),
     key=lambda path: path.stat().st_mtime,
     reverse=True,
 )

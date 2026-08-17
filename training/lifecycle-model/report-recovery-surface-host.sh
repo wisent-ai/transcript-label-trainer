@@ -3,8 +3,8 @@ set -eu
 
 job_id=b5de55bd
 for work in \
-  "/mnt/wd16tb/stado/jobs/oko-lifecycle-model-$job_id" \
-  "/mnt/wd16tb/wisent-staging/oko-lifecycle-model-$job_id"
+  "/mnt/wisent-staging/stado/jobs/oko-lifecycle-model-$job_id" \
+  "/mnt/wisent-staging/oko-lifecycle-model-$job_id"
 do
   [ -d "$work" ] || continue
   printf 'work=%s\n' "$work"

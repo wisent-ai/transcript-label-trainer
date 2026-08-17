@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 JOB_ID = "b5de55bd"
-WORK = Path(f"/mnt/wd16tb/wisent-staging/oko-lifecycle-model-{JOB_ID}")
+WORK = Path(f"/mnt/wisent-staging/oko-lifecycle-model-{JOB_ID}")
 BINARY = WORK / "cargo-target/release/transcript-label-trainer"
 PREDICTIONS = WORK / "predictions.jsonl"
 MODEL = os.environ.get("LIFECYCLE_AUDIT_MODEL", "-best").strip()

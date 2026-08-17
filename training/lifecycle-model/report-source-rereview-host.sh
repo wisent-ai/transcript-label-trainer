@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-work=/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd
+work=/mnt/wisent-staging/oko-lifecycle-model-b5de55bd
 [ -f "$work/source-rereview-status.json" ] && /usr/bin/cat "$work/source-rereview-status.json"
 for file in rereviewed-train-source.jsonl rereviewed-eval-source.jsonl; do
   if [ -f "$work/$file" ]; then

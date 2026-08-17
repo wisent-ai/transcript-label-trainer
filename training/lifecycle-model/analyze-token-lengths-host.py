@@ -1,4 +1,4 @@
-#!/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd/venv/bin/python
+#!/mnt/wisent-staging/oko-lifecycle-model-b5de55bd/venv/bin/python
 """Measure whether lifecycle answer labels survive training truncation."""
 
 import json
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from transformers import AutoTokenizer
 
-work = Path("/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd")
+work = Path("/mnt/wisent-staging/oko-lifecycle-model-b5de55bd")
 tokenizer = AutoTokenizer.from_pretrained(work / "student")
 limit = 3072
 judge = json.loads((work / "final-judge-local.json").read_text(encoding="utf-8"))

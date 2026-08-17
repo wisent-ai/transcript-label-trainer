@@ -4,7 +4,7 @@
 import json
 from pathlib import Path
 
-work = Path("/mnt/wd16tb/stado/jobs/jeden-goal-568ebd79663775c9")
+work = Path("/mnt/wisent-staging/stado/jobs/jeden-goal-568ebd79663775c9")
 metrics = json.loads((work / "metrics.json").read_text())
 print(json.dumps({
     "base_model": metrics.get("base_model"),

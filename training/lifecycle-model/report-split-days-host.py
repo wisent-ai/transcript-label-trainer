@@ -5,7 +5,7 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
-work = Path("/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd")
+work = Path("/mnt/wisent-staging/oko-lifecycle-model-b5de55bd")
 counts = defaultdict(Counter)
 review_models = Counter()
 ids = set()

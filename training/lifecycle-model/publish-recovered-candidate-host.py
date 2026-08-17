@@ -18,7 +18,7 @@ SOURCE_REVISION = os.environ.get(
 WORK = Path(
     os.environ.get(
         "LIFECYCLE_PUBLISH_WORK",
-        f"/mnt/wd16tb/wisent-staging/oko-lifecycle-model-{JOB_ID}",
+        f"/mnt/wisent-staging/oko-lifecycle-model-{JOB_ID}",
     )
 )
 SOURCE = Path(os.environ.get("LIFECYCLE_PUBLISH_SOURCE", str(WORK / "audit-source")))

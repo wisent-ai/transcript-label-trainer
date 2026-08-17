@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-WORK = Path("/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd")
+WORK = Path("/mnt/wisent-staging/oko-lifecycle-model-b5de55bd")
 PYTHON = WORK / "venv/bin/python"
 EVALUATOR = Path("/root/.stado/bin/oko-lifecycle-evaluate-gguf")
 BINARY = WORK / "cargo-target/release/transcript-label-trainer"

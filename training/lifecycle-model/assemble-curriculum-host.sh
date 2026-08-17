@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-work=/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd
+work=/mnt/wisent-staging/oko-lifecycle-model-b5de55bd
 exec "$HOME/.stado/bin/oko-lifecycle-assemble-curriculum" \
   "$work/rereviewed-train-day12.jsonl" \
   "$work/rereviewed-eval-day12.jsonl" \

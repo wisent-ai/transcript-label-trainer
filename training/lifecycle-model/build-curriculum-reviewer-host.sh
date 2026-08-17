@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-work=/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd
+work=/mnt/wisent-staging/oko-lifecycle-model-b5de55bd
 source_root="$work/audit-source"
 target_root="$work/audit-target"
 revision=11a04eb07c31fa7bb80c6406c2a121b789f84f6c

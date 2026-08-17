@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-work=/mnt/wd16tb/stado/jobs/jeden-goal-prompt-v5
+work=/mnt/wisent-staging/stado/jobs/jeden-goal-prompt-v5
 repo="$work/audit-source"
 commit=93f41459f3693326c8e213820b4ef47a79df9de2
 rm -rf "$repo"

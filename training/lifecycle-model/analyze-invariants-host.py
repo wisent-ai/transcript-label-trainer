@@ -5,7 +5,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-work = Path("/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd")
+work = Path("/mnt/wisent-staging/oko-lifecycle-model-b5de55bd")
 for name in ("reviewed-train.jsonl", "reviewed-eval.jsonl"):
     evidence_status = Counter()
     finish_status = Counter()

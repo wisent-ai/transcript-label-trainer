@@ -15,7 +15,7 @@ from pathlib import Path
 WORK = Path(
     os.environ.get(
         "LIFECYCLE_EVAL_WORK",
-        "/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd",
+        "/mnt/wisent-staging/oko-lifecycle-model-b5de55bd",
     )
 )
 MODEL = Path(

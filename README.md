@@ -526,7 +526,7 @@ placement:
     storage root:  /Users/lukaszbartoszcze/.transcript-lake
     fallback:      training root … — local fallback because Stado places
                    label-model training on ubuntu-server-rtx-pro-6000 at
-                   /mnt/wd16tb/stado/training, and this machine is
+                   /mnt/wisent-training/stado/training, and this machine is
                    lukasz-macbook; storage root … declared in the Stado registry
 ```
 

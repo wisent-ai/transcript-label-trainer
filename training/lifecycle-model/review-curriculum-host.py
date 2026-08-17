@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-WORK = Path("/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd")
+WORK = Path("/mnt/wisent-staging/oko-lifecycle-model-b5de55bd")
 BINARY = WORK / "cargo-target/release/transcript-label-trainer"
 GRANT_ENV = Path("/root/.stado/files/stado-agent-grant.env")
 MODEL = os.environ.get("LIFECYCLE_REVIEW_MODEL", "wisent-backend/chat/primary")

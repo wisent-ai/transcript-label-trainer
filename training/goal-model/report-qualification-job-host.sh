@@ -2,7 +2,7 @@
 set -eu
 
 job_id=${1:-1a459c5f}
-work="/mnt/wd16tb/stado/jobs/jeden-goal-568ebd79663775c9"
+work="/mnt/wisent-staging/stado/jobs/jeden-goal-568ebd79663775c9"
 printf 'job_id=%s\n' "$job_id"
 printf '%s\n' '=== matching processes ==='
 /usr/bin/ps ax -o pid=,ppid=,etime=,stat=,command= \

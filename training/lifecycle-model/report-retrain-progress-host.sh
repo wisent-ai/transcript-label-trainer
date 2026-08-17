@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-work=/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd
+work=/mnt/wisent-staging/oko-lifecycle-model-b5de55bd
 printf '%s\n' '=== status ==='
 /bin/cat "$work/retrain-status.json"
 printf '%s\n' '=== log end ==='

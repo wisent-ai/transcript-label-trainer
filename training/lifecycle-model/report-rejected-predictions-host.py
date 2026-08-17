@@ -5,7 +5,7 @@ from collections import Counter
 import json
 from pathlib import Path
 
-work = Path("/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd")
+work = Path("/mnt/wisent-staging/oko-lifecycle-model-b5de55bd")
 judge = json.loads((work / "final-judge-local.json").read_text(encoding="utf-8"))
 predictions = {}
 with (work / "predictions.jsonl").open(encoding="utf-8") as handle:

@@ -2,7 +2,7 @@
 set -eu
 
 job_id=${1:-b5de55bd}
-work="/mnt/wd16tb/wisent-staging/oko-lifecycle-model-$job_id"
+work="/mnt/wisent-staging/oko-lifecycle-model-$job_id"
 output="/tmp/wc-$job_id/output"
 
 printf 'job_id=%s\n' "$job_id"

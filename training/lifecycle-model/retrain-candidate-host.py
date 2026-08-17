@@ -15,7 +15,7 @@ from pathlib import Path
 
 REVISION = "11a04eb07c31fa7bb80c6406c2a121b789f84f6c"
 JOB_ID = "b5de55bd"
-WORK = Path(f"/mnt/wd16tb/wisent-staging/oko-lifecycle-model-{JOB_ID}")
+WORK = Path(f"/mnt/wisent-staging/oko-lifecycle-model-{JOB_ID}")
 SOURCE = WORK / "audit-source"
 VENV = WORK / "venv/bin/python"
 STATUS = WORK / "retrain-status.json"
