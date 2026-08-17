@@ -2,6 +2,7 @@
 """Evaluate the quantized lifecycle model through Oko's serving protocol."""
 
 import json
+import os
 import subprocess
 import time
 import urllib.error
@@ -11,18 +12,42 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 
-WORK = Path("/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd")
-MODEL = WORK / "oko-lifecycle-qwen3-8b-q4_k_m.gguf"
-DATASET = WORK / "reviewed-eval-curriculum.jsonl"
-PREDICTIONS = WORK / "predictions-gguf.jsonl"
-METRICS = WORK / "metrics-gguf.json"
-SERVER_LOG = WORK / "llama-server-eval.log"
-SERVER = WORK / "llama.cpp/build/bin/llama-server"
-PORT = 11440
+WORK = Path(
+    os.environ.get(
+        "LIFECYCLE_EVAL_WORK",
+        "/mnt/wd16tb/wisent-staging/oko-lifecycle-model-b5de55bd",
+    )
+)
+MODEL = Path(
+    os.environ.get(
+        "LIFECYCLE_EVAL_MODEL",
+        str(WORK / "oko-lifecycle-qwen3-8b-q4_k_m.gguf"),
+    )
+)
+DATASET = Path(
+    os.environ.get("LIFECYCLE_EVAL_DATASET", str(WORK / "reviewed-eval-curriculum.jsonl"))
+)
+PREDICTIONS = Path(
+    os.environ.get("LIFECYCLE_EVAL_PREDICTIONS", str(WORK / "predictions-gguf.jsonl"))
+)
+METRICS = Path(os.environ.get("LIFECYCLE_EVAL_METRICS", str(WORK / "metrics-gguf.json")))
+SERVER_LOG = Path(
+    os.environ.get("LIFECYCLE_EVAL_SERVER_LOG", str(WORK / "llama-server-eval.log"))
+)
+SERVER = Path(
+    os.environ.get(
+        "LIFECYCLE_EVAL_SERVER",
+        str(WORK / "llama.cpp/build/bin/llama-server"),
+    )
+)
+PORT = int(os.environ.get("LIFECYCLE_EVAL_PORT", "11440"))
 ENDPOINT = f"http://127.0.0.1:{PORT}/v1/chat/completions"
 ACTIONS = {"startGoal", "continueCurrent", "finishGoal", "ignore"}
-SYSTEM_PROMPT = (
-    WORK / "audit-source/training/lifecycle-model/lifecycle-system-prompt.txt"
+SYSTEM_PROMPT = Path(
+    os.environ.get(
+        "LIFECYCLE_EVAL_SYSTEM_PROMPT",
+        str(WORK / "audit-source/training/lifecycle-model/lifecycle-system-prompt.txt"),
+    )
 ).read_text(encoding="utf-8").strip()
 EVIDENCE = {"none", "explicit_open", "explicit_completion"}
 
