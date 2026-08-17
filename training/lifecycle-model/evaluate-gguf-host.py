@@ -42,6 +42,8 @@ SERVER = Path(
 )
 PORT = int(os.environ.get("LIFECYCLE_EVAL_PORT", "11440"))
 ENDPOINT = f"http://127.0.0.1:{PORT}/v1/chat/completions"
+PARALLEL = int(os.environ.get("LIFECYCLE_EVAL_PARALLEL", "4"))
+SLOT_CONTEXT = int(os.environ.get("LIFECYCLE_EVAL_SLOT_CONTEXT", "4096"))
 ACTIONS = {"startGoal", "continueCurrent", "finishGoal", "ignore"}
 SYSTEM_PROMPT = Path(
     os.environ.get(
@@ -102,6 +104,42 @@ def input_for(row):
     content = next(message["content"] for message in row["messages"] if message["role"] == "user")
     return json.loads(content)
 
+def response_format(row):
+    existing_refs = [
+        candidate["ref"]
+        for candidate in input_for(row)["candidates"]
+        if candidate["ref"] != "NEW_GOAL"
+    ]
+
+    def variant(action, goal_refs, evidence):
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["action", "goal_ref", "title", "lifecycle_evidence"],
+            "properties": {
+                "action": {"type": "string", "const": action},
+                "goal_ref": {"type": "string", "enum": goal_refs},
+                "title": {"type": "string", "const": ""},
+                "lifecycle_evidence": {"type": "string", "enum": evidence},
+            },
+        }
+
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "oko_goal_lifecycle",
+            "strict": True,
+            "schema": {
+                "oneOf": [
+                    variant("startGoal", ["NEW_GOAL"], ["none"]),
+                    variant("continueCurrent", existing_refs, ["none", "explicit_open"]),
+                    variant("finishGoal", existing_refs, ["explicit_completion"]),
+                    variant("ignore", existing_refs, ["none"]),
+                ]
+            },
+        },
+    }
+
 
 def wait_for_server(process):
     health = f"http://127.0.0.1:{PORT}/health"
@@ -132,6 +170,7 @@ def classify(row):
             "max_tokens": 96,
             "stream": False,
             "chat_template_kwargs": {"enable_thinking": False},
+            "response_format": response_format(row),
         }
     ).encode()
     last_error = None
@@ -171,11 +210,11 @@ def main():
                 "--alias",
                 "oko-goal-lifecycle-v1",
                 "--ctx-size",
-                "4096",
+                str(SLOT_CONTEXT * PARALLEL),
                 "--gpu-layers",
                 "99",
                 "--parallel",
-                "4",
+                str(PARALLEL),
                 "--no-webui",
             ],
             cwd=WORK,
@@ -186,7 +225,7 @@ def main():
         try:
             wait_for_server(process)
             results = [None] * len(rows)
-            with ThreadPoolExecutor(max_workers=4) as executor:
+            with ThreadPoolExecutor(max_workers=PARALLEL) as executor:
                 futures = {executor.submit(classify, row): index for index, row in enumerate(rows)}
                 for completed, future in enumerate(as_completed(futures), 1):
                     index = futures[future]
