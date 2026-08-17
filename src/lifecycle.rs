@@ -124,22 +124,18 @@ fn validate_decision(row: &TrainingRow, value: Value) -> Result<Decision> {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
+    if !decision.title.is_empty() {
+        return Err(Error(format!("{} returned a lifecycle title", row.id)));
+    }
     if decision.action == "startGoal" {
-        let words = decision.title.split_whitespace().count();
-        if decision.goal_ref != "NEW_GOAL"
-            || !(3..=7).contains(&words)
-            || decision.title.len() > 100
-        {
-            return Err(Error(format!("{} has invalid startGoal title/ref", row.id)));
+        if decision.goal_ref != "NEW_GOAL" {
+            return Err(Error(format!("{} has invalid startGoal ref", row.id)));
         }
-    } else {
-        if decision.goal_ref == "NEW_GOAL" {
-            return Err(Error(format!(
-                "{} uses NEW_GOAL for {}",
-                row.id, decision.action
-            )));
-        }
-        decision.title.clear();
+    } else if decision.goal_ref == "NEW_GOAL" {
+        return Err(Error(format!(
+            "{} uses NEW_GOAL for {}",
+            row.id, decision.action
+        )));
     }
     if decision.action == "finishGoal" && decision.lifecycle_evidence != "explicit_completion" {
         return Err(Error(format!(

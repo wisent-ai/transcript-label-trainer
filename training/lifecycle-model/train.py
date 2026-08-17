@@ -43,7 +43,7 @@ def read_rows(path):
 def canonical(decision):
     return json.dumps(decision, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
-def decision_obeys_contract(value):
+def decision_obeys_contract(value, allow_legacy_start_title=False):
     if not isinstance(value, dict):
         return False
     required = {"action", "goal_ref", "title", "lifecycle_evidence"}
@@ -56,8 +56,10 @@ def decision_obeys_contract(value):
     if evidence not in {"none", "explicit_open", "explicit_completion"}:
         return False
     if action == "startGoal":
-        words = value["title"].split()
-        if value["goal_ref"] != "NEW_GOAL" or not 3 <= len(words) <= 7:
+        if value["goal_ref"] != "NEW_GOAL":
+            return False
+        title_words = value["title"].split()
+        if title_words and (not allow_legacy_start_title or not 3 <= len(title_words) <= 7):
             return False
     elif value["goal_ref"] == "NEW_GOAL" or value["title"]:
         return False
@@ -66,7 +68,7 @@ def decision_obeys_contract(value):
     return True
 
 
-def parse_decision(text):
+def parse_decision(text, allow_legacy_start_title=False):
     text = text.strip()
     start = text.find("{")
     end = text.rfind("}")
@@ -76,7 +78,7 @@ def parse_decision(text):
         value = json.loads(text[start : end + 1])
     except json.JSONDecodeError:
         return None
-    if not decision_obeys_contract(value):
+    if not decision_obeys_contract(value, allow_legacy_start_title):
         return None
     return value
 
@@ -85,9 +87,10 @@ def target_for(row):
     assistants = [item for item in row["messages"] if item["role"] == "assistant"]
     if len(assistants) != 1:
         raise ValueError(f"{row['id']} must contain one assistant target")
-    value = parse_decision(assistants[0]["content"])
+    value = parse_decision(assistants[0]["content"], allow_legacy_start_title=True)
     if value is None:
         raise ValueError(f"{row['id']} contains an invalid assistant target")
+    value["title"] = ""
     return value
 
 

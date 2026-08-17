@@ -411,6 +411,9 @@ Oko uses a separate contextual model for lifecycle decisions. Its
 reference when required, and records only explicit open/completion evidence.
 The existing title model remains the sole source of titles for newly started
 goals.
+The lifecycle model therefore emits an empty `title` for every action; Oko
+fills a newly started goal's title through the separate title model before
+validating or applying the decision.
 
 The two source splits are reviewed independently through Brama, with resumable
 JSONL outputs:
@@ -423,6 +426,13 @@ transcript-label-trainer lifecycle-review path/to/eval.jsonl \
   --output ~/.transcript-label-trainer/lifecycle-model/reviewed-eval.jsonl \
   --split eval --brama-model=-best
 ```
+
+When the serving contract changes, prior source rows are reviewed again rather
+than retaining labels produced under the old prompt. Deterministic hard-case
+curricula from `training/lifecycle-model/generate-curriculum.py` are also sent
+through Brama; `assemble-curriculum-splits.py` keeps only examples whose
+independent review agrees with the intended action and keeps evaluation
+curriculum disjoint from training.
 
 The reviewed files are then submitted together to one exclusive Stado GPU
 target:
