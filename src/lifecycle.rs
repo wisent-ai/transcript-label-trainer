@@ -5,6 +5,7 @@
 //! records the exact route used for provenance.
 
 use std::collections::HashSet;
+use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
@@ -126,7 +127,7 @@ fn validate_decision(row: &TrainingRow, value: Value) -> Result<Decision> {
     if decision.action == "startGoal" {
         let words = decision.title.split_whitespace().count();
         if decision.goal_ref != "NEW_GOAL"
-            || !(3..=12).contains(&words)
+            || !(3..=7).contains(&words)
             || decision.title.len() > 100
         {
             return Err(Error(format!("{} has invalid startGoal title/ref", row.id)));
@@ -280,7 +281,12 @@ pub fn review_dataset(
     let next = Arc::new(AtomicUsize::new(0));
     let results: Arc<Mutex<Vec<Option<Result<Value>>>>> =
         Arc::new(Mutex::new((0..rows.len()).map(|_| None).collect()));
-    let workers = WORKERS.min(rows.len());
+    let workers = env::var("LIFECYCLE_REVIEW_WORKERS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(WORKERS)
+        .min(rows.len());
     let mut handles = Vec::with_capacity(workers);
     for _ in 0..workers {
         let client = client.clone();
@@ -407,8 +413,10 @@ fn audit_one(
                  Read the contract and the masked input. Decide whether the student decision \
                  is semantically safe and defensible. A different candidate reference is wrong \
                  when it points at a different goal. Any inferred completion without explicit \
-                 successful-completion evidence is dangerous. The reference decision is evidence, \
-                 not authority. Return only strict JSON: \
+                 successful-completion evidence is dangerous. Start-goal title wording is not \
+                 lifecycle correctness: Oko replaces it with its separate title model, so ignore \
+                 title differences when the student title satisfies the output contract. The \
+                 reference decision is evidence, not authority. Return only strict JSON: \
                  {{\"verdict\":\"student-sensible|student-wrong|unjudgeable\",\
                  \"dangerous_finish\":false}}.\n\n{SYSTEM_PROMPT}"
             ),

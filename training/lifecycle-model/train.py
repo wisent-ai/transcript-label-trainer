@@ -13,22 +13,22 @@ BASE_MODEL = os.environ.get("LIFECYCLE_STUDENT_MODEL", "Qwen/Qwen3-4B")
 BASE_REVISION = os.environ.get(
     "LIFECYCLE_STUDENT_REVISION", "1cfa9a7208912126459214e8b04321603b3df60c"
 )
-EPOCHS = float(os.environ.get("LIFECYCLE_STUDENT_EPOCHS", "4"))
-LEARNING_RATE = float(os.environ.get("LIFECYCLE_STUDENT_LR", "1e-5"))
+EPOCHS = float(os.environ.get("LIFECYCLE_STUDENT_EPOCHS", "5"))
+LEARNING_RATE = float(os.environ.get("LIFECYCLE_STUDENT_LR", "2e-5"))
 OPTIMIZER = os.environ.get("LIFECYCLE_STUDENT_OPTIM", "adamw_torch")
 MAX_LENGTH = int(os.environ.get("LIFECYCLE_STUDENT_MAX_LENGTH", "3072"))
 MIN_TRAIN_ROWS_BY_ACTION = {
     "continueCurrent": 0,
-    "finishGoal": int(os.environ.get("LIFECYCLE_MIN_FINISH_ROWS", "256")),
+    "finishGoal": int(os.environ.get("LIFECYCLE_MIN_FINISH_ROWS", "384")),
     "ignore": int(os.environ.get("LIFECYCLE_MIN_IGNORE_ROWS", "768")),
     "startGoal": int(os.environ.get("LIFECYCLE_MIN_START_ROWS", "512")),
 }
-MIN_EXPLICIT_OPEN_ROWS = int(os.environ.get("LIFECYCLE_MIN_EXPLICIT_OPEN_ROWS", "192"))
+MIN_EXPLICIT_OPEN_ROWS = int(os.environ.get("LIFECYCLE_MIN_EXPLICIT_OPEN_ROWS", "384"))
 MIN_COMPLETION_NEGATIVE_ROWS = int(
-    os.environ.get("LIFECYCLE_MIN_COMPLETION_NEGATIVE_ROWS", "1024")
+    os.environ.get("LIFECYCLE_MIN_COMPLETION_NEGATIVE_ROWS", "512")
 )
 MIN_OPEN_EVIDENCE_NEGATIVE_ROWS = int(
-    os.environ.get("LIFECYCLE_MIN_OPEN_EVIDENCE_NEGATIVE_ROWS", "768")
+    os.environ.get("LIFECYCLE_MIN_OPEN_EVIDENCE_NEGATIVE_ROWS", "512")
 )
 SYSTEM_PROMPT = (Path(__file__).resolve().parent / "lifecycle-system-prompt.txt").read_text(
     encoding="utf-8"
@@ -43,6 +43,28 @@ def read_rows(path):
 def canonical(decision):
     return json.dumps(decision, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
+def decision_obeys_contract(value):
+    if not isinstance(value, dict):
+        return False
+    required = {"action", "goal_ref", "title", "lifecycle_evidence"}
+    if set(value) != required or not all(isinstance(value[key], str) for key in required):
+        return False
+    action = value["action"]
+    evidence = value["lifecycle_evidence"]
+    if action not in {"startGoal", "continueCurrent", "finishGoal", "ignore"}:
+        return False
+    if evidence not in {"none", "explicit_open", "explicit_completion"}:
+        return False
+    if action == "startGoal":
+        words = value["title"].split()
+        if value["goal_ref"] != "NEW_GOAL" or not 3 <= len(words) <= 7:
+            return False
+    elif value["goal_ref"] == "NEW_GOAL" or value["title"]:
+        return False
+    if (action == "finishGoal") != (evidence == "explicit_completion"):
+        return False
+    return True
+
 
 def parse_decision(text):
     text = text.strip()
@@ -54,8 +76,7 @@ def parse_decision(text):
         value = json.loads(text[start : end + 1])
     except json.JSONDecodeError:
         return None
-    required = {"action", "goal_ref", "title", "lifecycle_evidence"}
-    if not isinstance(value, dict) or set(value) != required:
+    if not decision_obeys_contract(value):
         return None
     return value
 
