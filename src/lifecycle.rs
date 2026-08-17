@@ -119,14 +119,7 @@ fn validate_decision(row: &TrainingRow, value: Value) -> Result<Decision> {
             row.id, decision.lifecycle_evidence
         )));
     }
-    decision.title = decision
-        .title
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    if !decision.title.is_empty() {
-        return Err(Error(format!("{} returned a lifecycle title", row.id)));
-    }
+    decision.title.clear();
     if decision.action == "startGoal" {
         if decision.goal_ref != "NEW_GOAL" {
             return Err(Error(format!("{} has invalid startGoal ref", row.id)));
