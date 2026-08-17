@@ -457,7 +457,10 @@ pub fn audit_predictions(input: &Path, output: &Path, model: &str) -> Result<Val
     let aborted = Arc::new(AtomicBool::new(false));
     let results: Arc<Mutex<Vec<Option<Result<AuditDecision>>>>> =
         Arc::new(Mutex::new((0..predictions.len()).map(|_| None).collect()));
-    let workers = usize::from(4_u8).min(predictions.len());
+    // The local Brama route accounts each request as two concurrency units and the
+    // operator plan currently exposes four. More workers make a healthy route
+    // deterministically return 429 and abort the entire final audit.
+    let workers = usize::from(2_u8).min(predictions.len());
     let mut handles = Vec::with_capacity(workers);
     for _ in 0..workers {
         let client = client.clone();
