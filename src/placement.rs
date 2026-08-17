@@ -81,7 +81,9 @@ static CACHE: LazyLock<Mutex<Option<Placement>>> = LazyLock::new(|| Mutex::new(N
 /// Record explicit CLI roots — the strongest layer — and drop the cache.
 pub fn set_override(training_root: Option<&str>, storage_root: Option<&str>) {
     {
-        let mut overrides = OVERRIDES.lock().unwrap_or_else(|poison| poison.into_inner());
+        let mut overrides = OVERRIDES
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         if let Some(value) = training_root.filter(|value| !value.is_empty()) {
             overrides.training_root = Some(expanduser(value));
         }
@@ -178,7 +180,9 @@ fn local_placement() -> Placement {
 }
 
 fn overridden(field: impl FnOnce(&Overrides) -> Option<PathBuf>) -> Option<PathBuf> {
-    let overrides = OVERRIDES.lock().unwrap_or_else(|poison| poison.into_inner());
+    let overrides = OVERRIDES
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
     field(&overrides)
 }
 
@@ -302,7 +306,10 @@ fn index_by_name(targets: &[Value]) -> Vec<(Option<String>, &Value)> {
         if !target.is_object() {
             continue;
         }
-        let name = target.get("name").and_then(Value::as_str).map(str::to_string);
+        let name = target
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         match by_name.iter_mut().find(|(seen, _)| *seen == name) {
             Some(slot) => slot.1 = target,
             None => by_name.push((name, target)),
@@ -336,7 +343,10 @@ fn declared_training(by_name: &[(Option<String>, &Value)]) -> (Option<String>, O
             continue;
         }
         if let Some(Value::Array(kinds)) = block.get(TRAINING_KINDS_KEY) {
-            if !kinds.iter().any(|kind| kind.as_str() == Some(TRAINING_KIND)) {
+            if !kinds
+                .iter()
+                .any(|kind| kind.as_str() == Some(TRAINING_KIND))
+            {
                 continue;
             }
         }
@@ -428,7 +438,10 @@ fn run_stado(args: &[&str]) -> (Option<String>, String) {
     let stdout = String::from_utf8_lossy(&out_reader.join().unwrap_or_default()).into_owned();
     let stderr = String::from_utf8_lossy(&err_reader.join().unwrap_or_default()).into_owned();
     if !status.success() {
-        return (None, format!("'{printable}' failed: {}", first_line(&stderr, &stdout)));
+        return (
+            None,
+            format!("'{printable}' failed: {}", first_line(&stderr, &stdout)),
+        );
     }
     (Some(stdout), String::new())
 }
@@ -447,7 +460,10 @@ fn run_stado_json(args: &[&str]) -> (Option<Value>, String) {
         Ok(parsed) if parsed.is_object() => (Some(parsed), String::new()),
         Ok(other) => (
             None,
-            format!("'{printable}' returned a {}, not an object", type_name(&other)),
+            format!(
+                "'{printable}' returned a {}, not an object",
+                type_name(&other)
+            ),
         ),
     }
 }

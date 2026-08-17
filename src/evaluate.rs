@@ -112,11 +112,15 @@ fn opt_float(value: Option<f64>) -> String {
 }
 
 fn opt_int(value: Option<i64>) -> String {
-    value.map(|value| value.to_string()).unwrap_or_else(|| "None".to_string())
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "None".to_string())
 }
 
 fn number(value: f64) -> Value {
-    serde_json::Number::from_f64(value).map(Value::Number).unwrap_or(Value::Null)
+    serde_json::Number::from_f64(value)
+        .map(Value::Number)
+        .unwrap_or(Value::Null)
 }
 
 /// Python's `round(x, 4)`: half-to-even on the scaled value.
@@ -154,7 +158,10 @@ fn choose_holdout(
 ) -> Vec<String> {
     let mut by_value: BTreeMap<&str, Vec<String>> = BTreeMap::new();
     for (session_id, value) in session_ids.iter().zip(values) {
-        by_value.entry(value.as_str()).or_default().push(session_id.clone());
+        by_value
+            .entry(value.as_str())
+            .or_default()
+            .push(session_id.clone());
     }
     let mut chosen: Vec<String> = Vec::new();
     for (value, members) in by_value.iter_mut() {
@@ -162,8 +169,9 @@ fn choose_holdout(
             continue;
         }
         members.sort();
-        let count =
-            ((members.len() as f64 * fraction) as usize).max(1).min(members.len() - 1);
+        let count = ((members.len() as f64 * fraction) as usize)
+            .max(1)
+            .min(members.len() - 1);
         let mut shuffled = members.clone();
         shuffle(&mut shuffled, &mut class_rng(seed, value));
         chosen.extend(shuffled.into_iter().take(count));
@@ -194,12 +202,19 @@ pub fn read_split(name: &str) -> Result<Frozen> {
             )))
         }
     };
-    let session_ids = parsed.get("session_ids").and_then(Value::as_array).and_then(|items| {
-        items
-            .iter()
-            .map(|item| item.as_str().filter(|text| !text.is_empty()).map(str::to_string))
-            .collect::<Option<Vec<String>>>()
-    });
+    let session_ids = parsed
+        .get("session_ids")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items
+                .iter()
+                .map(|item| {
+                    item.as_str()
+                        .filter(|text| !text.is_empty())
+                        .map(str::to_string)
+                })
+                .collect::<Option<Vec<String>>>()
+        });
     let Some(session_ids) = session_ids else {
         return Err(Error(format!(
             "frozen evaluation split {} has no usable 'session_ids' list; it is \
@@ -211,7 +226,10 @@ pub fn read_split(name: &str) -> Result<Frozen> {
         session_ids,
         fraction: parsed.get("fraction").and_then(Value::as_f64),
         seed: parsed.get("seed").and_then(Value::as_i64),
-        created_at: parsed.get("created_at").and_then(Value::as_str).map(str::to_string),
+        created_at: parsed
+            .get("created_at")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 
@@ -219,23 +237,42 @@ pub fn read_split(name: &str) -> Result<Frozen> {
 fn split_json(split: &Split) -> Value {
     let mut block = Map::new();
     block.insert("enabled".to_string(), Value::Bool(split.enabled));
-    block.insert("fraction".to_string(), split.fraction.map(number).unwrap_or(Value::Null));
+    block.insert(
+        "fraction".to_string(),
+        split.fraction.map(number).unwrap_or(Value::Null),
+    );
     block.insert(
         "seed".to_string(),
-        split.seed.map(|seed| Value::Number(seed.into())).unwrap_or(Value::Null),
+        split
+            .seed
+            .map(|seed| Value::Number(seed.into()))
+            .unwrap_or(Value::Null),
     );
     block.insert(
         "created_at".to_string(),
-        split.created_at.clone().map(Value::String).unwrap_or(Value::Null),
+        split
+            .created_at
+            .clone()
+            .map(Value::String)
+            .unwrap_or(Value::Null),
     );
-    block.insert("path".to_string(), split.path.clone().map(Value::String).unwrap_or(Value::Null));
+    block.insert(
+        "path".to_string(),
+        split.path.clone().map(Value::String).unwrap_or(Value::Null),
+    );
     let frozen_sessions = split.holdout_index.len() + split.missing_from_selection;
-    block.insert("frozen_sessions".to_string(), Value::Number(frozen_sessions.into()));
+    block.insert(
+        "frozen_sessions".to_string(),
+        Value::Number(frozen_sessions.into()),
+    );
     block.insert(
         "holdout_sessions".to_string(),
         Value::Number(split.holdout_index.len().into()),
     );
-    block.insert("train_sessions".to_string(), Value::Number(split.train_index.len().into()));
+    block.insert(
+        "train_sessions".to_string(),
+        Value::Number(split.train_index.len().into()),
+    );
     block.insert(
         "missing_from_selection".to_string(),
         Value::Number(split.missing_from_selection.into()),
@@ -256,9 +293,14 @@ pub fn resolve_split(
     subject: &str,
 ) -> Result<Split, TrainFailure> {
     let total = sessions.len();
-    let session_ids: Vec<String> =
-        sessions.iter().map(|session| session.session_id.clone()).collect();
-    let values: Vec<String> = sessions.iter().map(|session| session.value.clone()).collect();
+    let session_ids: Vec<String> = sessions
+        .iter()
+        .map(|session| session.session_id.clone())
+        .collect();
+    let values: Vec<String> = sessions
+        .iter()
+        .map(|session| session.value.clone())
+        .collect();
 
     if !job.eval_split.enabled {
         let mut split = Split {
@@ -292,9 +334,18 @@ pub fn resolve_split(
                 opt_int(frozen.seed),
             ));
         }
-        (frozen.session_ids, frozen.fraction, frozen.seed, frozen.created_at, true)
+        (
+            frozen.session_ids,
+            frozen.fraction,
+            frozen.seed,
+            frozen.created_at,
+            true,
+        )
     } else {
-        let fraction = job.eval_split.fraction.unwrap_or(jobs::DEFAULT_EVAL_FRACTION);
+        let fraction = job
+            .eval_split
+            .fraction
+            .unwrap_or(jobs::DEFAULT_EVAL_FRACTION);
         let seed = job.eval_split.seed.unwrap_or(jobs::DEFAULT_EVAL_SEED);
         let chosen = choose_holdout(&session_ids, &values, fraction, seed);
         (chosen, Some(fraction), Some(seed), Some(now_iso()), false)
@@ -311,8 +362,10 @@ pub fn resolve_split(
         }
     }
 
-    let train_values: BTreeSet<&str> =
-        train_index.iter().map(|index| values[*index].as_str()).collect();
+    let train_values: BTreeSet<&str> = train_index
+        .iter()
+        .map(|index| values[*index].as_str())
+        .collect();
     if train_index.len() < model::MIN_LABELED_SESSIONS || train_values.len() < 2 {
         return Err(TrainFailure::NotEnoughData(format!(
             "{subject} has {total} usable labeled session(s), of which {} are held \
@@ -334,10 +387,14 @@ pub fn resolve_split(
         let directory = model::aspect_dir(&job.name)?;
         std::fs::create_dir_all(&directory).map_err(Error::from)?;
         let mut record = Map::new();
-        record.insert("fraction".to_string(), fraction.map(number).unwrap_or(Value::Null));
+        record.insert(
+            "fraction".to_string(),
+            fraction.map(number).unwrap_or(Value::Null),
+        );
         record.insert(
             "seed".to_string(),
-            seed.map(|seed| Value::Number(seed.into())).unwrap_or(Value::Null),
+            seed.map(|seed| Value::Number(seed.into()))
+                .unwrap_or(Value::Null),
         );
         record.insert(
             "created_at".to_string(),
@@ -384,7 +441,9 @@ pub fn holdout_report(gold: &[String], predictions: &[(String, f64)]) -> Value {
             *correct_per_class.entry(actual.as_str()).or_insert(0) += 1;
             correct += 1;
         } else {
-            *confusion.entry((actual.as_str(), predicted.as_str())).or_insert(0) += 1;
+            *confusion
+                .entry((actual.as_str(), predicted.as_str()))
+                .or_insert(0) += 1;
         }
     }
     let total = gold.len();
@@ -397,7 +456,10 @@ pub fn holdout_report(gold: &[String], predictions: &[(String, f64)]) -> Value {
         .map(|((actual, predicted), n)| {
             let mut pair = Map::new();
             pair.insert("gold".to_string(), Value::String(actual.to_string()));
-            pair.insert("predicted".to_string(), Value::String(predicted.to_string()));
+            pair.insert(
+                "predicted".to_string(),
+                Value::String(predicted.to_string()),
+            );
             pair.insert("n".to_string(), Value::Number(n.into()));
             Value::Object(pair)
         })
@@ -415,7 +477,11 @@ pub fn holdout_report(gold: &[String], predictions: &[(String, f64)]) -> Value {
     report.insert("n_sessions".to_string(), Value::Number(total.into()));
     report.insert(
         "accuracy".to_string(),
-        if total > 0 { number(round4(correct as f64 / total as f64)) } else { Value::Null },
+        if total > 0 {
+            number(round4(correct as f64 / total as f64))
+        } else {
+            Value::Null
+        },
     );
     report.insert("counts".to_string(), as_object(counts));
     report.insert("correct".to_string(), as_object(correct_per_class));
@@ -468,7 +534,10 @@ pub fn judge_prompt(
 
 fn failure(session_id: &str, error: &str) -> Value {
     let mut record = Map::new();
-    record.insert("session_id".to_string(), Value::String(session_id.to_string()));
+    record.insert(
+        "session_id".to_string(),
+        Value::String(session_id.to_string()),
+    );
     record.insert("error".to_string(), Value::String(error.to_string()));
     Value::Object(record)
 }
@@ -485,10 +554,22 @@ fn judge_sessions(
     let mut records: Vec<Value> = Vec::new();
     let mut failures: Vec<Value> = Vec::new();
     for session in sessions {
-        let session_id = session.get("session_id").and_then(Value::as_str).unwrap_or_default();
-        let gold = session.get("gold").and_then(Value::as_str).unwrap_or_default();
-        let prediction = session.get("prediction").and_then(Value::as_str).unwrap_or_default();
-        let text = texts.get(session_id).map(|entry| entry.text.as_str()).unwrap_or_default();
+        let session_id = session
+            .get("session_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let gold = session
+            .get("gold")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let prediction = session
+            .get("prediction")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let text = texts
+            .get(session_id)
+            .map(|entry| entry.text.as_str())
+            .unwrap_or_default();
         let prompt = judge_prompt(aspect, task, gold, prediction, text);
         match client.chat(judge_model, &prompt) {
             Ok(answer) => match brama::parse_answer(&answer, &JUDGE_VALUES[..]) {
@@ -563,14 +644,30 @@ fn best_review_sessions(
 ) -> Vec<Value> {
     let mut failures = Vec::new();
     for session in sessions {
-        let session_id =
-            session.get("session_id").and_then(Value::as_str).unwrap_or_default().to_string();
-        let gold = session.get("gold").and_then(Value::as_str).unwrap_or_default().to_string();
-        let prediction =
-            session.get("prediction").and_then(Value::as_str).unwrap_or_default().to_string();
-        let verdict =
-            session.get("verdict").and_then(Value::as_str).unwrap_or_default().to_string();
-        let text = texts.get(&session_id).map(|entry| entry.text.as_str()).unwrap_or_default();
+        let session_id = session
+            .get("session_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let gold = session
+            .get("gold")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let prediction = session
+            .get("prediction")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let verdict = session
+            .get("verdict")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let text = texts
+            .get(&session_id)
+            .map(|entry| entry.text.as_str())
+            .unwrap_or_default();
         let prompt = best_review_prompt(aspect, task, &gold, &prediction, &verdict, text);
         match client.chat(brama::BEST_MODEL, &prompt) {
             Ok(answer) => match brama::parse_answer(&answer, &BEST_REVIEW_VALUES[..]) {
@@ -606,7 +703,11 @@ pub fn evaluate(
 ) -> Result<Value> {
     let artifact = model::active_artifact(name)?;
     let metrics = &artifact.metrics;
-    let aspect = metrics.get("aspect").and_then(Value::as_str).unwrap_or_default().to_string();
+    let aspect = metrics
+        .get("aspect")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     let empty = Value::Object(Map::new());
     let job_meta = match metrics.get("job") {
         Some(value) if json_truthy(value) => value.clone(),
@@ -616,8 +717,12 @@ pub fn evaluate(
         Some(value) if json_truthy(value) => value.clone(),
         _ => serde_json::to_value(jobs::default_judge())?,
     };
-    let judge_enabled = judge
-        .unwrap_or_else(|| spec_judge.get("enabled").and_then(Value::as_bool).unwrap_or(true));
+    let judge_enabled = judge.unwrap_or_else(|| {
+        spec_judge
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    });
     let model_id = judge_model
         .filter(|value| !value.is_empty())
         .map(str::to_string)
@@ -630,13 +735,17 @@ pub fn evaluate(
         })
         .unwrap_or_else(|| brama::DEFAULT_MODEL.to_string());
     if best_review && !judge_enabled {
-        return Err(Error("--best requires the Brama judge to be enabled".to_string()));
+        return Err(Error(
+            "--best requires the Brama judge to be enabled".to_string(),
+        ));
     }
 
     let frozen = read_split(name)?;
     let labels = model::labels_for_artifact(metrics)?;
-    let by_id: HashMap<&str, &lake::SessionLabel> =
-        labels.iter().map(|label| (label.session_id.as_str(), label)).collect();
+    let by_id: HashMap<&str, &lake::SessionLabel> = labels
+        .iter()
+        .map(|label| (label.session_id.as_str(), label))
+        .collect();
     let holdout_ids: Vec<String> = frozen
         .session_ids
         .iter()
@@ -657,13 +766,17 @@ pub fn evaluate(
     let usable: Vec<String> = holdout_ids
         .iter()
         .filter(|session_id| {
-            texts.get(session_id.as_str()).is_some_and(|entry| !entry.text.trim().is_empty())
+            texts
+                .get(session_id.as_str())
+                .is_some_and(|entry| !entry.text.trim().is_empty())
         })
         .cloned()
         .collect();
     let no_text = holdout_ids.len() - usable.len();
     if no_text > 0 {
-        lake::warn(&format!("{no_text} frozen holdout session(s) had no text in the lake"));
+        lake::warn(&format!(
+            "{no_text} frozen holdout session(s) had no text in the lake"
+        ));
     }
     if usable.is_empty() {
         return Err(Error(format!(
@@ -673,10 +786,14 @@ pub fn evaluate(
         )));
     }
 
-    let gold: Vec<String> =
-        usable.iter().map(|session_id| by_id[session_id.as_str()].value.clone()).collect();
-    let holdout_texts: Vec<String> =
-        usable.iter().map(|session_id| texts[session_id.as_str()].text.clone()).collect();
+    let gold: Vec<String> = usable
+        .iter()
+        .map(|session_id| by_id[session_id.as_str()].value.clone())
+        .collect();
+    let holdout_texts: Vec<String> = usable
+        .iter()
+        .map(|session_id| texts[session_id.as_str()].text.clone())
+        .collect();
     let predictions = model::predict(&artifact, &holdout_texts)?;
     let report = holdout_report(&gold, &predictions);
 
@@ -704,26 +821,46 @@ pub fn evaluate(
         .collect();
 
     let mut eval_split = Map::new();
-    eval_split
-        .insert("path".to_string(), Value::String(split_path(name)?.to_string_lossy().into_owned()));
-    eval_split.insert("fraction".to_string(), frozen.fraction.map(number).unwrap_or(Value::Null));
+    eval_split.insert(
+        "path".to_string(),
+        Value::String(split_path(name)?.to_string_lossy().into_owned()),
+    );
+    eval_split.insert(
+        "fraction".to_string(),
+        frozen.fraction.map(number).unwrap_or(Value::Null),
+    );
     eval_split.insert(
         "seed".to_string(),
-        frozen.seed.map(|seed| Value::Number(seed.into())).unwrap_or(Value::Null),
+        frozen
+            .seed
+            .map(|seed| Value::Number(seed.into()))
+            .unwrap_or(Value::Null),
     );
     eval_split.insert(
         "created_at".to_string(),
-        frozen.created_at.clone().map(Value::String).unwrap_or(Value::Null),
+        frozen
+            .created_at
+            .clone()
+            .map(Value::String)
+            .unwrap_or(Value::Null),
     );
-    eval_split
-        .insert("frozen_sessions".to_string(), Value::Number(frozen.session_ids.len().into()));
-    eval_split.insert("missing_ground_truth".to_string(), Value::Number(missing.into()));
+    eval_split.insert(
+        "frozen_sessions".to_string(),
+        Value::Number(frozen.session_ids.len().into()),
+    );
+    eval_split.insert(
+        "missing_ground_truth".to_string(),
+        Value::Number(missing.into()),
+    );
     eval_split.insert("skipped_no_text".to_string(), Value::Number(no_text.into()));
 
     let mut result = Map::new();
     result.insert("name".to_string(), Value::String(name.to_string()));
     result.insert("aspect".to_string(), Value::String(aspect.clone()));
-    result.insert("backend".to_string(), Value::String(artifact.backend.clone()));
+    result.insert(
+        "backend".to_string(),
+        Value::String(artifact.backend.clone()),
+    );
     result.insert(
         "model_path".to_string(),
         metrics.get("model_path").cloned().unwrap_or(Value::Null),
@@ -766,9 +903,7 @@ pub fn evaluate(
 
     let acceptable = records
         .iter()
-        .filter(|record| {
-            record.get("verdict").and_then(Value::as_str) == Some(JUDGE_VALUES[0])
-        })
+        .filter(|record| record.get("verdict").and_then(Value::as_str) == Some(JUDGE_VALUES[0]))
         .count();
     let mut block = Map::new();
     block.insert("enabled".to_string(), Value::Bool(true));
@@ -786,8 +921,7 @@ pub fn evaluate(
     );
     result.insert("judge".to_string(), Value::Object(block));
     if best_review {
-        let review_failures =
-            best_review_sessions(&client, &aspect, task, &mut records, &texts);
+        let review_failures = best_review_sessions(&client, &aspect, task, &mut records, &texts);
         let reviewed = records
             .iter()
             .filter(|record| record.get("best_review").and_then(Value::as_str).is_some())
@@ -808,8 +942,7 @@ pub fn evaluate(
         let both_sensible = records
             .iter()
             .filter(|record| {
-                record.get("best_review").and_then(Value::as_str)
-                    == Some(BEST_REVIEW_VALUES[0])
+                record.get("best_review").and_then(Value::as_str) == Some(BEST_REVIEW_VALUES[0])
             })
             .count();
         let label_nonsensical = records
@@ -830,9 +963,8 @@ pub fn evaluate(
                 )
             })
             .count();
-        let sensible = failures.is_empty()
-            && review_failures.is_empty()
-            && both_sensible == records.len();
+        let sensible =
+            failures.is_empty() && review_failures.is_empty() && both_sensible == records.len();
         result.insert(
             "best_review".to_string(),
             serde_json::json!({
@@ -860,6 +992,9 @@ pub fn evaluate(
     }
     let body = serde_json::to_string_pretty(&Value::Object(result.clone()))?;
     std::fs::write(&path, body + "\n")?;
-    result.insert("judge_path".to_string(), Value::String(path.to_string_lossy().into_owned()));
+    result.insert(
+        "judge_path".to_string(),
+        Value::String(path.to_string_lossy().into_owned()),
+    );
     Ok(Value::Object(result))
 }

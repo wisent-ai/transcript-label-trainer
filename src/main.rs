@@ -5,12 +5,12 @@ mod brama;
 mod cli;
 mod evaluate;
 mod goal;
-mod lifecycle;
-mod humanizer;
 #[cfg(feature = "hf")]
 mod hf;
+mod humanizer;
 mod jobs;
 mod lake;
+mod lifecycle;
 mod model;
 mod placement;
 mod stado;

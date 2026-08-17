@@ -248,8 +248,7 @@ pub fn execute_goal_model(dataset_path: &Path, compute_target: &str) -> Result<G
     let key = digest(&dataset_bytes);
     let dataset_uri =
         format!("stado://probierz/inputs/transcript-label-trainer/goal-model/{key}.jsonl");
-    let output_uri =
-        format!("stado://probierz/artifacts/models/jeden/goal-qwen3-4b/{key}");
+    let output_uri = format!("stado://probierz/artifacts/models/jeden/goal-qwen3-4b/{key}");
     let stado = stado_bin();
     upload(&stado, &dataset_uri, dataset_path, "application/x-ndjson")?;
     let source_ref = repo_ref()?;
@@ -330,13 +329,17 @@ pub fn execute_lifecycle_model(
     let train_bytes = std::fs::read(train_path)?;
     let eval_bytes = std::fs::read(eval_path)?;
     let key = digest(
-        format!("train={}\neval={}\n", digest(&train_bytes), digest(&eval_bytes)).as_bytes(),
+        format!(
+            "train={}\neval={}\n",
+            digest(&train_bytes),
+            digest(&eval_bytes)
+        )
+        .as_bytes(),
     );
     let base = format!("stado://probierz/inputs/transcript-label-trainer/lifecycle-model/{key}");
     let train_uri = format!("{base}/reviewed-train.jsonl");
     let eval_uri = format!("{base}/reviewed-eval.jsonl");
-    let output_uri =
-        format!("stado://probierz/artifacts/models/oko/lifecycle-qwen3-4b/{key}");
+    let output_uri = format!("stado://probierz/artifacts/models/oko/lifecycle-qwen3-4b/{key}");
     let stado = stado_bin();
     upload(&stado, &train_uri, train_path, "application/x-ndjson")?;
     upload(&stado, &eval_uri, eval_path, "application/x-ndjson")?;
@@ -405,27 +408,20 @@ pub fn execute_lifecycle_model(
 }
 
 /// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
-pub fn execute_humanizer_model(
-    targets_path: &Path,
-    compute_target: &str,
-) -> Result<GoalModelJob> {
+pub fn execute_humanizer_model(targets_path: &Path, compute_target: &str) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
         return Err(Error("--compute-target cannot be empty".to_string()));
     }
     let targets_bytes = std::fs::read(targets_path)?;
     let key = digest(&targets_bytes);
-    let targets_uri =
-        format!("stado://probierz/inputs/transcript-label-trainer/humanizer-model/{key}/targets.jsonl");
+    let targets_uri = format!(
+        "stado://probierz/inputs/transcript-label-trainer/humanizer-model/{key}/targets.jsonl"
+    );
     let output_uri =
         format!("stado://probierz/artifacts/models/echo/lukasz-humanizer-cydonia-24b-lora/{key}");
     let stado = stado_bin();
-    upload(
-        &stado,
-        &targets_uri,
-        targets_path,
-        "application/x-ndjson",
-    )?;
+    upload(&stado, &targets_uri, targets_path, "application/x-ndjson")?;
     let source_ref = repo_ref()?;
     let work_root = crate::placement::resolve_placement()
         .training_root

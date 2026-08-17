@@ -74,8 +74,13 @@ fn read_bundle() -> Result<Option<DatasetBundle>> {
         return Ok(None);
     };
     let path = PathBuf::from(path);
-    let bundle: DatasetBundle = serde_json::from_slice(&std::fs::read(&path)?)
-        .map_err(|error| Error(format!("invalid dataset bundle {}: {error}", path.display())))?;
+    let bundle: DatasetBundle =
+        serde_json::from_slice(&std::fs::read(&path)?).map_err(|error| {
+            Error(format!(
+                "invalid dataset bundle {}: {error}",
+                path.display()
+            ))
+        })?;
     if bundle.schema_version != DATASET_BUNDLE_SCHEMA {
         bail!(
             "unsupported dataset bundle schema {} in {}; expected {}",
@@ -90,7 +95,10 @@ fn read_bundle() -> Result<Option<DatasetBundle>> {
 /// Materialize only the selected labels and their transcript text for a remote
 /// Stado run. The bundle is read-only and contains no unrelated lake sessions.
 pub fn export_bundle(aspect: &str, labels: &[SessionLabel], path: &Path) -> Result<()> {
-    let ids: Vec<String> = labels.iter().map(|label| label.session_id.clone()).collect();
+    let ids: Vec<String> = labels
+        .iter()
+        .map(|label| label.session_id.clone())
+        .collect();
     let mut texts = session_texts(&ids)?;
     let mut bundled = Vec::with_capacity(labels.len());
     for label in labels {
@@ -120,7 +128,10 @@ pub fn export_bundle(aspect: &str, labels: &[SessionLabel], path: &Path) -> Resu
 pub fn lake_cli() -> Vec<String> {
     if let Ok(override_value) = std::env::var("TLT_LAKE_CLI") {
         if !override_value.trim().is_empty() {
-            return override_value.split_whitespace().map(str::to_string).collect();
+            return override_value
+                .split_whitespace()
+                .map(str::to_string)
+                .collect();
         }
     }
     if find_on_path(LAKE_BINARY).is_some() {

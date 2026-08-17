@@ -44,8 +44,15 @@ pub const DEFAULT_EVAL_SEED: i64 = 20260808;
 /// A fraction above this would starve training rather than measure it.
 pub const MAX_EVAL_FRACTION: f64 = 0.5;
 
-const TOP_LEVEL_KEYS: [&str; 7] =
-    ["name", "task", "evaluator", "model", "scope", "eval_split", "judge"];
+const TOP_LEVEL_KEYS: [&str; 7] = [
+    "name",
+    "task",
+    "evaluator",
+    "model",
+    "scope",
+    "eval_split",
+    "judge",
+];
 const SCOPE_KEYS: [&str; 5] = ["aspect", "runtimes", "since", "values", "min_text_chars"];
 const EVAL_SPLIT_KEYS: [&str; 2] = ["fraction", "seed"];
 const JUDGE_KEYS: [&str; 1] = ["model"];
@@ -102,7 +109,10 @@ pub fn default_eval_split() -> EvalSplit {
 
 /// The Brama teacher verdict every run gets unless the spec says `false`.
 pub fn default_judge() -> Judge {
-    Judge { enabled: true, model: Some(brama::DEFAULT_MODEL.to_string()) }
+    Judge {
+        enabled: true,
+        model: Some(brama::DEFAULT_MODEL.to_string()),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -112,7 +122,11 @@ pub fn default_judge() -> Judge {
 /// `repr()` of a Python string: single quotes unless that would need escaping
 /// and double quotes would not.
 pub(crate) fn py_repr_str(value: &str) -> String {
-    let quote = if value.contains('\'') && !value.contains('"') { '"' } else { '\'' };
+    let quote = if value.contains('\'') && !value.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
     let mut out = String::with_capacity(value.len() + 2);
     out.push(quote);
     for character in value.chars() {
@@ -211,7 +225,10 @@ pub fn source_matches(value: &str) -> bool {
 /// Lookup by string key without relying on `Mapping`'s indexing trait, which
 /// changed shape across serde_yaml 0.9 point releases.
 fn get_raw<'a>(mapping: &'a serde_yaml::Mapping, key: &str) -> Option<&'a Yaml> {
-    mapping.iter().find(|(candidate, _)| candidate.as_str() == Some(key)).map(|(_, value)| value)
+    mapping
+        .iter()
+        .find(|(candidate, _)| candidate.as_str() == Some(key))
+        .map(|(_, value)| value)
 }
 
 /// As [`get_raw`], but an explicit `null` reads as absent — Python's
@@ -271,7 +288,11 @@ fn eval_split(raw: &serde_yaml::Mapping) -> Result<EvalSplit> {
         None | Some(Yaml::Null) => return Ok(default_eval_split()),
         Some(Yaml::Bool(true)) => return Ok(default_eval_split()),
         Some(Yaml::Bool(false)) => {
-            return Ok(EvalSplit { enabled: false, fraction: None, seed: None })
+            return Ok(EvalSplit {
+                enabled: false,
+                fraction: None,
+                seed: None,
+            })
         }
         Some(other) => other,
     };
@@ -300,7 +321,10 @@ fn eval_split(raw: &serde_yaml::Mapping) -> Result<EvalSplit> {
             fraction
         }
         Some(other) => {
-            bail!("eval_split.fraction must be a number, got {}", py_repr(other))
+            bail!(
+                "eval_split.fraction must be a number, got {}",
+                py_repr(other)
+            )
         }
     };
 
@@ -316,11 +340,18 @@ fn eval_split(raw: &serde_yaml::Mapping) -> Result<EvalSplit> {
             }
         }
         Some(other) => {
-            bail!("eval_split.seed must be a non-negative integer, got {}", py_repr(other))
+            bail!(
+                "eval_split.seed must be a non-negative integer, got {}",
+                py_repr(other)
+            )
         }
     };
 
-    Ok(EvalSplit { enabled: true, fraction: Some(fraction), seed: Some(seed) })
+    Ok(EvalSplit {
+        enabled: true,
+        fraction: Some(fraction),
+        seed: Some(seed),
+    })
 }
 
 /// Validate the judge section. Absent means the default teacher, on.
@@ -329,7 +360,12 @@ fn judge(raw: &serde_yaml::Mapping) -> Result<Judge> {
     let value = match value {
         None | Some(Yaml::Null) => return Ok(default_judge()),
         Some(Yaml::Bool(true)) => return Ok(default_judge()),
-        Some(Yaml::Bool(false)) => return Ok(Judge { enabled: false, model: None }),
+        Some(Yaml::Bool(false)) => {
+            return Ok(Judge {
+                enabled: false,
+                model: None,
+            })
+        }
         Some(other) => other,
     };
     let Yaml::Mapping(mapping) = value else {
@@ -350,7 +386,10 @@ fn judge(raw: &serde_yaml::Mapping) -> Result<Judge> {
             _ => bail!("judge.model must be a non-empty Brama-routed model id"),
         },
     };
-    Ok(Judge { enabled: true, model: Some(model) })
+    Ok(Judge {
+        enabled: true,
+        model: Some(model),
+    })
 }
 
 /// Python's `datetime.fromisoformat`, restricted to the shapes an operator
@@ -360,8 +399,12 @@ fn parse_since(raw: &str) -> Option<String> {
     if let Ok(aware) = DateTime::<FixedOffset>::parse_from_rfc3339(&text) {
         return Some(aware.to_rfc3339_opts(SecondsFormat::Secs, false));
     }
-    for format in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"]
-    {
+    for format in [
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M",
+    ] {
         if let Ok(naive) = NaiveDateTime::parse_from_str(&text, format) {
             return Some(naive.and_utc().to_rfc3339_opts(SecondsFormat::Secs, false));
         }
@@ -438,7 +481,10 @@ pub fn load(path: &str) -> Result<Job> {
             ),
         },
         Some(other) => {
-            bail!("scope.since must be an ISO date string, got {}", py_repr(other))
+            bail!(
+                "scope.since must be an ISO date string, got {}",
+                py_repr(other)
+            )
         }
     };
 

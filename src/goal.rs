@@ -348,8 +348,7 @@ fn review_goal(client: &BramaClient, message: &str, goal: Option<&str>) -> Resul
     );
     for _ in 0..2 {
         let answer = chat_retry(client, CURATION_REVIEW_MODEL, &request)?;
-        let parsed = crate::brama::parse_answer(&answer, &REVIEW_VALUES)
-            .map(|(value, _)| value);
+        let parsed = crate::brama::parse_answer(&answer, &REVIEW_VALUES).map(|(value, _)| value);
         if parsed.as_deref() != Some("sensible") {
             return Ok(false);
         }
@@ -376,7 +375,9 @@ fn process_candidate(
             parse_goal(&chat_retry(client, teacher_model, &request)?)
         }
     };
-    let Some(parsed) = parsed else { return Ok(None) };
+    let Some(parsed) = parsed else {
+        return Ok(None);
+    };
     let goal = match parsed {
         ParsedGoal::NoTask => None,
         ParsedGoal::Task(goal) => {

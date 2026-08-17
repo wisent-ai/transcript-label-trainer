@@ -206,7 +206,10 @@ fn synthetic_job(name: &str, aspect: &str, eval_split: jobs::EvalSplit) -> jobs:
             min_text_chars: None,
         },
         eval_split,
-        judge: jobs::Judge { enabled: false, model: None },
+        judge: jobs::Judge {
+            enabled: false,
+            model: None,
+        },
     }
 }
 
@@ -301,7 +304,11 @@ fn tokenize(prepared: &str, out: &mut Vec<String>) {
 /// Term counts for one document: unigrams plus, when `ngram_max` is 2, the
 /// space-joined adjacent pairs sklearn's `_word_ngrams` produces.
 fn count_document(doc: &str, lowercase: bool, ngram_max: usize) -> HashMap<String, usize> {
-    let prepared = if lowercase { doc.to_lowercase() } else { doc.to_string() };
+    let prepared = if lowercase {
+        doc.to_lowercase()
+    } else {
+        doc.to_string()
+    };
     let mut unigrams: Vec<String> = Vec::new();
     tokenize(&prepared, &mut unigrams);
     let mut counts: HashMap<String, usize> =
@@ -601,13 +608,23 @@ fn fit_lbfgs(problem: &Problem<'_>) -> (Vec<f64>, usize, bool) {
 }
 
 fn fit_logistic(rows: &[SparseRow], y: &[usize], n_classes: usize, n_features: usize) -> Fit {
-    let problem = Problem { rows, y, n_classes, n_features };
+    let problem = Problem {
+        rows,
+        y,
+        n_classes,
+        n_features,
+    };
     let (x, iterations, converged) = fit_lbfgs(&problem);
     let coef = (0..n_classes)
         .map(|c| x[c * n_features..(c + 1) * n_features].to_vec())
         .collect();
     let intercept = x[n_classes * n_features..].to_vec();
-    Fit { coef, intercept, iterations, converged }
+    Fit {
+        coef,
+        intercept,
+        iterations,
+        converged,
+    }
 }
 
 /// (class index, probability) for one row, first maximum winning — the same
@@ -757,8 +774,14 @@ impl TfidfModel {
     }
 
     fn from_file(file: ModelFile) -> Result<TfidfModel> {
-        let VectorizerFile { lowercase, ngram_range, sublinear_tf, vocabulary, idf, .. } =
-            file.vectorizer;
+        let VectorizerFile {
+            lowercase,
+            ngram_range,
+            sublinear_tf,
+            vocabulary,
+            idf,
+            ..
+        } = file.vectorizer;
         if vocabulary.len() != idf.len() {
             crate::bail!(
                 "model file is inconsistent: {} vocabulary term(s) but {} idf weight(s)",
@@ -901,10 +924,16 @@ fn base_metrics(
     metrics.insert("aspect".to_string(), json!(aspect));
     metrics.insert("backend".to_string(), json!(backend));
     metrics.insert("trained_at".to_string(), json!(crate::util::now_iso()));
-    metrics.insert("trainer_version".to_string(), json!(env!("CARGO_PKG_VERSION")));
+    metrics.insert(
+        "trainer_version".to_string(),
+        json!(env!("CARGO_PKG_VERSION")),
+    );
     metrics.insert("model".to_string(), json!(model_desc));
     metrics.insert("n_sessions".to_string(), json!(n_sessions));
-    metrics.insert("classes".to_string(), json!(counts.keys().collect::<Vec<_>>()));
+    metrics.insert(
+        "classes".to_string(),
+        json!(counts.keys().collect::<Vec<_>>()),
+    );
     metrics.insert("counts".to_string(), counts_json(counts));
     metrics
 }
@@ -946,8 +975,13 @@ fn train_tfidf(plan: &Plan) -> Result<Value, TrainFailure> {
     std::fs::create_dir_all(&out_dir).map_err(Error::from)?;
     let model_path = out_dir.join(MODEL_FILE);
 
-    let mut metrics =
-        base_metrics(&plan.aspect, TFIDF_BACKEND, TFIDF_MODEL_DESC, texts.len(), &counts);
+    let mut metrics = base_metrics(
+        &plan.aspect,
+        TFIDF_BACKEND,
+        TFIDF_MODEL_DESC,
+        texts.len(),
+        &counts,
+    );
     metrics.insert(
         "cv_accuracy".to_string(),
         match cv_accuracy {
@@ -957,7 +991,10 @@ fn train_tfidf(plan: &Plan) -> Result<Value, TrainFailure> {
     );
     metrics.insert("cv_folds".to_string(), json!(cv_folds));
     metrics.insert("eval_split".to_string(), plan.split.frozen.clone());
-    metrics.insert("model_path".to_string(), json!(model_path.display().to_string()));
+    metrics.insert(
+        "model_path".to_string(),
+        json!(model_path.display().to_string()),
+    );
 
     let (holdout_texts, holdout_values) = side(plan, &plan.split.holdout_index);
     if !holdout_texts.is_empty() {
@@ -1186,7 +1223,10 @@ fn scope_from_json(scope: &Value) -> Result<jobs::Scope> {
     Ok(jobs::Scope {
         aspect: aspect.to_string(),
         runtimes: string_list("runtimes"),
-        since: scope.get("since").and_then(Value::as_str).map(str::to_string),
+        since: scope
+            .get("since")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         values: string_list("values"),
         min_text_chars: scope.get("min_text_chars").and_then(Value::as_u64),
     })
@@ -1320,7 +1360,11 @@ fn artifacts(name: &str) -> Result<Vec<Artifact>> {
 }
 
 fn trained_at(artifact: &Artifact) -> &str {
-    artifact.metrics.get("trained_at").and_then(Value::as_str).unwrap_or("")
+    artifact
+        .metrics
+        .get("trained_at")
+        .and_then(Value::as_str)
+        .unwrap_or("")
 }
 
 fn read_metrics(path: &Path) -> Result<Value> {
@@ -1360,9 +1404,16 @@ pub fn labels_for_artifact(metrics: &Value) -> Result<Vec<lake::SessionLabel>> {
         .ok_or_else(|| Error("artifact metrics carry a 'job' without a 'scope'".to_string()))?;
     let scope = scope_from_json(scope_value)?;
     let mut job = synthetic_job(
-        job_meta.get("name").and_then(Value::as_str).unwrap_or("artifact"),
+        job_meta
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("artifact"),
         &scope.aspect,
-        jobs::EvalSplit { enabled: false, fraction: None, seed: None },
+        jobs::EvalSplit {
+            enabled: false,
+            fraction: None,
+            seed: None,
+        },
     );
     job.evaluator = job_meta
         .get("evaluator")
@@ -1377,8 +1428,11 @@ fn infer_tfidf(artifact: &Artifact, texts: &[String]) -> Result<Vec<(String, f64
     let path = artifact.dir.join(MODEL_FILE);
     if !path.is_file() {
         if artifact.dir.join(LEGACY_MODEL_FILE).is_file() {
-            let name =
-                artifact.dir.file_name().and_then(|name| name.to_str()).unwrap_or("<name>");
+            let name = artifact
+                .dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("<name>");
             crate::bail!(
                 "the artifact in {} holds {LEGACY_MODEL_FILE}, a pickle written by the \
                  Python build that this binary cannot read; retrain it with \
@@ -1451,7 +1505,9 @@ pub fn infer(aspect: &str, session: Option<&str>, limit: Option<i64>) -> Result<
 
     let mut usable: Vec<(String, Option<String>, String)> = Vec::new();
     for (session_id, runtime) in targets {
-        let Some(entry) = texts_by_id.get(&session_id) else { continue };
+        let Some(entry) = texts_by_id.get(&session_id) else {
+            continue;
+        };
         if entry.text.trim().is_empty() {
             continue;
         }
@@ -1476,7 +1532,10 @@ pub fn infer(aspect: &str, session: Option<&str>, limit: Option<i64>) -> Result<
         suggestion.insert("runtime".to_string(), json!(runtime));
         suggestion.insert("aspect".to_string(), json!(aspect));
         suggestion.insert("value".to_string(), json!(value));
-        suggestion.insert("note".to_string(), json!(format!("confidence={confidence:.2}")));
+        suggestion.insert(
+            "note".to_string(),
+            json!(format!("confidence={confidence:.2}")),
+        );
         suggestion.insert("source".to_string(), json!("model"));
         suggestions.push(Value::Object(suggestion));
     }
@@ -1510,7 +1569,10 @@ pub fn info() -> Result<Vec<Value>> {
         }
         let mut entry = Map::new();
         entry.insert("aspect".to_string(), json!(name));
-        entry.insert("dir".to_string(), json!(root.join(&name).display().to_string()));
+        entry.insert(
+            "dir".to_string(),
+            json!(root.join(&name).display().to_string()),
+        );
         let found = artifacts(&name)?;
         match found.last() {
             None => {

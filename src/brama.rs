@@ -69,7 +69,10 @@ pub struct Message {
 
 impl Message {
     fn new(role: &str, content: String) -> Self {
-        Message { role: role.to_string(), content }
+        Message {
+            role: role.to_string(),
+            content,
+        }
     }
 }
 
@@ -155,7 +158,12 @@ fn stado_url() -> String {
     let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) else {
         return String::new();
     };
-    parsed.get("url").and_then(|url| url.as_str()).unwrap_or_default().trim().to_string()
+    parsed
+        .get("url")
+        .and_then(|url| url.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string()
 }
 
 fn resolve_url() -> Result<String> {
@@ -201,15 +209,20 @@ fn resolve_url() -> Result<String> {
 fn skarbiec_read(item: &str, field: &str) -> String {
     let home = home_dir();
     let vault = match env_trimmed("SKARBIEC_VAULT_FILE") {
-        value if value.is_empty() => {
-            home.join(".stado").join("skarbiec.vault.json").to_string_lossy().into_owned()
-        }
+        value if value.is_empty() => home
+            .join(".stado")
+            .join("skarbiec.vault.json")
+            .to_string_lossy()
+            .into_owned(),
         value => value,
     };
     let skarbiec = match env_trimmed("TLT_SKARBIEC_BIN") {
-        value if value.is_empty() => {
-            home.join(".stado").join("bin").join("skarbiec").to_string_lossy().into_owned()
-        }
+        value if value.is_empty() => home
+            .join(".stado")
+            .join("bin")
+            .join("skarbiec")
+            .to_string_lossy()
+            .into_owned(),
         value => value,
     };
     if Path::new(&skarbiec).is_file() && Path::new(&vault).is_file() {
@@ -243,8 +256,16 @@ fn skarbiec_read(item: &str, field: &str) -> String {
             .into_owned(),
         value => value,
     };
-    let env = [("WC_SKARBIEC_CONSUMER", consumer), ("WC_SKARBIEC_TOKEN_FILE", token_file)];
-    match run_capture(&stado, &["credentials", "get", "--field", field, item], &env, None) {
+    let env = [
+        ("WC_SKARBIEC_CONSUMER", consumer),
+        ("WC_SKARBIEC_TOKEN_FILE", token_file),
+    ];
+    match run_capture(
+        &stado,
+        &["credentials", "get", "--field", field, item],
+        &env,
+        None,
+    ) {
         Some((true, stdout)) => stdout.trim().to_string(),
         _ => String::new(),
     }
@@ -357,7 +378,11 @@ impl BramaClient {
         if status.as_u16() != 200 {
             let detail = truncate_chars(&text, 300);
             let detail = detail.trim();
-            let detail = if detail.is_empty() { "(empty body)" } else { detail };
+            let detail = if detail.is_empty() {
+                "(empty body)"
+            } else {
+                detail
+            };
             bail!("Brama answered HTTP {}: {detail}", status.as_u16())
         }
         let content = serde_json::from_str::<serde_json::Value>(&text)

@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""Stage and publish the recovered qualified lifecycle candidate on its Stado host."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+JOB_ID = "b5de55bd"
+SOURCE_REVISION = "e3dd6f65be729c7e75f12b518b28953cb738f66c"
+WORK = Path(f"/mnt/wd16tb/wisent-staging/oko-lifecycle-model-{JOB_ID}")
+SOURCE = WORK / "audit-source"
+OUT = WORK / "qualified-output"
+MODEL = WORK / "oko-lifecycle-qwen3-8b-q4_k_m.gguf"
+MODEL_NAME = MODEL.name
+JUDGE = WORK / "final-judge-gguf.json"
+STADO = Path("/root/.stado/bin/stado")
+PART_BYTES = 128 * 1024 * 1024
+
+
+def digest(path: Path) -> str:
+    value = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(8 * 1024 * 1024):
+            value.update(chunk)
+    return value.hexdigest()
+
+
+def run(*args: str, capture: bool = False) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(STADO), *args],
+        check=True,
+        capture_output=capture,
+        text=True,
+    )
+
+
+def publish(destination: str, name: str, source: Path) -> None:
+    uri = f"{destination}/{name}"
+    probe = run("storage", "stat", uri, "--json", capture=True)
+    if json.loads(probe.stdout).get("state") != "present":
+        run("storage", "put", uri, str(source))
+
+
+def split_model() -> list[Path]:
+    for stale in OUT.glob(f"{MODEL_NAME}.part-*"):
+        stale.unlink()
+    parts: list[Path] = []
+    with MODEL.open("rb") as source:
+        index = 0
+        while chunk := source.read(PART_BYTES):
+            part = OUT / f"{MODEL_NAME}.part-{index:03d}"
+            part.write_bytes(chunk)
+            parts.append(part)
+            index += 1
+    return parts
+
+
+def main() -> None:
+    judge = json.loads(JUDGE.read_text(encoding="utf-8"))
+    metrics = json.loads((WORK / "metrics-gguf.json").read_text(encoding="utf-8"))
+    qualified = (
+        judge.get("passed") is True
+        and metrics.get("valid_json", 0) >= 0.99
+        and metrics.get("action_accuracy", 0) >= 0.90
+        and metrics.get("joint_accuracy", 0) >= 0.88
+        and metrics.get("finish_precision", 0) == 1.0
+    )
+    if not qualified:
+        raise SystemExit("recovered lifecycle candidate is not qualified")
+
+    if OUT.exists():
+        shutil.rmtree(OUT)
+    OUT.mkdir(parents=True)
+    copies = {
+        "final-judge.json": JUDGE,
+        "metrics.json": WORK / "metrics-gguf.json",
+        "predictions.jsonl": WORK / "predictions-gguf.jsonl",
+        "python-requirements.lock": WORK / "python-requirements.lock",
+        "lifecycle-system-prompt.txt": SOURCE / "training/lifecycle-model/lifecycle-system-prompt.txt",
+        "lifecycle-output-schema.json": SOURCE / "training/lifecycle-model/lifecycle-output-schema.json",
+    }
+    for name, source in copies.items():
+        shutil.copy2(source, OUT / name)
+    parts = split_model()
+
+    files = {
+        path.name: {"bytes": path.stat().st_size, "sha256": digest(path)}
+        for path in sorted(OUT.iterdir())
+        if path.is_file()
+    }
+    model_digest = digest(MODEL)
+    manifest = {
+        "product": "Oko goal lifecycle model",
+        "contract": "oko-goal-lifecycle-v1",
+        "format": "GGUF",
+        "default_artifact": MODEL_NAME,
+        "base_model": "Qwen/Qwen3-8B",
+        "base_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "source_revision": SOURCE_REVISION,
+        "required_quality_gate": "final-judge.json",
+        "evaluation_surface": "served Q4_K_M GGUF through Oko's loopback chat contract",
+        "qualified": True,
+        "review_model": judge.get("review_model"),
+        "metrics": {
+            "valid_json": metrics.get("valid_json"),
+            "action_accuracy": metrics.get("action_accuracy"),
+            "goal_ref_accuracy": metrics.get("goal_ref_accuracy"),
+            "evidence_accuracy": metrics.get("evidence_accuracy"),
+            "joint_accuracy": metrics.get("joint_accuracy"),
+            "finish_precision": metrics.get("finish_precision"),
+        },
+        "files": files,
+        "transport": {
+            "kind": "ordered-parts",
+            "parts": [part.name for part in parts],
+            "assembled_bytes": MODEL.stat().st_size,
+            "assembled_sha256": model_digest,
+        },
+    }
+    manifest_path = OUT / "model-manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    destination = f"stado://releases/oko/models/lifecycle-qwen3-8b/{model_digest}"
+
+    for part in parts:
+        publish(destination, f"large-output/{part.name}", part)
+    for name in copies:
+        publish(destination, name, OUT / name)
+    chunk_manifest = {
+        "filename": MODEL_NAME,
+        "sha256": model_digest,
+        "bytes": MODEL.stat().st_size,
+        "part_count": len(parts),
+        "parts": [part.name for part in parts],
+    }
+    chunk_path = OUT / "large-output-manifest.json"
+    chunk_path.write_text(json.dumps(chunk_manifest, indent=2) + "\n", encoding="utf-8")
+    publish(destination, "large-output/manifest-v2.json", chunk_path)
+    publish(destination, "model-manifest-v2.json", manifest_path)
+    print(
+        json.dumps(
+            {
+                "base": destination,
+                "digest": model_digest,
+                "parts": len(parts),
+                "review_model": judge.get("review_model"),
+            },
+            sort_keys=True,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

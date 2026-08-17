@@ -157,8 +157,7 @@ pub fn predict(
 
     let arch = Architecture::from_config(&config)?;
     let mut rng = ChaCha8Rng::seed_from_u64(SEED);
-    let (model, _) =
-        Classifier::load(arch, &config, raw, classes.len(), &device, false, &mut rng)?;
+    let (model, _) = Classifier::load(arch, &config, raw, classes.len(), &device, false, &mut rng)?;
     let mut tokenizer = load_tokenizer(&artifact_dir.join("tokenizer.json"))?;
     prepare_tokenizer(&mut tokenizer, arch.max_positions(&config)?.min(max_length))?;
 
@@ -201,8 +200,15 @@ fn fine_tune(
     let eval_batch = Batches::encode(&tokenizer, texts, label_ids, &eval_index, &device)?;
 
     let raw = files.weights(&device)?;
-    let (model, vars) =
-        Classifier::load(arch, &base_config, raw, classes.len(), &device, true, &mut rng)?;
+    let (model, vars) = Classifier::load(
+        arch,
+        &base_config,
+        raw,
+        classes.len(),
+        &device,
+        true,
+        &mut rng,
+    )?;
     let stepped: Vec<Var> = vars.iter().map(|(_, var)| var.clone()).collect();
 
     let steps_per_epoch = train_batch.rows.div_ceil(config.batch_size.max(1)).max(1);
@@ -625,18 +631,10 @@ impl DistilBertLayer {
             key: candle_nn::linear(dim, dim, attention.pp("k_lin"))?,
             value: candle_nn::linear(dim, dim, attention.pp("v_lin"))?,
             attention_out: candle_nn::linear(dim, dim, attention.pp("out_lin"))?,
-            attention_norm: LayerNorm::load(
-                dim,
-                DEFAULT_LAYER_NORM_EPS,
-                vb.pp("sa_layer_norm"),
-            )?,
+            attention_norm: LayerNorm::load(dim, DEFAULT_LAYER_NORM_EPS, vb.pp("sa_layer_norm"))?,
             lin1: candle_nn::linear(dim, config.hidden_dim, ffn.pp("lin1"))?,
             lin2: candle_nn::linear(config.hidden_dim, dim, ffn.pp("lin2"))?,
-            output_norm: LayerNorm::load(
-                dim,
-                DEFAULT_LAYER_NORM_EPS,
-                vb.pp("output_layer_norm"),
-            )?,
+            output_norm: LayerNorm::load(dim, DEFAULT_LAYER_NORM_EPS, vb.pp("output_layer_norm"))?,
             heads: config.n_heads,
             activation,
         })
@@ -808,11 +806,7 @@ impl Bert {
                     hidden,
                     embeddings.pp("token_type_embeddings"),
                 )?,
-                norm: LayerNorm::load(
-                    hidden,
-                    config.layer_norm_eps,
-                    embeddings.pp("LayerNorm"),
-                )?,
+                norm: LayerNorm::load(hidden, config.layer_norm_eps, embeddings.pp("LayerNorm"))?,
                 layers: (0..config.num_hidden_layers)
                     .map(|index| BertLayer::load(config, activation, layers.pp(index.to_string())))
                     .collect::<candle_core::Result<Vec<_>>>()?,
@@ -921,7 +915,15 @@ impl Classifier {
             }
             let pooler = arch.pooler_name();
             init_linear(&mut tensors, pooler, hidden, hidden, std, device, rng)?;
-            init_linear(&mut tensors, "classifier", num_labels, hidden, std, device, rng)?;
+            init_linear(
+                &mut tensors,
+                "classifier",
+                num_labels,
+                hidden,
+                std,
+                device,
+                rng,
+            )?;
 
             let mut names: Vec<String> = tensors.keys().cloned().collect();
             names.sort_unstable();
@@ -1070,7 +1072,9 @@ fn init_linear(
 ) -> Result<()> {
     let weight = format!("{name}.weight");
     if !tensors.contains_key(&weight) {
-        let values: Vec<f32> = (0..out_dim * in_dim).map(|_| normal(rng, std) as f32).collect();
+        let values: Vec<f32> = (0..out_dim * in_dim)
+            .map(|_| normal(rng, std) as f32)
+            .collect();
         let value = Tensor::from_vec(values, (out_dim, in_dim), device)
             .map_err(|err| Error(format!("could not initialise {weight}: {err}")))?;
         tensors.insert(weight, value);
@@ -1501,9 +1505,11 @@ fn argmax(logits: &Tensor) -> Result<Vec<u32>> {
 }
 
 fn scalar(tensor: &Tensor) -> Result<f32> {
-    tensor
-        .to_scalar::<f32>()
-        .map_err(|err| Error(format!("could not read a scalar back from the device: {err}")))
+    tensor.to_scalar::<f32>().map_err(|err| {
+        Error(format!(
+            "could not read a scalar back from the device: {err}"
+        ))
+    })
 }
 
 /// Python's `round(value, 4)`, which is what the metrics have always carried.

@@ -48,7 +48,10 @@ fn label_review_prompt(
 
 fn record(session_id: &str, key: &str, value: String) -> Value {
     let mut entry = Map::new();
-    entry.insert("session_id".to_string(), Value::String(session_id.to_string()));
+    entry.insert(
+        "session_id".to_string(),
+        Value::String(session_id.to_string()),
+    );
     entry.insert(key.to_string(), Value::String(value));
     Value::Object(entry)
 }
@@ -74,14 +77,18 @@ pub fn autolabel(
 
     // Latest label per session, any source: a session anyone has already
     // labeled on this aspect is never relabeled.
-    let already: HashSet<String> =
-        lake::load_labels(aspect)?.into_iter().map(|label| label.session_id).collect();
+    let already: HashSet<String> = lake::load_labels(aspect)?
+        .into_iter()
+        .map(|label| label.session_id)
+        .collect();
     let mut sessions = lake::all_sessions()?;
     if let Some(runtime) = runtime {
         sessions.retain(|session| session.runtime.as_deref() == Some(runtime));
     }
-    let skipped_labeled =
-        sessions.iter().filter(|session| already.contains(&session.session_id)).count();
+    let skipped_labeled = sessions
+        .iter()
+        .filter(|session| already.contains(&session.session_id))
+        .count();
     let mut targets: Vec<String> = sessions
         .into_iter()
         .filter(|session| !already.contains(&session.session_id))
@@ -110,7 +117,11 @@ pub fn autolabel(
         let answer = match client.chat(&model_id, &prompt) {
             Ok(answer) => answer,
             Err(error) => {
-                failures.push(record(session_id, "error", brama::truncate_chars(&error.0, 200)));
+                failures.push(record(
+                    session_id,
+                    "error",
+                    brama::truncate_chars(&error.0, 200),
+                ));
                 continue;
             }
         };
@@ -135,13 +146,15 @@ pub fn autolabel(
                     failures.push(record(
                         session_id,
                         "error",
-                        format!("final label review failed: {}", brama::truncate_chars(&error.0, 160)),
+                        format!(
+                            "final label review failed: {}",
+                            brama::truncate_chars(&error.0, 160)
+                        ),
                     ));
                     continue;
                 }
             };
-            let Some((verdict, _exact)) =
-                brama::parse_answer(&answer, &LABEL_REVIEW_VALUES[..])
+            let Some((verdict, _exact)) = brama::parse_answer(&answer, &LABEL_REVIEW_VALUES[..])
             else {
                 review_failed += 1;
                 failures.push(record(
@@ -156,8 +169,10 @@ pub fn autolabel(
             };
             if verdict == LABEL_REVIEW_VALUES[1] {
                 let mut rejected_label = Map::new();
-                rejected_label
-                    .insert("session_id".to_string(), Value::String(session_id.to_string()));
+                rejected_label.insert(
+                    "session_id".to_string(),
+                    Value::String(session_id.to_string()),
+                );
                 rejected_label.insert("value".to_string(), Value::String(value));
                 rejected_label.insert("best_review".to_string(), Value::String(verdict));
                 rejected.push(Value::Object(rejected_label));
@@ -167,13 +182,24 @@ pub fn autolabel(
         }
         // The lake CLI validates the session and owns the write; that boundary
         // stays. A refusal fails this one session and nothing else.
-        let note = if best_review { BEST_REVIEW_NOTE } else { AUTOLABEL_NOTE };
+        let note = if best_review {
+            BEST_REVIEW_NOTE
+        } else {
+            AUTOLABEL_NOTE
+        };
         if let Err(error) = lake::label_add(session_id, aspect, &value, &source, note) {
-            failures.push(record(session_id, "error", brama::truncate_chars(&error.0, 200)));
+            failures.push(record(
+                session_id,
+                "error",
+                brama::truncate_chars(&error.0, 200),
+            ));
             continue;
         }
         let mut labeled = Map::new();
-        labeled.insert("session_id".to_string(), Value::String(session_id.to_string()));
+        labeled.insert(
+            "session_id".to_string(),
+            Value::String(session_id.to_string()),
+        );
         labeled.insert("value".to_string(), Value::String(value));
         if let Some(review) = review {
             labeled.insert("best_review".to_string(), Value::String(review));
@@ -186,7 +212,10 @@ pub fn autolabel(
     summary.insert("brama_model".to_string(), Value::String(model_id));
     summary.insert("source".to_string(), Value::String(source));
     summary.insert("labeled".to_string(), Value::Number(results.len().into()));
-    summary.insert("skipped_labeled".to_string(), Value::Number(skipped_labeled.into()));
+    summary.insert(
+        "skipped_labeled".to_string(),
+        Value::Number(skipped_labeled.into()),
+    );
     summary.insert("skipped_no_text".to_string(), Value::Number(no_text.into()));
     summary.insert("failed".to_string(), Value::Number(failures.len().into()));
     summary.insert(

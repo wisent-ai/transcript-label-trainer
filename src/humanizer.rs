@@ -36,7 +36,11 @@ fn field(row: &Value, name: &str) -> String {
 }
 
 fn normalized(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 fn digest(value: &str) -> String {
@@ -71,8 +75,12 @@ fn likely_authored(value: &str) -> bool {
         "sk-ant-",
         "sk-proj-",
     ];
-    if rejected_prefixes.iter().any(|prefix| lower.starts_with(prefix))
-        || rejected_fragments.iter().any(|fragment| lower.contains(fragment))
+    if rejected_prefixes
+        .iter()
+        .any(|prefix| lower.starts_with(prefix))
+        || rejected_fragments
+            .iter()
+            .any(|fragment| lower.contains(fragment))
     {
         return false;
     }
@@ -92,7 +100,9 @@ fn likely_authored(value: &str) -> bool {
 
 pub fn export_targets(path: &Path, limit: usize) -> Result<Value> {
     if limit < 1_000 {
-        return Err(Error("humanizer corpus requires at least 1000 targets".to_string()));
+        return Err(Error(
+            "humanizer corpus requires at least 1000 targets".to_string(),
+        ));
     }
     let fetch = limit.saturating_mul(FETCH_MULTIPLIER);
     let sql = format!(

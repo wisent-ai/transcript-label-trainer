@@ -56,7 +56,9 @@ macro_rules! bail {
 
 /// `$HOME`, or `.` when the environment has none.
 pub fn home_dir() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 /// Current instant as an ISO-8601 UTC string, second precision, matching the
@@ -171,7 +173,11 @@ pub fn float_repr(value: f64) -> String {
         return "nan".to_string();
     }
     if value.is_infinite() {
-        return if value < 0.0 { "-inf".to_string() } else { "inf".to_string() };
+        return if value < 0.0 {
+            "-inf".to_string()
+        } else {
+            "inf".to_string()
+        };
     }
     // `{:e}` gives the shortest round-tripping digits as `<mantissa>e<exp>`.
     let scientific = format!("{value:e}");
@@ -196,7 +202,11 @@ pub fn float_repr(value: f64) -> String {
         } else if point >= length {
             format!("{}{}.0", digits, "0".repeat((point - length) as usize))
         } else {
-            format!("{}.{}", &digits[..point as usize], &digits[point as usize..])
+            format!(
+                "{}.{}",
+                &digits[..point as usize],
+                &digits[point as usize..]
+            )
         };
         return format!("{sign}{body}");
     }
