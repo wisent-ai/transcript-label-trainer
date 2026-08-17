@@ -1,6 +1,6 @@
 #!/bin/sh
-# Report one lifecycle training job's live state: process, accelerator, log
-# tail, and the held-out metrics once the trainer has written them.
+# Report one lifecycle training job's live state: process, accelerator, the
+# informative log lines, and the held-out metrics once the trainer writes them.
 #
 #   stado host run-helper <target> oko-lifecycle-train-report.sh --uuid <JOB_UUID>
 set -eu
@@ -22,8 +22,21 @@ du -sh . 2>/dev/null || true
 printf '\n== accelerator ==\n'
 nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,noheader
 
-printf '\n== log tail ==\n'
-tail -n 40 train.log 2>/dev/null || echo "no train.log yet"
+printf '\n== log ==\n'
+# Progress bars rewrite one line thousands of times; keep only the lines that
+# carry information: the dataset summary, loss records, generation counters,
+# the newest step, and anything that looks like a failure.
+if [ -f train.log ]; then
+    lines=$(mktemp)
+    tr '\r' '\n' <train.log | grep -Ev '^[[:space:]]*$' >"$lines"
+    grep -E "reviewed train rows|'loss'|'eval_loss'|held-out predictions|written|Error|Traceback|CUDA out of memory" \
+        "$lines" | tail -n 20 || true
+    printf -- '-- newest line --\n'
+    tail -n 1 "$lines"
+    rm -f "$lines"
+else
+    echo "no train.log yet"
+fi
 
 if [ -f metrics.json ]; then
     printf '\n== metrics ==\n'
