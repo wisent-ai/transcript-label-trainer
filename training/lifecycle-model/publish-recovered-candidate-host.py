@@ -5,19 +5,40 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
-JOB_ID = "b5de55bd"
-SOURCE_REVISION = "11a04eb07c31fa7bb80c6406c2a121b789f84f6c"
-WORK = Path(f"/mnt/wd16tb/wisent-staging/oko-lifecycle-model-{JOB_ID}")
-SOURCE = WORK / "audit-source"
+JOB_ID = os.environ.get("LIFECYCLE_PUBLISH_JOB_ID", "b5de55bd")
+SOURCE_REVISION = os.environ.get(
+    "LIFECYCLE_PUBLISH_SOURCE_REVISION",
+    "11a04eb07c31fa7bb80c6406c2a121b789f84f6c",
+)
+WORK = Path(
+    os.environ.get(
+        "LIFECYCLE_PUBLISH_WORK",
+        f"/mnt/wd16tb/wisent-staging/oko-lifecycle-model-{JOB_ID}",
+    )
+)
+SOURCE = Path(os.environ.get("LIFECYCLE_PUBLISH_SOURCE", str(WORK / "audit-source")))
 OUT = WORK / "qualified-output"
-MODEL = WORK / "oko-lifecycle-qwen3-8b-q4_k_m.gguf"
-MODEL_NAME = MODEL.name
-JUDGE = WORK / "final-judge-gguf.json"
-STADO = Path("/root/.stado/bin/stado")
+MODEL_NAME = os.environ.get(
+    "LIFECYCLE_PUBLISH_MODEL_NAME", "oko-lifecycle-qwen3-8b-q4_k_m.gguf"
+)
+MODEL = Path(os.environ.get("LIFECYCLE_PUBLISH_MODEL", str(WORK / MODEL_NAME)))
+JUDGE = Path(
+    os.environ.get("LIFECYCLE_PUBLISH_JUDGE", str(WORK / "final-judge-gguf.json"))
+)
+STADO = Path(os.environ.get("STADO_BIN", "/root/.stado/bin/stado"))
+BASE_MODEL = os.environ.get("LIFECYCLE_PUBLISH_BASE_MODEL", "Qwen/Qwen3-8B")
+BASE_REVISION = os.environ.get(
+    "LIFECYCLE_PUBLISH_BASE_REVISION",
+    "b968826d9c46dd6066d109eabc6255188de91218",
+)
+DESTINATION_FAMILY = os.environ.get(
+    "LIFECYCLE_PUBLISH_DESTINATION_FAMILY", "lifecycle-qwen3-8b"
+)
 PART_BYTES = 128 * 1024 * 1024
 
 
@@ -98,8 +119,8 @@ def main() -> None:
         "contract": "oko-goal-lifecycle-v1",
         "format": "GGUF",
         "default_artifact": MODEL_NAME,
-        "base_model": "Qwen/Qwen3-8B",
-        "base_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "base_model": BASE_MODEL,
+        "base_revision": BASE_REVISION,
         "source_revision": SOURCE_REVISION,
         "required_quality_gate": "final-judge.json",
         "evaluation_surface": "served Q4_K_M GGUF through Oko's loopback chat contract",
@@ -123,7 +144,7 @@ def main() -> None:
     }
     manifest_path = OUT / "model-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    destination = f"stado://releases/oko/models/lifecycle-qwen3-8b/{model_digest}"
+    destination = f"stado://releases/oko/models/{DESTINATION_FAMILY}/{model_digest}"
 
     for part in parts:
         publish(destination, f"large-output/{part.name}", part)
