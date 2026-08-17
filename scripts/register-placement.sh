@@ -20,7 +20,14 @@
 set -euo pipefail
 
 TRAINING_HOST="${TRAINING_HOST:-ubuntu-server-rtx-pro-6000}"
-TRAINING_ROOT="${TRAINING_ROOT:-/mnt/wd16tb/stado/training}"
+# `/mnt/wisent-training` is a mount point the training host keeps: on
+# 2026-08-17 the previous default `/mnt/wd16tb/stado/training` named a 16 TB
+# disk that had been removed from that host, so the path resolved onto its
+# 100 GiB root volume (12 GiB free, disk janitor enforcing) while every reader
+# still believed the declaration. The point is bound to the host's largest
+# filesystem by `wisent-compute/stado-rs/scripts/install-training-artifact-root-host.sh`,
+# so a disk change moves the mount and leaves this declaration true.
+TRAINING_ROOT="${TRAINING_ROOT:-/mnt/wisent-training/stado/training}"
 TRAINING_KIND="label-model"
 LAKE_ROOT="${LAKE_DATA:-$HOME/.transcript-lake}"
 
