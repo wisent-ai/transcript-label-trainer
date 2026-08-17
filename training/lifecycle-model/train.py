@@ -15,6 +15,7 @@ BASE_REVISION = os.environ.get(
 )
 EPOCHS = float(os.environ.get("LIFECYCLE_STUDENT_EPOCHS", "4"))
 LEARNING_RATE = float(os.environ.get("LIFECYCLE_STUDENT_LR", "1e-5"))
+OPTIMIZER = os.environ.get("LIFECYCLE_STUDENT_OPTIM", "adamw_torch")
 MAX_LENGTH = int(os.environ.get("LIFECYCLE_STUDENT_MAX_LENGTH", "3072"))
 MIN_TRAIN_ROWS_BY_ACTION = {
     "continueCurrent": 0,
@@ -260,6 +261,7 @@ def main():
         output_dir="student-checkpoints",
         num_train_epochs=EPOCHS,
         learning_rate=LEARNING_RATE,
+        optim=OPTIMIZER,
         per_device_train_batch_size=1,
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=16,
@@ -361,6 +363,7 @@ def main():
         "dataset_sha256": digest([train_path, eval_path]),
         "epochs": EPOCHS,
         "learning_rate": LEARNING_RATE,
+        "optimizer": OPTIMIZER,
         "train_rows": len(train_rows),
         "unique_train_rows": len(unique_train_rows),
         "train_action_counts": train_action_counts,
