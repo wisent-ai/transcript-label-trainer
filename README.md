@@ -427,12 +427,14 @@ transcript-label-trainer lifecycle-review path/to/eval.jsonl \
   --split eval --brama-model=-best
 ```
 
-When the serving contract changes, prior source rows are reviewed again rather
-than retaining labels produced under the old prompt. Deterministic hard-case
-curricula from `training/lifecycle-model/generate-curriculum.py` are also sent
-through Brama; `assemble-curriculum-splits.py` keeps only examples whose
-independent review agrees with the intended action and keeps evaluation
-curriculum disjoint from training.
+When the decision semantics change, prior source rows are reviewed again rather
+than retaining labels produced under the old prompt. A contract-only ownership
+change, such as moving title generation out of this model, is normalized by
+`assemble-curriculum-splits.py` without changing the reviewed action. Deterministic
+hard-case curricula from `training/lifecycle-model/generate-curriculum.py` are
+also sent through Brama; the assembler keeps only examples whose independent
+review agrees with the intended action and keeps evaluation curriculum disjoint
+from training.
 
 The reviewed files are then submitted together to one exclusive Stado GPU
 target:

@@ -12,7 +12,10 @@ ACTIONS = {"startGoal", "continueCurrent", "finishGoal", "ignore"}
 
 def read_rows(path):
     with Path(path).open(encoding="utf-8") as handle:
-        return [json.loads(line) for line in handle if line.strip()]
+        rows = [json.loads(line) for line in handle if line.strip()]
+    for row in rows:
+        target_for(row)
+    return rows
 
 
 def target_for(row):
@@ -22,6 +25,10 @@ def target_for(row):
     target = json.loads(assistants[0]["content"])
     if target.get("action") not in ACTIONS:
         raise ValueError(f"{row['id']} has invalid reviewed action")
+    target["title"] = ""
+    assistants[0]["content"] = json.dumps(
+        target, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    )
     return target
 
 
