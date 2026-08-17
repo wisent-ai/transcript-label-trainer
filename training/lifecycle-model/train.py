@@ -17,6 +17,7 @@ EPOCHS = float(os.environ.get("LIFECYCLE_STUDENT_EPOCHS", "5"))
 LEARNING_RATE = float(os.environ.get("LIFECYCLE_STUDENT_LR", "2e-5"))
 OPTIMIZER = os.environ.get("LIFECYCLE_STUDENT_OPTIM", "adamw_torch")
 MAX_LENGTH = int(os.environ.get("LIFECYCLE_STUDENT_MAX_LENGTH", "3072"))
+SAVE_STEPS = int(os.environ.get("LIFECYCLE_STUDENT_SAVE_STEPS", "50"))
 MIN_TRAIN_ROWS_BY_ACTION = {
     "continueCurrent": 0,
     "finishGoal": int(os.environ.get("LIFECYCLE_MIN_FINISH_ROWS", "384")),
@@ -294,7 +295,9 @@ def main():
         warmup_ratio=0.03,
         logging_steps=10,
         eval_strategy="epoch",
-        save_strategy="no",
+        save_strategy="steps",
+        save_steps=SAVE_STEPS,
+        save_total_limit=2,
         bf16=True,
         seed=SEED,
         report_to=[],
@@ -306,7 +309,13 @@ def main():
         eval_dataset=eval_dataset,
         data_collator=collate,
     )
-    trainer.train()
+    # A tripped breaker on 2026-08-17 destroyed a run that kept no checkpoint.
+    # Resume whenever the work directory already holds one.
+    checkpoints = sorted(
+        Path(args.output_dir).glob("checkpoint-*"),
+        key=lambda path: int(path.name.split("-")[-1]),
+    )
+    trainer.train(resume_from_checkpoint=str(checkpoints[-1]) if checkpoints else None)
     model.config.use_cache = True
     trainer.save_model("student")
     tokenizer.save_pretrained("student")
