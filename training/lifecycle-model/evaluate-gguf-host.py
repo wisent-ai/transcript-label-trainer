@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Evaluate the quantized lifecycle model through Oko's serving protocol."""
 
+import copy
 import json
 import os
 import subprocess
@@ -52,6 +53,14 @@ SYSTEM_PROMPT = Path(
     )
 ).read_text(encoding="utf-8").strip()
 EVIDENCE = {"none", "explicit_open", "explicit_completion"}
+OUTPUT_SCHEMA = json.loads(
+    Path(
+        os.environ.get(
+            "LIFECYCLE_EVAL_OUTPUT_SCHEMA",
+            str(WORK / "audit-source/training/lifecycle-model/lifecycle-output-schema.json"),
+        )
+    ).read_text(encoding="utf-8")
+)
 
 
 def read_rows(path):
@@ -105,38 +114,31 @@ def input_for(row):
     return json.loads(content)
 
 def response_format(row):
+    """Narrow the one checked-in decision contract to this request's candidates.
+
+    The contract declares goal_ref as a pattern because it cannot know the
+    live references; serving replaces that pattern with the exact enumeration
+    and constrains decoding to the result. Nothing else is redeclared here.
+    """
     existing_refs = [
         candidate["ref"]
         for candidate in input_for(row)["candidates"]
         if candidate["ref"] != "NEW_GOAL"
     ]
-
-    def variant(action, goal_refs, evidence):
-        return {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["action", "goal_ref", "title", "lifecycle_evidence"],
-            "properties": {
-                "action": {"type": "string", "const": action},
-                "goal_ref": {"type": "string", "enum": goal_refs},
-                "title": {"type": "string", "const": ""},
-                "lifecycle_evidence": {"type": "string", "enum": evidence},
-            },
-        }
-
+    variants = []
+    for variant in OUTPUT_SCHEMA["oneOf"]:
+        variant = copy.deepcopy(variant)
+        goal_ref = variant["properties"]["goal_ref"]
+        if "pattern" in goal_ref:
+            del goal_ref["pattern"]
+            goal_ref["enum"] = existing_refs
+        variants.append(variant)
     return {
         "type": "json_schema",
         "json_schema": {
             "name": "oko_goal_lifecycle",
             "strict": True,
-            "schema": {
-                "oneOf": [
-                    variant("startGoal", ["NEW_GOAL"], ["none"]),
-                    variant("continueCurrent", existing_refs, ["none", "explicit_open"]),
-                    variant("finishGoal", existing_refs, ["explicit_completion"]),
-                    variant("ignore", existing_refs, ["none"]),
-                ]
-            },
+            "schema": {"oneOf": variants},
         },
     }
 

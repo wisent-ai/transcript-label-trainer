@@ -1,39 +1,51 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "OkoGoalLifecycleDecision",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["action", "goal_ref", "title", "lifecycle_evidence"],
-  "properties": {
-    "action": {
-      "enum": ["startGoal", "continueCurrent", "finishGoal", "ignore"]
-    },
-    "goal_ref": {
-      "type": "string",
-      "pattern": "^(NEW_GOAL|C[1-9][0-9]*)$"
-    },
-    "title": {
-      "type": "string",
-      "maxLength": 100
-    },
-    "lifecycle_evidence": {
-      "enum": ["none", "explicit_open", "explicit_completion"]
-    }
-  },
-  "allOf": [
+  "$comment": "The one contract for a lifecycle decision. Serving narrows goal_ref from the pattern below to the exact candidate references of the request, and constrains decoding to the narrowed schema; nothing else about the shape changes. Written as oneOf, not if/then, because grammar-constrained decoders support this subset. title is always empty: Oko's separate title model names newly started goals.",
+  "oneOf": [
     {
-      "if": {"properties": {"action": {"const": "startGoal"}}},
-      "then": {
-        "properties": {
-          "goal_ref": {"const": "NEW_GOAL"},
-          "title": {"minLength": 3}
-        }
-      },
-      "else": {"properties": {"title": {"const": ""}}}
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "goal_ref", "title", "lifecycle_evidence"],
+      "properties": {
+        "action": {"const": "startGoal"},
+        "goal_ref": {"const": "NEW_GOAL"},
+        "title": {"const": ""},
+        "lifecycle_evidence": {"const": "none"}
+      }
     },
     {
-      "if": {"properties": {"action": {"const": "finishGoal"}}},
-      "then": {"properties": {"lifecycle_evidence": {"const": "explicit_completion"}}}
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "goal_ref", "title", "lifecycle_evidence"],
+      "properties": {
+        "action": {"const": "continueCurrent"},
+        "goal_ref": {"type": "string", "pattern": "^C[1-9][0-9]*$"},
+        "title": {"const": ""},
+        "lifecycle_evidence": {"enum": ["none", "explicit_open"]}
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "goal_ref", "title", "lifecycle_evidence"],
+      "properties": {
+        "action": {"const": "finishGoal"},
+        "goal_ref": {"type": "string", "pattern": "^C[1-9][0-9]*$"},
+        "title": {"const": ""},
+        "lifecycle_evidence": {"const": "explicit_completion"}
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "goal_ref", "title", "lifecycle_evidence"],
+      "properties": {
+        "action": {"const": "ignore"},
+        "goal_ref": {"type": "string", "pattern": "^C[1-9][0-9]*$"},
+        "title": {"const": ""},
+        "lifecycle_evidence": {"const": "none"}
+      }
     }
   ]
 }
