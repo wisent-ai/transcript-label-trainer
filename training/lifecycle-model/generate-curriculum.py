@@ -21,12 +21,20 @@ TEMPLATES = {
             "Wszystko dla {title} działa poprawnie; zadanie zostało ukończone.",
         ],
     ),
-    "finish_notification": (
-        "finishGoal",
+    # A subagent completion report is not the user confirming completion, which
+    # is what the system prompt requires for finishGoal. This family therefore
+    # teaches the opposite of what its name used to claim: the objective stays
+    # open until the user says otherwise. On 2026-08-17 the served candidate
+    # failed the quality gate on exactly these rows — four of its five false
+    # completions were subagent notifications.
+    "notification_negative": (
+        "continueCurrent",
         [
             '<subagent_notification> {{"status":{{"completed":"{title} completed successfully. All requested checks passed and no work remains."}}}}</subagent_notification>',
             '<subagent_notification> {{"status":{{"completed":"Finished {title} end to end; the delivered result is working and verified."}}}}</subagent_notification>',
             '<subagent_notification> {{"status":{{"completed":"Zakończono {title}. Wynik działa poprawnie, został sprawdzony i nic nie pozostało."}}}}</subagent_notification>',
+            '<subagent_notification> {{"status":{{"completed":"Updated the requested files for {title} and regenerated the outputs. Compilation succeeded."}}}}</subagent_notification>',
+            '<subagent_notification> {{"status":{{"completed":"Completed the requested rounds for {title}; score unchanged. Files changed are listed above."}}}}</subagent_notification>',
         ],
     ),
     "finish_user_handoff": (
