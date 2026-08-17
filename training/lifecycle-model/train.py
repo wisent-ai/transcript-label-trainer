@@ -13,18 +13,21 @@ BASE_MODEL = os.environ.get("LIFECYCLE_STUDENT_MODEL", "Qwen/Qwen3-4B")
 BASE_REVISION = os.environ.get(
     "LIFECYCLE_STUDENT_REVISION", "1cfa9a7208912126459214e8b04321603b3df60c"
 )
-EPOCHS = float(os.environ.get("LIFECYCLE_STUDENT_EPOCHS", "3"))
+EPOCHS = float(os.environ.get("LIFECYCLE_STUDENT_EPOCHS", "4"))
 LEARNING_RATE = float(os.environ.get("LIFECYCLE_STUDENT_LR", "1e-5"))
 MAX_LENGTH = int(os.environ.get("LIFECYCLE_STUDENT_MAX_LENGTH", "3072"))
 MIN_TRAIN_ROWS_BY_ACTION = {
     "continueCurrent": 0,
     "finishGoal": int(os.environ.get("LIFECYCLE_MIN_FINISH_ROWS", "256")),
-    "ignore": int(os.environ.get("LIFECYCLE_MIN_IGNORE_ROWS", "512")),
+    "ignore": int(os.environ.get("LIFECYCLE_MIN_IGNORE_ROWS", "768")),
     "startGoal": int(os.environ.get("LIFECYCLE_MIN_START_ROWS", "512")),
 }
-MIN_EXPLICIT_OPEN_ROWS = int(os.environ.get("LIFECYCLE_MIN_EXPLICIT_OPEN_ROWS", "512"))
+MIN_EXPLICIT_OPEN_ROWS = int(os.environ.get("LIFECYCLE_MIN_EXPLICIT_OPEN_ROWS", "192"))
 MIN_COMPLETION_NEGATIVE_ROWS = int(
-    os.environ.get("LIFECYCLE_MIN_COMPLETION_NEGATIVE_ROWS", "768")
+    os.environ.get("LIFECYCLE_MIN_COMPLETION_NEGATIVE_ROWS", "1024")
+)
+MIN_OPEN_EVIDENCE_NEGATIVE_ROWS = int(
+    os.environ.get("LIFECYCLE_MIN_OPEN_EVIDENCE_NEGATIVE_ROWS", "768")
 )
 SYSTEM_PROMPT = (Path(__file__).resolve().parent / "lifecycle-system-prompt.txt").read_text(
     encoding="utf-8"
@@ -88,8 +91,33 @@ def is_completion_negative(row):
             "subagent_notification",
             "success",
             "working",
+            "good",
+            "great",
+            "no limit",
+            "looks good",
         )
     )
+
+def is_open_evidence_negative(row):
+    target = target_for(row)
+    if target["lifecycle_evidence"] != "none":
+        return False
+    text = input_for(row)["text"].casefold()
+    return any(
+        token in text
+        for token in (
+            "failed",
+            "improve",
+            "open",
+            "pending",
+            "research",
+            "retry",
+            "status",
+            "still",
+            "wrong",
+        )
+    )
+
 
 
 def augment_train_rows(rows):
@@ -108,12 +136,16 @@ def augment_train_rows(rows):
             augmented.append(bucket[index % len(bucket)])
     hard_buckets = {
         "completion_negative": [row for row in rows if is_completion_negative(row)],
+        "open_evidence_negative": [
+            row for row in rows if is_open_evidence_negative(row)
+        ],
         "explicit_open": [
             row for row in rows if target_for(row)["lifecycle_evidence"] == "explicit_open"
         ],
     }
     hard_minimums = {
         "completion_negative": MIN_COMPLETION_NEGATIVE_ROWS,
+        "open_evidence_negative": MIN_OPEN_EVIDENCE_NEGATIVE_ROWS,
         "explicit_open": MIN_EXPLICIT_OPEN_ROWS,
     }
     for name, bucket in hard_buckets.items():
