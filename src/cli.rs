@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 use serde_json::Value;
 
 use crate::util::{float_repr, json_text, json_truthy, Error, Result, TrainFailure};
-use crate::{autolabel, brama, evaluate, goal, jobs, model, placement, stado};
+use crate::{autolabel, brama, discover, evaluate, goal, jobs, model, placement, stado};
 
 /// `println!` that does not panic when the reader has closed the pipe.
 ///
@@ -128,6 +128,7 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "evaluate" => cmd_evaluate(&parsed),
         "infer" => cmd_infer(&parsed),
         "autolabel" => cmd_autolabel(&parsed),
+        "aspect-discover" => cmd_aspect_discover(&parsed),
         "info" => cmd_info(&parsed),
         "goal-model" => cmd_goal_model(&parsed),
         "lifecycle-review" => cmd_lifecycle_review(&parsed),
@@ -273,6 +274,33 @@ fn cmd_autolabel(args: &Parsed) -> Result<i32> {
         Ok(summary) => summary,
         Err(error) => {
             eprintln!("autolabel: {error}");
+            return Ok(1);
+        }
+    };
+    outln!("{}", dumps(&summary));
+    if args.flag("--best")
+        && summary
+            .pointer("/best_review/sensible")
+            .and_then(Value::as_bool)
+            != Some(true)
+    {
+        Ok(1)
+    } else {
+        Ok(0)
+    }
+}
+
+fn cmd_aspect_discover(args: &Parsed) -> Result<i32> {
+    let summary = match discover::discover(
+        args.int("--limit"),
+        args.text("--brama-model"),
+        args.flag("--best"),
+        args.int("--max-aspects"),
+        args.text("--runtime"),
+    ) {
+        Ok(summary) => summary,
+        Err(error) => {
+            eprintln!("aspect-discover: {error}");
             return Ok(1);
         }
     };
@@ -1155,6 +1183,57 @@ fn build_specs() -> Vec<Spec> {
         ],
     };
 
+    let aspect_discover = Spec {
+        name: "aspect-discover",
+        help: "propose new aspect dimensions from recent sessions via a Brama \
+               teacher (writes nothing)"
+            .to_string(),
+        description: Some(
+            "Read recent privacy-masked sessions, have a Brama teacher propose \
+             aspect dimensions grounded in what the user asked for and how the \
+             agent answered, merge the proposals across batches, and print them \
+             with the exact autolabel and train commands that would turn each \
+             one into a model. Writes nothing: the lake's labeler owns the \
+             aspect vocabulary."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            option(
+                "--limit",
+                "LIMIT",
+                Kind::Int,
+                "newest sessions sampled (default: 60)".to_string(),
+            ),
+            option(
+                "--max-aspects",
+                "N",
+                Kind::Int,
+                "keep at most this many merged proposals (default: 8)".to_string(),
+            ),
+            option(
+                "--brama-model",
+                "MODEL_ID",
+                Kind::Text,
+                format!("Brama-routed teacher model (default: {teacher})"),
+            ),
+            option(
+                "--best",
+                "",
+                Kind::Flag,
+                "have Brama's -best route audit every kept proposal; reject \
+                 nonsensical ones and exit nonzero when the audit finds an issue"
+                    .to_string(),
+            ),
+            option(
+                "--runtime",
+                "RUNTIME",
+                Kind::Text,
+                "only sessions of this runtime".to_string(),
+            ),
+        ],
+    };
+
     let goal_model = Spec {
         name: "goal-model",
         help: "build and train the reviewed Jeden goal model on Stado".to_string(),
@@ -1370,6 +1449,7 @@ fn build_specs() -> Vec<Spec> {
         infer,
         info,
         autolabel,
+        aspect_discover,
         goal_model,
         goal_audit,
         lifecycle_review,

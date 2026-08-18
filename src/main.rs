@@ -3,6 +3,7 @@
 mod autolabel;
 mod brama;
 mod cli;
+mod discover;
 mod evaluate;
 mod goal;
 #[cfg(feature = "hf")]
