@@ -57,7 +57,7 @@ WorkingDirectory=$work
 Environment=HF_HOME=/mnt/wisent-staging/hf-cache
 Environment=CUDA_VISIBLE_DEVICES=0
 Environment=LIFECYCLE_STUDENT_MODEL=Qwen/Qwen3-4B
-Environment=LIFECYCLE_STUDENT_EPOCHS=3
+Environment=LIFECYCLE_STUDENT_EPOCHS=5
 Environment=LIFECYCLE_STUDENT_LR=1e-5
 Environment=LIFECYCLE_STUDENT_SAVE_STEPS=50
 Environment=LIFECYCLE_TRAIN_DATASET=$work/reviewed-train.jsonl
