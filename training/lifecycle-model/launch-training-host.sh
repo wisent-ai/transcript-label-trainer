@@ -19,7 +19,7 @@ set -eu
 job="${1:?job uuid required}"
 stado="$HOME/.stado/bin/stado"
 trainer="$HOME/.stado/bin/oko-lifecycle-train.py"
-curriculum="stado://releases/oko/lifecycle-curriculum/20260818b"
+curriculum="stado://releases/oko/lifecycle-curriculum/20260818c"
 work="/mnt/wisent-training/stado/training/oko-lifecycle-$job"
 unit="oko-lifecycle-train.service"
 unit_path="/etc/systemd/system/$unit"
