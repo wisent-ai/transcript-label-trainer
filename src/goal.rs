@@ -16,13 +16,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use crate::brama::{BramaClient, Message, DEFAULT_MODEL};
+use crate::brama::{BramaClient, Message, BEST_MODEL, DEFAULT_MODEL};
 use crate::util::{now_iso, Error, Result};
 use crate::{bail, lake};
 
 const SYSTEM_PROMPT: &str = include_str!("../training/goal-model/goal-system-prompt.md");
 const REVIEW_VALUES: [&str; 2] = ["sensible", "nonsensical"];
-const CURATION_REVIEW_MODEL: &str = "wisent-backend/chat/primary";
+/// Curation decides which rows become training labels, so it uses the
+/// strongest operator-approved route. It named `wisent-backend/chat/primary`
+/// until 2026-08-18 — an unrelated product model with no business judging
+/// task labels.
+const CURATION_REVIEW_MODEL: &str = BEST_MODEL;
 const AUDIT_VALUES: [&str; 4] = [
     "both-sensible",
     "label-nonsensical",

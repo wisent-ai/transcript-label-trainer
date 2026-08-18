@@ -49,8 +49,10 @@ pub const DEFAULT_TOKEN_ITEM: &str = "jeden-model-router";
 //
 // This one is billed to an existing subscription rather than per-token credits,
 // handles the mixed Polish/English transcripts, and was measured answering
-// through this client. When the subscription is exhausted, the free local route
-// is `wisent-backend/chat/primary`. Override either way with --brama-model.
+// through this client. There is no free local fallback for label work:
+// `wisent-backend/chat/primary` is an unrelated product route, it labelled
+// 1,617 curriculum rows against the held-out convention before 2026-08-18, and
+// naming it here is what made that look allowed. Override with --brama-model.
 pub const DEFAULT_MODEL: &str = "codex/gpt-5.6-sol";
 /// Strongest active operator subscription route exposed by Brama.
 pub const BEST_MODEL: &str = "-best";

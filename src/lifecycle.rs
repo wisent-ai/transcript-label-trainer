@@ -241,6 +241,21 @@ pub fn review_dataset(
     if !["train", "eval"].contains(&split) {
         return Err(Error("--split must be train or eval".to_string()));
     }
+    // A reviewed label is ground truth for every model trained from it, so the
+    // reviewer has to be a route chosen for judgement. `wisent-backend/*` is an
+    // unrelated product route; before 2026-08-18 it was this command's default
+    // and it labelled 1,617 curriculum rows, including subagent completion
+    // reports it filed as `ignore` where the human-reviewed held-out split says
+    // `continueCurrent`. Those rows reached a candidate that then failed the
+    // quality gate on false completions, so this is refused rather than warned
+    // about.
+    if model.starts_with("wisent-backend/") {
+        return Err(Error(format!(
+            "{model} is a product route, not a label reviewer: pass an operator-approved \
+             Brama route with --brama-model, or sign the subscription in so the default \
+             route answers"
+        )));
+    }
     let mut rows = read_rows(input)?;
     if let Some(limit) = limit {
         rows.truncate(limit);
