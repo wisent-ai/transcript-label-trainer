@@ -123,6 +123,103 @@ Inspect trained aspects, artifact paths, and metrics:
 transcript-label-trainer info
 ```
 
+## CLI
+
+One binary, twelve subcommands. Global flags: `--training-root PATH` (where
+model artifacts live; beats `$TLT_HOME` and the Stado registry declaration)
+and `--storage-root PATH` (the lake data root; beats `$LAKE_DATA` and the
+registry). Every subcommand answers `--help` with its full contract; the
+one-line summaries below are those help texts, not paraphrases.
+
+Aspect classifiers (local, cheap, sklearn or HF):
+
+| command | does |
+|---|---|
+| `train` | train a classifier for one aspect from manual lake labels |
+| `run` | execute a declarative training job (YAML spec) |
+| `evaluate` | score a trained model on its frozen holdout and have a Brama teacher judge whether the predictions are acceptable |
+| `infer` | emit label suggestions for unlabeled sessions; never writes to the lake |
+| `info` | list trained aspects, artifacts, and metrics |
+| `autolabel` | label every unlabeled session for an aspect via a Brama teacher (zero-touch) |
+
+Goal models (fine-tunes trained on a Stado GPU target, gated before publish):
+
+| command | does |
+|---|---|
+| `goal-model` | curate masked lake messages, teacher-label task goals through Brama, require an independent `-best` review, train on the named exclusive Stado GPU target, and publish GGUF artifacts only after the held-out gold predictions pass a second `-best` audit |
+| `goal-audit` | independently audit student goal predictions (JSONL of message, reference goal, student output) and write the complete audit record |
+| `lifecycle-review` | classify masked Oko training envelopes through a named Brama route, enforce the `oko-goal-lifecycle-v1` contract, and write ordered JSONL with reviewer provenance for an immutable `--split train\|eval` |
+| `lifecycle-model` | upload immutable reviewed train and held-out datasets, fine-tune on the named Stado GPU target, audit every held-out decision through Brama `-best`, and publish the candidate only when the lifecycle quality gate passes |
+| `lifecycle-audit` | judge every held-out student decision independently, reject inferred completion, retain the full verdict record, and fail the gate when more than two percent are semantically wrong |
+| `humanizer-model` | export masked likely-authored user turns, derive inverse style-transfer inputs through Brama, train a LoRA adapter on the pinned base, and publish only a qualified private adapter revision |
+
+Exit statuses across the CLI: `0` success, `1` failed command, `2` usage
+error or a run the lake does not hold enough labeled data for.
+
+### Goals quickstart
+
+The goal path in three commands, assuming a registered Stado GPU target:
+
+```sh
+# 1. Title model: curate, teacher-label, review, train, audit, publish GGUF.
+transcript-label-trainer goal-model --compute-target ubuntu-server-rtx-pro-6000
+
+# 2. Lifecycle datasets: review masked envelopes into immutable splits.
+transcript-label-trainer lifecycle-review envelopes.jsonl \
+  --split train --output reviewed-train.jsonl
+transcript-label-trainer lifecycle-review held-out.jsonl \
+  --split eval --output reviewed-eval.jsonl
+
+# 3. Lifecycle model: train, audit every held-out decision, gate, publish.
+transcript-label-trainer lifecycle-model reviewed-train.jsonl reviewed-eval.jsonl \
+  --compute-target ubuntu-server-rtx-pro-6000 --brama-url https://brama.wisent.com
+```
+
+Each step refuses to continue when its gate fails: no reviewed dataset, no
+training; no passed audit, no publication. There is no flag that skips a gate.
+
+## Pipeline, step by step
+
+What actually happens, in order, when this repository is used end to end.
+Every step names its owner, because half of them are deliberately not this
+repository's.
+
+1. **Transcripts land in the lake.** Vendor runtimes write raw transcripts;
+   `transcript-lake` ingests and privacy-masks them into its canonical store.
+   This repository reads that store read-only, through the lake CLI, and
+   never writes it.
+2. **Curation.** The trainer exports candidate rows for the task at hand —
+   session texts for aspect classifiers, masked user messages for goal
+   titles, decision envelopes for the lifecycle contract — cleaned of
+   machine noise before any model sees them.
+3. **Labeling.** Ground truth comes from a named evaluator: manual labels in
+   the lake's label store, or a Brama-routed teacher (`autolabel`,
+   `lifecycle-review`, the teacher stage of `goal-model`). Every record
+   carries provenance; model-sourced labels are never ground truth unless
+   the job names them, because self-training on the model's own predictions
+   is a confirmation loop.
+4. **Independent review.** A second, independent Brama route (`-best` by
+   default) audits the labels before anything trains on them. A failed or
+   unparseable review fails that row, never invents a verdict.
+5. **Frozen splits.** Train/eval membership is written once and reused
+   forever (`eval-split.json`, `--split train|eval`). Nothing is ever
+   promoted into a holdout, and no backend trains on one.
+6. **Training.** Aspect classifiers train locally in seconds. Fine-tunes
+   (`goal-model`, `lifecycle-model`, `humanizer-model`) are submitted
+   through Stado to one named exclusive GPU target from the canonical
+   registry — Stado owns checkout, scoped secrets, execution, logs, and the
+   terminal outcome.
+7. **Qualification.** The student's held-out predictions face an independent
+   judge (`evaluate`, `goal-audit`, `lifecycle-audit`) with an explicit
+   quality gate. The gate failing means no artifact ships; there is no
+   override.
+8. **Publication.** Only qualified artifacts are published, with their
+   manifests, metrics, and judge verdicts, through Stado storage.
+9. **Serving and use.** Consumers own the rest: Oko installs and serves the
+   lifecycle model on loopback, Jeden and jeden-desktop call it and record
+   its decisions in their session ledgers. This repository trains models;
+   it never serves them.
+
 ## Fine-tuning a HuggingFace model
 
 By default `train` fits TF-IDF + logistic regression. With `--model` it
