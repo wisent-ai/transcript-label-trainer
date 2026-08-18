@@ -4,6 +4,32 @@ Measured 2026-08-18 on candidate `abd65dca6468` (full fine-tune of
 `Qwen/Qwen3-4B`, revision `1cfa9a7208912126459214e8b04321603b3df60c`), one
 held-out split of 485 rows, greedy decoding on both sides:
 
+The gap turned out to be the GGUF path itself. Serving the same fine-tune
+through `mlx_lm` on the same machine and the same 485-row split, greedy, no
+grammar constraint:
+
+| metric | trainer, HF bf16 on CUDA | served, Q4_K_M GGUF on Metal | served, MLX bf16 on Metal | gate |
+|---|---|---|---|---|
+| valid_json | 1.0000 | 1.0000 | 1.0000 | ≥ 0.99 |
+| action_accuracy | 0.9381 | 0.8495 | 0.9423 | ≥ 0.90 |
+| goal_ref_accuracy | — | 0.9485 | 0.9794 | — |
+| evidence_accuracy | 0.9897 | 0.9072 | 0.9938 | — |
+| joint_accuracy | 0.9237 | 0.7381 | 0.9258 | ≥ 0.88 |
+| finish_precision | 1.0000 | 0.9787 | 1.0000 | = 1.0 |
+
+MLX beats even the trainer's own numbers, which is what a lossless path should
+do: the same weights, the same arithmetic family, no conversion. The qualified
+release therefore ships MLX weights and declares its runtime, and
+`oko/scripts/install-goal-lifecycle-model.py` reads that declaration instead of
+assuming llama-server.
+
+Two smaller facts worth keeping. Constrained decoding is a safety net rather
+than the thing that produces valid output: the MLX path emitted 485 parseable
+decisions with no grammar at all. And more training made the GGUF surface worse
+while the trainer's own numbers improved — five epochs scored 0.9381 for the
+trainer and 0.8495 served, against 0.9258 and 0.9340 at three epochs — so a
+run tuned against the trainer's metric can be tuned away from production.
+
 | metric | trainer, HF bf16 on CUDA | served, Q4_K_M on Metal | served, Q8_0 on Metal |
 |---|---|---|---|
 | valid_json | 1.0000 | 1.0000 | 1.0000 |

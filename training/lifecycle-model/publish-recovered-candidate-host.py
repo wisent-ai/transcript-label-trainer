@@ -40,6 +40,23 @@ DESTINATION_FAMILY = os.environ.get(
     "LIFECYCLE_PUBLISH_DESTINATION_FAMILY", "lifecycle-qwen3-8b"
 )
 PART_BYTES = 128 * 1024 * 1024
+# What the release serves. The first qualified Oko lifecycle model is MLX
+# weights, not a GGUF: on 2026-08-18 the same fine-tune measured joint 0.9258
+# through mlx_lm on Metal against 0.7381 for its Q4_K_M GGUF on the same
+# machine and the same held-out split, so the GGUF path could not pass the gate
+# at all. `format` and the companion file list are therefore inputs, not
+# constants.
+FORMAT = os.environ.get("LIFECYCLE_PUBLISH_FORMAT", "GGUF")
+METRICS_NAME = os.environ.get("LIFECYCLE_PUBLISH_METRICS", "metrics-gguf.json")
+PREDICTIONS_NAME = os.environ.get(
+    "LIFECYCLE_PUBLISH_PREDICTIONS", "predictions-gguf.jsonl"
+)
+# Extra artefacts the runtime needs beside the weights, as NAME=PATH pairs.
+COMPANIONS = [
+    entry.split("=", 1)
+    for entry in os.environ.get("LIFECYCLE_PUBLISH_COMPANIONS", "").split(",")
+    if "=" in entry
+]
 
 
 def digest(path: Path) -> str:
@@ -82,7 +99,7 @@ def split_model() -> list[Path]:
 
 def main() -> None:
     judge = json.loads(JUDGE.read_text(encoding="utf-8"))
-    metrics = json.loads((WORK / "metrics-gguf.json").read_text(encoding="utf-8"))
+    metrics = json.loads((WORK / METRICS_NAME).read_text(encoding="utf-8"))
     qualified = (
         judge.get("passed") is True
         and metrics.get("valid_json", 0) >= 0.99
@@ -98,14 +115,16 @@ def main() -> None:
     OUT.mkdir(parents=True)
     copies = {
         "final-judge.json": JUDGE,
-        "metrics.json": WORK / "metrics-gguf.json",
-        "predictions.jsonl": WORK / "predictions-gguf.jsonl",
+        "metrics.json": WORK / METRICS_NAME,
+        "predictions.jsonl": WORK / PREDICTIONS_NAME,
         "python-requirements.lock": WORK / "python-requirements.lock",
         "lifecycle-system-prompt.txt": SOURCE / "training/lifecycle-model/lifecycle-system-prompt.txt",
         "lifecycle-output-schema.json": SOURCE / "training/lifecycle-model/lifecycle-output-schema.json",
     }
     for name, source in copies.items():
         shutil.copy2(source, OUT / name)
+    for name, source in COMPANIONS:
+        shutil.copy2(Path(source), OUT / name)
     parts = split_model()
 
     files = {
@@ -117,7 +136,7 @@ def main() -> None:
     manifest = {
         "product": "Oko goal lifecycle model",
         "contract": "oko-goal-lifecycle-v1",
-        "format": "GGUF",
+        "format": FORMAT,
         "default_artifact": MODEL_NAME,
         "base_model": BASE_MODEL,
         "base_revision": BASE_REVISION,
@@ -149,6 +168,11 @@ def main() -> None:
     for part in parts:
         publish(destination, f"large-output/{part.name}", part)
     for name in copies:
+        publish(destination, name, OUT / name)
+    # The companions are what makes the weights loadable at all; a release that
+    # lists them in its manifest and does not carry them is a release nobody can
+    # install, which is exactly how the first MLX publish failed.
+    for name, _ in COMPANIONS:
         publish(destination, name, OUT / name)
     chunk_manifest = {
         "filename": MODEL_NAME,
