@@ -6,7 +6,7 @@
 //! output is a proposal document: each proposal names the aspect, its allowed
 //! values, why it matters, which sampled sessions ground it, and the exact
 //! `autolabel`/`train` commands that would turn it into a model. With
-//! `--best`, Brama's independent `-best` route must call a proposal sensible
+//! `--best`, Brama's independent `best` route must call a proposal sensible
 //! before it is kept; the audit failing is an exit-status matter, not a
 //! silently shorter list.
 

@@ -55,7 +55,7 @@ pub const DEFAULT_TOKEN_ITEM: &str = "jeden-model-router";
 // naming it here is what made that look allowed. Override with --brama-model.
 pub const DEFAULT_MODEL: &str = "codex/gpt-5.6-sol";
 /// Strongest active operator subscription route exposed by Brama.
-pub const BEST_MODEL: &str = "-best";
+pub const BEST_MODEL: &str = "best";
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const STADO_TIMEOUT: Duration = Duration::from_secs(20);

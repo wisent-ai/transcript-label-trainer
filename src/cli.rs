@@ -1079,7 +1079,7 @@ fn build_specs() -> Vec<Spec> {
                 "--best",
                 "",
                 Kind::Flag,
-                "after the configured judge, use Brama's -best route to audit \
+                "after the configured judge, use Brama's best route to audit \
                  whether every ground-truth label and judge opinion is sensible; \
                  exit nonzero when the audit finds an issue"
                     .to_string(),
@@ -1163,7 +1163,7 @@ fn build_specs() -> Vec<Spec> {
                 "--best",
                 "",
                 Kind::Flag,
-                "have Brama's -best route audit every proposed label before it \
+                "have Brama's best route audit every proposed label before it \
                  reaches Transcript Lake; reject nonsensical labels and exit \
                  nonzero when the audit finds an issue"
                     .to_string(),
@@ -1221,7 +1221,7 @@ fn build_specs() -> Vec<Spec> {
                 "--best",
                 "",
                 Kind::Flag,
-                "have Brama's -best route audit every kept proposal; reject \
+                "have Brama's best route audit every kept proposal; reject \
                  nonsensical ones and exit nonzero when the audit finds an issue"
                     .to_string(),
             ),
@@ -1239,9 +1239,9 @@ fn build_specs() -> Vec<Spec> {
         help: "build and train the reviewed Jeden goal model on Stado".to_string(),
         description: Some(
             "Read only privacy-masked Transcript Lake events, use a Brama teacher \
-             to label task goals, require an independent Brama -best review, then \
+             to label task goals, require an independent Brama best review, then \
              train on the named exclusive Stado GPU target. The held-out gold \
-             predictions must all pass a second -best audit before GGUF artifacts \
+             predictions must all pass a second best audit before GGUF artifacts \
              are published."
                 .to_string(),
         ),

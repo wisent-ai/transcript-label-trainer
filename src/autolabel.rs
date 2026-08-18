@@ -2,7 +2,7 @@
 //!
 //! For each lake session with no label on the aspect yet, a Brama-routed model
 //! classifies the reconstructed session text into one allowed value. With
-//! `--best`, Brama's independent `-best` route must first call that proposal
+//! `--best`, Brama's independent `best` route must first call that proposal
 //! sensible; only then is it applied through the lake CLI. The lake validates
 //! sessions and owns the write; there is no human staging queue.
 //!
@@ -16,7 +16,7 @@ use crate::util::Result;
 use crate::{brama, jobs, lake};
 
 pub const AUTOLABEL_NOTE: &str = "autolabel";
-const BEST_REVIEW_NOTE: &str = "autolabel; reviewed=-best";
+const BEST_REVIEW_NOTE: &str = "autolabel; reviewed=best";
 const LABEL_REVIEW_VALUES: [&str; 2] = ["sensible", "nonsensical"];
 
 fn label_review_prompt(

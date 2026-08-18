@@ -60,7 +60,7 @@ Transcript Label Trainer does not own:
   through the lake's labeler: `transcript-lake label add <session-id> --aspect
   <name> --value <v> --source model`. (`autolabel` is the deliberate
   exception: it writes through the lake CLI without a human staging queue and
-  can require the independent Brama `-best` gate.);
+  can require the independent Brama `best` gate.);
 - model serving, the compute-target registry, or remote job lifecycle. Stado
   owns placement, source checkout, scoped secrets, execution, logs, and the
   terminal outcome; this trainer only prepares and submits the declared work.
@@ -146,10 +146,10 @@ Goal models (fine-tunes trained on a Stado GPU target, gated before publish):
 
 | command | does |
 |---|---|
-| `goal-model` | curate masked lake messages, teacher-label task goals through Brama, require an independent `-best` review, train on the named exclusive Stado GPU target, and publish GGUF artifacts only after the held-out gold predictions pass a second `-best` audit |
+| `goal-model` | curate masked lake messages, teacher-label task goals through Brama, require an independent `best` review, train on the named exclusive Stado GPU target, and publish GGUF artifacts only after the held-out gold predictions pass a second `best` audit |
 | `goal-audit` | independently audit student goal predictions (JSONL of message, reference goal, student output) and write the complete audit record |
 | `lifecycle-review` | classify masked Oko training envelopes through a named Brama route, enforce the `oko-goal-lifecycle-v1` contract, and write ordered JSONL with reviewer provenance for an immutable `--split train\|eval` |
-| `lifecycle-model` | upload immutable reviewed train and held-out datasets, fine-tune on the named Stado GPU target, audit every held-out decision through Brama `-best`, and publish the candidate only when the lifecycle quality gate passes |
+| `lifecycle-model` | upload immutable reviewed train and held-out datasets, fine-tune on the named Stado GPU target, audit every held-out decision through Brama `best`, and publish the candidate only when the lifecycle quality gate passes |
 | `lifecycle-audit` | judge every held-out student decision independently, reject inferred completion, retain the full verdict record, and fail the gate when more than two percent are semantically wrong |
 | `humanizer-model` | export masked likely-authored user turns, derive inverse style-transfer inputs through Brama, train a LoRA adapter on the pinned base, and publish only a qualified private adapter revision |
 
@@ -198,7 +198,7 @@ repository's.
    carries provenance; model-sourced labels are never ground truth unless
    the job names them, because self-training on the model's own predictions
    is a confirmation loop.
-4. **Independent review.** A second, independent Brama route (`-best` by
+4. **Independent review.** A second, independent Brama route (`best` by
    default) audits the labels before anything trains on them. A failed or
    unparseable review fails that row, never invents a verdict.
 5. **Frozen splits.** Train/eval membership is written once and reused
@@ -382,7 +382,7 @@ prediction that matches it can still be rejected. The verdict, the aggregate
 agreement rate and one record per session go to
 `<training root>/models/<name>/judge.json`.
 
-`--best` adds a second, independent pass through Brama's `-best` subscription
+`--best` adds a second, independent pass through Brama's `best` subscription
 route. For every holdout record it audits both the stored ground-truth label
 and the first judge's `acceptable`/`unacceptable` opinion against the
 transcript. The four possible outcomes (`both-sensible`, `label-nonsensical`,
@@ -413,7 +413,7 @@ same way.
 `autolabel` labels sessions at scale with a model routed through Brama —
 Wisent's authenticated, provider-neutral OpenAI-compatible gateway (all LLM
 inference goes through Brama; never direct provider keys). With `--best`, each
-proposed label is independently audited by Brama's `-best` route before it can
+proposed label is independently audited by Brama's `best` route before it can
 reach Transcript Lake; there is still no human staging queue.
 
 ```sh
@@ -427,7 +427,7 @@ With `--best`, a second model returns `sensible` or `nonsensical`; only a
 `sensible` proposal is applied through the lake's own CLI:
 
 ```sh
-transcript-lake label add <session-id> --aspect tasktype --value <v> --source brama:<model-id> --note "autolabel; reviewed=-best"
+transcript-lake label add <session-id> --aspect tasktype --value <v> --source brama:<model-id> --note "autolabel; reviewed=best"
 ```
 
 The lake CLI validates the session and owns the write — that boundary stays;
@@ -518,10 +518,10 @@ JSONL outputs:
 ```sh
 transcript-label-trainer lifecycle-review path/to/train.jsonl \
   --output ~/.transcript-label-trainer/lifecycle-model/reviewed-train.jsonl \
-  --split train --brama-model=-best
+  --split train --brama-model=best
 transcript-label-trainer lifecycle-review path/to/eval.jsonl \
   --output ~/.transcript-label-trainer/lifecycle-model/reviewed-eval.jsonl \
-  --split eval --brama-model=-best
+  --split eval --brama-model=best
 ```
 
 When the decision semantics change, prior source rows are reviewed again rather
@@ -670,7 +670,7 @@ being invisible about it.
   compute target, follows the job, and runs the semantic evaluation there.
 - `autolabel --best` audits proposed labels before writing them;
   `evaluate --best` independently audits both stored labels and the first
-  judge's opinions through Brama's `-best` route. Both are quality gates with
+  judge's opinions through Brama's `best` route. Both are quality gates with
   machine-readable records and nonzero status for nonsensical results.
 
 - Transcript Label Trainer is now implemented in Rust and ships as one binary.

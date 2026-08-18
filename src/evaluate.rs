@@ -20,7 +20,7 @@
 //! judged at all, the gateway's own error is surfaced verbatim and nothing is
 //! written, because a fabricated verdict is worse than no verdict.
 //!
-//! **The final review.** With `--best`, Brama's `-best` route independently
+//! **The final review.** With `--best`, Brama's `best` route independently
 //! audits both the stored ground-truth label and the first judge's opinion.
 //! Any nonsensical or unreviewed record makes the command fail after the
 //! evidence has been written to `judge.json`.
