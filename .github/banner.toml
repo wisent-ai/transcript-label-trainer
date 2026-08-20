@@ -1,11 +1,13 @@
 [automation]
 managed = true
-source_fingerprint = "f973a8cef4111fb0"
+source_fingerprint = "b51cf724b822ec4c"
 category = "data"
+copy_status = "missing"
+approved_in = ""
 
 [banner]
-title = "Transcript Label Trainer remembers. Context stays useful."
-description = "Transcript Label Trainer"
+title = "Transcript Label Trainer"
+description = ""
 product = "Wisent"
 url = "wisent.com"
 theme = "dark"
