@@ -1,13 +1,13 @@
 [automation]
 managed = true
-source_fingerprint = "2736343ac0a21793"
+source_fingerprint = "f973a8cef4111fb0"
 category = "data"
 
 [banner]
 title = "Transcript Label Trainer remembers. Context stays useful."
 description = "Transcript Label Trainer"
 product = "Wisent"
-url = "wisent.ai"
+url = "wisent.com"
 theme = "dark"
 layout = "layers-left"
 art_seed = "transcript-label-trainer"
