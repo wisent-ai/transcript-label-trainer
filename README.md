@@ -32,6 +32,11 @@ Aspects are independent dimensions ("kąty"): topic, quality, reviewed,
 task-type — many per session. This repository turns the manual labels into a
 model that suggests the rest.
 
+Durable platform documentation is published at
+[`wisent.com/docs/ground-truth`](https://wisent.com/docs/ground-truth). This
+README remains the repository-local contract for installation, CLI behavior,
+training, qualification, and placement.
+
 ## Product boundary
 
 Transcript Label Trainer owns:
@@ -551,6 +556,12 @@ precision, and a passing independent audit. Qualified artifacts are
 content-addressed under
 `stado://releases/oko/models/lifecycle-qwen3-4b/<model-sha256>`; an unqualified
 candidate remains available for diagnosis but cannot enter that namespace.
+
+Qualification is measured on the shipped inference surface, not only in the
+trainer. For the qualified lifecycle release, the 485-row held-out split on
+MLX bf16/Metal produced 100% valid JSON, 94.23% action accuracy, 92.58% joint
+accuracy, and 100% finish precision. GGUF/llama.cpp measurements did not meet
+the joint gate, so the release manifest declares MLX weights and runtime.
 
 ## Placement: Stado decides where this runs
 

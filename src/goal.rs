@@ -20,7 +20,7 @@ use crate::brama::{BramaClient, Message, BEST_MODEL, DEFAULT_MODEL};
 use crate::util::{now_iso, Error, Result};
 use crate::{bail, lake};
 
-const SYSTEM_PROMPT: &str = include_str!("../training/goal-model/goal-system-prompt.md");
+const SYSTEM_PROMPT: &str = include_str!("../training/goal-model/goal-system-prompt.txt");
 const REVIEW_VALUES: [&str; 2] = ["sensible", "nonsensical"];
 /// Curation decides which rows become training labels, so it uses the
 /// strongest operator-approved route. It named `wisent-backend/chat/primary`

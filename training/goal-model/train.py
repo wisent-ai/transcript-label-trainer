@@ -16,7 +16,7 @@ EPOCHS = float(os.environ.get("GOAL_STUDENT_EPOCHS", "4"))
 LEARNING_RATE = float(os.environ.get("GOAL_STUDENT_LR", "1e-5"))
 MAX_LENGTH = int(os.environ.get("GOAL_STUDENT_MAX_LENGTH", "2048"))
 HERE = Path(__file__).resolve().parent
-SYSTEM_PROMPT = (HERE / "goal-system-prompt.md").read_text(encoding="utf-8").strip()
+SYSTEM_PROMPT = (HERE / "goal-system-prompt.txt").read_text(encoding="utf-8").strip()
 
 
 def read_rows(path):

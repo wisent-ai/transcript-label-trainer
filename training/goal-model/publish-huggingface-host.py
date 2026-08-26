@@ -53,7 +53,7 @@ def main() -> None:
     api = HfApi(token=token)
 
     model = required_path(config, "model")
-    card = required_path(config, "card")
+    card = Path(__file__).resolve().parents[2] / "README.md"
     prompt = required_path(config, "prompt")
     metrics = required_path(config, "metrics")
     license_file = Path(
@@ -76,7 +76,7 @@ def main() -> None:
 
     uploads = [
         (model, model.name),
-        (prompt, "goal-system-prompt.md"),
+        (prompt, "goal-system-prompt.txt"),
         (metrics, "metrics.json"),
         (license_file, "LICENSE"),
         (card, "README.md"),
