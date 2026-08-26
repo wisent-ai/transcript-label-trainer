@@ -64,8 +64,8 @@ rm -f "$OUT/$MODEL_NAME".part-*
 split -b "${GOAL_MODEL_PART_BYTES:-128M}" -d -a 3 \
   "$MODEL" "$OUT/$MODEL_NAME.part-"
 cp "$WORK/metrics.json" "$WORK/predictions.jsonl" \
-   "$WORK/python-requirements.lock" "$WORK/final-judge.json" \
-   "$ROOT/training/goal-model/goal-system-prompt.txt" "$OUT/"
+   "$WORK/python-requirements.lock" "$WORK/final-judge.json" "$OUT/"
+cp "$ROOT/training/goal-model/goal-system-prompt.txt" "$OUT/goal-system-prompt.md"
 
 OUT="$OUT" MODEL="$MODEL" MODEL_NAME="$MODEL_NAME" "$VENV/bin/python" - <<'PY'
 import hashlib

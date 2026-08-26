@@ -45,7 +45,7 @@ def publish(name, source):
     subprocess.run([stado, "storage", "put", uri, str(source)], check=True, env=environment)
 for name in parts:
     publish(f"large-output/{name}", SOURCE / name)
-for name in ("final-judge.json", "metrics.json", "predictions.jsonl", "goal-system-prompt.txt", "python-requirements.lock"):
+for name in ("final-judge.json", "metrics.json", "predictions.jsonl", "goal-system-prompt.md", "python-requirements.lock"):
     publish(name, SOURCE / name)
 publish("large-output/manifest-v2.json", chunk_path)
 publish("model-manifest-v2.json", SOURCE / "model-manifest.json")

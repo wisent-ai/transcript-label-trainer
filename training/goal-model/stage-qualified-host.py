@@ -11,7 +11,7 @@ WORK = Path("/mnt/wisent-staging/stado/jobs/jeden-goal-prompt-v5")
 OUT = Path(os.environ["OUTPUT_DIR"])
 MODEL = Path("/mnt/wisent-staging/stado/jobs/jeden-goal-568ebd79663775c9/jeden-goal-qwen3-4b-q4_k_m.gguf")
 JUDGE = WORK / "final-judge-semantic.json"
-PROMPT = Path("/root/.stado/files/goal-system-prompt.txt")
+PROMPT = Path("/root/.stado/files/goal-system-prompt.md")
 OUT.mkdir(parents=True, exist_ok=True)
 judge = json.loads(JUDGE.read_text(encoding="utf-8"))
 if judge.get("passed") is not True:
@@ -40,7 +40,7 @@ for source, name in (
     (WORK / "predictions.jsonl", "predictions.jsonl"),
     (Path("/mnt/wisent-staging/stado/jobs/jeden-goal-568ebd79663775c9/python-requirements.lock"), "python-requirements.lock"),
     (JUDGE, "final-judge.json"),
-    (PROMPT, "goal-system-prompt.txt"),
+    (PROMPT, "goal-system-prompt.md"),
 ):
     shutil.copy2(source, OUT / name)
 files = {}

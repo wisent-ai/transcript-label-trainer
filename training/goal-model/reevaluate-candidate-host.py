@@ -8,7 +8,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 WORK = Path("/mnt/wisent-staging/stado/jobs/jeden-goal-568ebd79663775c9")
-PROMPT = Path.home().joinpath(".stado/files/goal-system-prompt.txt").read_text().strip()
+PROMPT = Path.home().joinpath(".stado/files/goal-system-prompt.md").read_text().strip()
 SOURCE = WORK / "predictions.jsonl"
 OUTPUT = WORK / "predictions-prompt-v2.jsonl"
 MODEL = WORK / "student"

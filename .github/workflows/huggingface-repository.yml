@@ -66,7 +66,7 @@ jobs:
           published = {item.rfilename: item.size for item in info.siblings}
           required_files = {
               MODEL_NAME,
-              "goal-system-prompt.txt",
+              "goal-system-prompt.md",
               "metrics.json",
               "LICENSE",
               "README.md",
@@ -107,7 +107,7 @@ jobs:
               raise SystemExit("assembled model SHA-256 does not match the release")
 
           metadata = {}
-          for name in ("goal-system-prompt.txt", "metrics.json"):
+          for name in ("goal-system-prompt.md", "metrics.json"):
               target = work / name
               with urlopen(object_url(name), timeout=60) as source:
                   target.write_bytes(source.read())
@@ -124,7 +124,7 @@ jobs:
           api = HfApi(token=token)
           uploads = [
               (model, MODEL_NAME),
-              (metadata["goal-system-prompt.txt"], "goal-system-prompt.txt"),
+              (metadata["goal-system-prompt.md"], "goal-system-prompt.md"),
               (metadata["metrics.json"], "metrics.json"),
               (license_file, "LICENSE"),
               (Path("README.md"), "README.md"),

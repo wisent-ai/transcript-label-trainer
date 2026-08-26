@@ -76,7 +76,7 @@ def main() -> None:
 
     uploads = [
         (model, model.name),
-        (prompt, "goal-system-prompt.txt"),
+        (prompt, "goal-system-prompt.md"),
         (metrics, "metrics.json"),
         (license_file, "LICENSE"),
         (card, "README.md"),
