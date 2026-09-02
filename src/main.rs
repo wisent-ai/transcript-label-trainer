@@ -13,6 +13,7 @@ mod jobs;
 mod lake;
 mod lifecycle;
 mod model;
+mod onboarding;
 mod placement;
 mod stado;
 mod util;

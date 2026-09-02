@@ -11,7 +11,9 @@ use std::fmt::Write as _;
 use serde_json::Value;
 
 use crate::util::{float_repr, json_text, json_truthy, Error, Result, TrainFailure};
-use crate::{autolabel, brama, discover, evaluate, goal, jobs, model, placement, stado};
+use crate::{
+    autolabel, brama, discover, evaluate, goal, jobs, model, onboarding, placement, stado,
+};
 
 /// `println!` that does not panic when the reader has closed the pipe.
 ///
@@ -130,6 +132,7 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "autolabel" => cmd_autolabel(&parsed),
         "aspect-discover" => cmd_aspect_discover(&parsed),
         "info" => cmd_info(&parsed),
+        "onboarding" => cmd_onboarding(&parsed),
         "goal-model" => cmd_goal_model(&parsed),
         "lifecycle-review" => cmd_lifecycle_review(&parsed),
         "lifecycle-model" => cmd_lifecycle_model(&parsed),
@@ -448,6 +451,14 @@ fn cmd_info(args: &Parsed) -> Result<i32> {
     print_placement();
     print_info(&entries);
     Ok(0)
+}
+
+fn cmd_onboarding(args: &Parsed) -> Result<i32> {
+    onboarding::onboarding(
+        args.flag("--reset"),
+        args.flag("--yes"),
+        args.flag("--json"),
+    )
 }
 
 /// Print a training failure the way the Python did, and pick its exit status:
@@ -1133,6 +1144,43 @@ fn build_specs() -> Vec<Spec> {
         )],
     };
 
+    let onboarding = Spec {
+        name: "onboarding",
+        help: "walk the published first-use journey to your first suggestions".to_string(),
+        description: Some(
+            "Walk the first-use journey this repository publishes in \
+             onboarding_first_use.json, screen by screen, up to the first label \
+             suggestions a trained classifier emits over real session text. Progress \
+             is recorded per operator per machine outside the training root and \
+             outside the lake; the first success itself is recorded by 'infer', where \
+             the suggestions are emitted. Re-running a completed journey reports it \
+             complete and changes nothing."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            option(
+                "--reset",
+                "",
+                Kind::Flag,
+                "discard the recorded attempt and replay the journey from its entry screen"
+                    .to_string(),
+            ),
+            option(
+                "--yes",
+                "",
+                Kind::Flag,
+                "never wait for Enter between screens".to_string(),
+            ),
+            option(
+                "--json",
+                "",
+                Kind::Flag,
+                "print machine-readable JSON".to_string(),
+            ),
+        ],
+    };
+
     let autolabel = Spec {
         name: "autolabel",
         help: "label every unlabeled session for an aspect via a Brama teacher (zero-touch)"
@@ -1448,6 +1496,7 @@ fn build_specs() -> Vec<Spec> {
         evaluate,
         infer,
         info,
+        onboarding,
         autolabel,
         aspect_discover,
         goal_model,

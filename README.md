@@ -81,6 +81,17 @@ be on `PATH`. To build without installing, run `cargo build --release` and
 invoke `target/release/transcript-label-trainer` directly. Building needs a
 Rust toolchain at version `1.85` or newer; nothing else.
 
+`transcript-label-trainer onboarding` walks the first-use journey this
+repository ships in `onboarding_first_use.json`: what the small models are for,
+that the lake's labels are read and never written, training one aspect, and
+finally the first label suggestions a trained classifier emits over real
+session text, which are the first result (`label_suggestion_emitted`).
+Progress is recorded per operator per machine under
+`~/.local/state/transcript-label-trainer/onboarding.json`, outside the training
+root and outside the lake; `--reset` discards it and replays the journey. The
+first success itself is recorded by `infer`, where the suggestions are emitted,
+so reaching it without the walkthrough completes the journey just the same.
+
 Train one aspect from the manual labels in the lake:
 
 ```sh
@@ -130,11 +141,17 @@ transcript-label-trainer info
 
 ## CLI
 
-One binary, twelve subcommands. Global flags: `--training-root PATH` (where
+One binary, fourteen subcommands. Global flags: `--training-root PATH` (where
 model artifacts live; beats `$TLT_HOME` and the Stado registry declaration)
 and `--storage-root PATH` (the lake data root; beats `$LAKE_DATA` and the
 registry). Every subcommand answers `--help` with its full contract; the
 one-line summaries below are those help texts, not paraphrases.
+
+First use:
+
+| command | does |
+|---|---|
+| `onboarding` | walk the published first-use journey to your first suggestions |
 
 Aspect classifiers (local, cheap, sklearn or HF):
 
@@ -146,6 +163,7 @@ Aspect classifiers (local, cheap, sklearn or HF):
 | `infer` | emit label suggestions for unlabeled sessions; never writes to the lake |
 | `info` | list trained aspects, artifacts, and metrics |
 | `autolabel` | label every unlabeled session for an aspect via a Brama teacher (zero-touch) |
+| `aspect-discover` | propose new aspect dimensions from recent sessions via a Brama teacher (writes nothing) |
 
 Goal models (fine-tunes trained on a Stado GPU target, gated before publish):
 

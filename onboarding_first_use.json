@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "product_id": "transcript-label-trainer",
+  "journey_id": "first-use",
+  "journey_version": "2026-09-02.1",
+  "entry_screen_id": "promise",
+  "first_success_fact": "label_suggestion_emitted",
+  "published_at": "2026-09-02T00:00:00Z",
+  "source_revision": "transcript-label-trainer-first-use-2026-09-02.1",
+  "screens": [
+    {
+      "screen_id": "promise",
+      "screen_kind": "promise",
+      "title_key": "transcript-label-trainer.onboarding.promise.title",
+      "body_key": "transcript-label-trainer.onboarding.promise.body",
+      "required": true,
+      "actions": [
+        "continue"
+      ],
+      "transitions": [
+        {
+          "next_screen_id": "read-only-boundary",
+          "reason_code": "canonical_progression",
+          "priority": 10
+        }
+      ],
+      "presentation": {
+        "renderer": "promise",
+        "title": "Small models for your custom harness needs",
+        "body": "Your harness asks the same questions of every session - what goal am I working towards, is the user frustrated - and a smart model charges you tokens for each one. This trainer fits one small local classifier per aspect over the labels you already made, then answers those questions for the sessions nobody labeled."
+      }
+    },
+    {
+      "screen_id": "read-only-boundary",
+      "screen_kind": "explanation",
+      "title_key": "transcript-label-trainer.onboarding.read-only-boundary.title",
+      "body_key": "transcript-label-trainer.onboarding.read-only-boundary.body",
+      "required": true,
+      "actions": [
+        "continue"
+      ],
+      "transitions": [
+        {
+          "next_screen_id": "train-aspect",
+          "reason_code": "canonical_progression",
+          "priority": 10
+        }
+      ],
+      "presentation": {
+        "renderer": "explanation",
+        "title": "The lake is read, and never written",
+        "body": "Ground truth is the aspect labels the lake's own labeler owns, reached read-only through the transcript-lake CLI; the vocabulary and the label store stay the lake's. Model artifacts and metrics live under the training root Stado places this trainer on, outside the lake. Suggestions are printed for you to review, and applying one is the lake labeler's job.",
+        "command": "transcript-label-trainer info"
+      }
+    },
+    {
+      "screen_id": "train-aspect",
+      "screen_kind": "first_action",
+      "title_key": "transcript-label-trainer.onboarding.train-aspect.title",
+      "body_key": "transcript-label-trainer.onboarding.train-aspect.body",
+      "required": true,
+      "completion_evidence": {
+        "kind": "fact",
+        "fact": "aspect_classifier_trained",
+        "operator": "eq",
+        "value": true
+      },
+      "actions": [
+        "continue"
+      ],
+      "transitions": [
+        {
+          "next_screen_id": "first-suggestion",
+          "reason_code": "canonical_progression",
+          "priority": 10
+        }
+      ],
+      "presentation": {
+        "renderer": "first_action",
+        "title": "Train one aspect from the labels you already made",
+        "body": "One classifier per aspect, TF-IDF and logistic regression by default, trains locally in seconds. It needs 8 labeled sessions over at least 2 distinct values on the training side, because a fifth of the labels is frozen into a holdout no backend ever trains on. This step is satisfied once a trained artifact for an aspect exists under the training root.",
+        "command": "transcript-label-trainer train --aspect reviewed"
+      }
+    },
+    {
+      "screen_id": "first-suggestion",
+      "screen_kind": "first_success",
+      "title_key": "transcript-label-trainer.onboarding.first-suggestion.title",
+      "body_key": "transcript-label-trainer.onboarding.first-suggestion.body",
+      "required": true,
+      "completion_evidence": {
+        "kind": "fact",
+        "fact": "label_suggestion_emitted",
+        "operator": "eq",
+        "value": true
+      },
+      "actions": [
+        "complete"
+      ],
+      "transitions": [],
+      "presentation": {
+        "renderer": "first_success",
+        "title": "Read the first labels the small model suggests",
+        "body": "Inference reconstructs the text of sessions carrying no label on that aspect and prints label-store-shaped records with a predicted value, its confidence in the note, and source=model. Those records are the first work the small model does for you, and the step is recorded only when real suggestions were emitted over real transcript text.",
+        "command": "transcript-label-trainer infer --aspect reviewed --limit 20"
+      }
+    }
+  ],
+  "analytics_contract": {
+    "contract_version": "1",
+    "surface": "cli_first_use",
+    "exposure_event": "onboarding_step_viewed",
+    "primary_action_event": "onboarding_step_completed",
+    "completion_event": "onboarding_completed",
+    "first_success_event": "onboarding_first_success_observed"
+  }
+}

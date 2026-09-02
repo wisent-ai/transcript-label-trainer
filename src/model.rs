@@ -1468,6 +1468,12 @@ fn infer_hf(artifact: &Artifact, _texts: &[String]) -> Result<Vec<(String, f64)>
     )))
 }
 
+/// Whether this build can load an artifact of that backend at all: the
+/// HuggingFace backend is only compiled in behind the optional `hf` feature.
+pub fn loadable(backend: &str) -> bool {
+    backend == TFIDF_BACKEND || cfg!(feature = "hf")
+}
+
 /// (value, confidence) per text, from whichever backend the artifact is.
 pub fn predict(artifact: &Artifact, texts: &[String]) -> Result<Vec<(String, f64)>> {
     if artifact.backend == TFIDF_BACKEND {
@@ -1539,6 +1545,10 @@ pub fn infer(aspect: &str, session: Option<&str>, limit: Option<i64>) -> Result<
         suggestion.insert("source".to_string(), json!("model"));
         suggestions.push(Value::Object(suggestion));
     }
+    // The first real result this product produces for an operator: a trained
+    // classifier's labels over real session text. Recorded here, where the
+    // suggestions exist, and nowhere else.
+    crate::onboarding::record_first_success(aspect, suggestions.len());
     Ok(Value::Array(suggestions))
 }
 
