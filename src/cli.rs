@@ -46,6 +46,13 @@ const STORAGE_ROOT_HELP: &str = "override the lake data root; beats $LAKE_DATA a
      registry declaration";
 const HELP_HELP: &str = "show this help message and exit";
 
+/// The crate version, printed bare by `--version`, exactly as the lake's CLI
+/// prints its own (`transcript-lake --version` -> `0.2.0`). A catalogued
+/// product built from a checkout has to be able to state its version, or
+/// `wisent-products status` can only answer by hashing bytes.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+const VERSION_HELP: &str = "show program's version number and exit";
+
 /// The entry point `main` calls. The returned integer is the process status:
 /// 0 on success, 1 on a failed command, 2 on a usage error or on a run the
 /// lake does not hold enough labeled sessions for.
@@ -60,6 +67,10 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         let arg = args[index].as_str();
         if arg == "-h" || arg == "--help" {
             print!("{}", top_help(&specs));
+            return Ok(0);
+        }
+        if arg == "-V" || arg == "--version" {
+            println!("{VERSION}");
             return Ok(0);
         }
         let (name, inline) = match arg.split_once('=') {
@@ -1704,6 +1715,7 @@ struct Action {
 fn top_usage_parts(specs: &[Spec]) -> (Vec<String>, Vec<String>) {
     let optionals = vec![
         "[-h]".to_string(),
+        "[-V]".to_string(),
         "[--training-root PATH]".to_string(),
         "[--storage-root PATH]".to_string(),
     ];
@@ -1739,6 +1751,11 @@ fn top_help(specs: &[Spec]) -> String {
         Action {
             invocation: "-h, --help".to_string(),
             help: Some(HELP_HELP.to_string()),
+            indent: 2,
+        },
+        Action {
+            invocation: "-V, --version".to_string(),
+            help: Some(VERSION_HELP.to_string()),
             indent: 2,
         },
         Action {
