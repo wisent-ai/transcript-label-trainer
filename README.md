@@ -142,9 +142,12 @@ transcript-label-trainer info
 ## CLI
 
 One binary, fourteen subcommands. Global flags: `--training-root PATH` (where
-model artifacts live; beats `$TLT_HOME` and the Stado registry declaration)
-and `--storage-root PATH` (the lake data root; beats `$LAKE_DATA` and the
-registry). Every subcommand answers `--help` with its full contract; the
+model artifacts live; beats `$TLT_HOME` and the Stado registry declaration),
+`--storage-root PATH` (the lake data root; beats `$LAKE_DATA` and the
+registry), and `-V` / `--version`, which prints the crate version bare — the
+way `transcript-lake --version` prints its own — so a build installed from
+this checkout can say which one it is instead of being identified by hashing
+its bytes. Every subcommand answers `--help` with its full contract; the
 one-line summaries below are those help texts, not paraphrases.
 
 First use:
