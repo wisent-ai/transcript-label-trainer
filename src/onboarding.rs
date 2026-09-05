@@ -23,11 +23,12 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::util::{home_dir, now_iso, Error, Result};
-use crate::{lake, model};
+use crate::{corpus, lake, model};
 
 const PRODUCT_ID: &str = "transcript-label-trainer";
 const JOURNEY_ID: &str = "first-use";
 const STATE_SCHEMA: &str = "transcript-label-trainer.onboarding-state.v1";
+const CORPUS_FACT: &str = "labeled_corpus_adopted";
 const TRAINED_FACT: &str = "aspect_classifier_trained";
 const FIRST_SUCCESS_FACT: &str = "label_suggestion_emitted";
 
@@ -43,7 +44,13 @@ const WALKTHROUGH_LIMIT: i64 = 5;
 /// over a republished definition finite.
 const MAX_STEPS: usize = 128;
 
-pub fn onboarding(reset: bool, yes: bool, json_output: bool) -> Result<i32> {
+pub fn onboarding(
+    reset: bool,
+    yes: bool,
+    json_output: bool,
+    corpus_path: Option<&str>,
+    skip_corpus: bool,
+) -> Result<i32> {
     // Machine output has no reader to press Enter, so it never prompts.
     let unattended = yes || json_output;
     let definition = canonical_definition()?;
@@ -68,27 +75,86 @@ pub fn onboarding(reset: bool, yes: bool, json_output: bool) -> Result<i32> {
         report.render(&screen);
 
         match screen.get("screen_kind").and_then(Value::as_str) {
-            Some("first_action") => {
-                let Some(aspect) = trained_aspect()? else {
-                    report.note(
-                        "No aspect is trained under the training root yet, so there is \
-                         nothing to suggest labels with.",
-                    );
-                    report.finish(
-                        "awaiting_training",
-                        &state,
-                        "Train one aspect, then run: transcript-label-trainer onboarding",
-                    );
-                    return report.emit();
-                };
-                report.note(&format!(
-                    "Aspect '{aspect}' has a trained classifier under the training root."
-                ));
-                let evidence = fact(TRAINED_FACT);
-                advance(&definition, &screen, &mut state, &evidence, &revision)?.ok_or_else(
-                    || Error("a trained classifier does not satisfy the published journey".into()),
-                )?;
-            }
+            Some("first_action") => match screen_fact(&screen)? {
+                CORPUS_FACT => {
+                    if skip_corpus {
+                        report.note(
+                            "No corpus was adopted. The trainer remains empty and usable; \
+                             corpus-adopt or live Transcript Lake labels can be added later.",
+                        );
+                        report.finish(
+                            "skipped",
+                            &state,
+                            "Adopt later with: transcript-label-trainer corpus-adopt <bundle.json>",
+                        );
+                        return report.emit();
+                    }
+                    if let Some(path) = corpus_path {
+                        let adoption = corpus::adopt(std::path::Path::new(path))?;
+                        report.note(&format!(
+                            "Selected corpus {} for aspect '{}' ({} imported, {} unchanged, \
+                             {} conflicting, {} rejected).",
+                            string_field(&adoption, "corpusId").unwrap_or_default(),
+                            string_field(&adoption, "aspect").unwrap_or_default(),
+                            adoption.get("imported").and_then(Value::as_u64).unwrap_or(0),
+                            adoption.get("unchanged").and_then(Value::as_u64).unwrap_or(0),
+                            adoption.get("conflicting").and_then(Value::as_u64).unwrap_or(0),
+                            adoption.get("rejected").and_then(Value::as_u64).unwrap_or(0),
+                        ));
+                    } else if corpus::selected_bundle_path()?.is_none() {
+                        report.note(
+                            "No adopted corpus is selected. Supply an existing canonical \
+                             dataset bundle, or explicitly skip this optional step.",
+                        );
+                        report.finish(
+                            "awaiting_corpus",
+                            &state,
+                            "Run: transcript-label-trainer onboarding --corpus <bundle.json> \
+                             (or --skip-corpus)",
+                        );
+                        return report.emit();
+                    } else {
+                        report.note("The previously adopted corpus remains selected.");
+                    }
+                    let evidence = fact(CORPUS_FACT);
+                    advance(&definition, &screen, &mut state, &evidence, &revision)?
+                        .ok_or_else(|| {
+                            Error(
+                                "an adopted corpus does not satisfy the published journey".into(),
+                            )
+                        })?;
+                }
+                TRAINED_FACT => {
+                    let Some(aspect) = trained_aspect()? else {
+                        report.note(
+                            "No aspect is trained under the training root yet, so there is \
+                             nothing to suggest labels with.",
+                        );
+                        report.finish(
+                            "awaiting_training",
+                            &state,
+                            "Train one aspect, then run: transcript-label-trainer onboarding",
+                        );
+                        return report.emit();
+                    };
+                    report.note(&format!(
+                        "Aspect '{aspect}' has a trained classifier under the training root."
+                    ));
+                    let evidence = fact(TRAINED_FACT);
+                    advance(&definition, &screen, &mut state, &evidence, &revision)?
+                        .ok_or_else(|| {
+                            Error(
+                                "a trained classifier does not satisfy the published journey"
+                                    .into(),
+                            )
+                        })?;
+                }
+                other => {
+                    return Err(Error(format!(
+                        "unsupported first-action completion fact '{other}'"
+                    )))
+                }
+            },
             Some("first_success") => {
                 let aspect = trained_aspect()?
                     .ok_or_else(|| Error("no trained aspect to suggest labels for".into()))?;
@@ -178,10 +244,12 @@ fn record(aspect: &str, suggestions: usize) -> Result<()> {
     if state.get("status").and_then(Value::as_str) == Some("completed") {
         return Ok(());
     }
-    // Suggestions in hand mean every screen before the last one is already
-    // true of this machine: the lake's labels were read and a classifier for
-    // this aspect is trained.
+    // Suggestions in hand satisfy training and first success. The source
+    // selection step is satisfied only when an adopted corpus really exists.
     let mut evidence = fact(TRAINED_FACT);
+    if corpus::selected_bundle_path()?.is_some() {
+        evidence.insert(CORPUS_FACT.to_string(), Value::Bool(true));
+    }
     evidence.insert(FIRST_SUCCESS_FACT.to_string(), Value::Bool(true));
 
     for _ in 0..MAX_STEPS {
@@ -216,6 +284,14 @@ fn trained_aspect() -> Result<Option<String>> {
         .find(|(backend, _)| model::loadable(backend))
         .or_else(|| trained.first());
     Ok(chosen.and_then(|(_, entry)| string_field(entry, "aspect")))
+}
+
+fn screen_fact(screen: &Value) -> Result<&str> {
+    screen
+        .get("completion_evidence")
+        .and_then(|rule| rule.get("fact"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error("first-action screen has no completion fact".into()))
 }
 
 /// One fact, asserted true: the only evidence shape the shipped journey uses.

@@ -3,6 +3,7 @@
 mod autolabel;
 mod brama;
 mod cli;
+mod corpus;
 mod discover;
 mod evaluate;
 mod goal;

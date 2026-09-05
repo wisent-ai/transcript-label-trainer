@@ -41,9 +41,11 @@ training, qualification, and placement.
 
 Transcript Label Trainer owns:
 
-- training one classifier per aspect over the manual labels in the lake's
-  label store — TF-IDF + logistic regression by default, or a fine-tuned
-  HuggingFace transformer when `--model` is given (optional `hf` feature);
+- adopting an existing canonical schema-v1 dataset bundle into an immutable,
+  content-addressed corpus store under the training root, then training one
+  classifier per aspect over those labels — TF-IDF + logistic regression by
+  default, or a fine-tuned HuggingFace transformer when `--model` is given
+  (optional `hf` feature);
 - session-text reconstruction, by shelling out to the lake CLI's read-only
   `query` command (user + assistant text per session, ordered by `ts`, capped
   at 12 KB);
@@ -82,15 +84,32 @@ invoke `target/release/transcript-label-trainer` directly. Building needs a
 Rust toolchain at version `1.85` or newer; nothing else.
 
 `transcript-label-trainer onboarding` walks the first-use journey this
-repository ships in `onboarding_first_use.json`: what the small models are for,
-that the lake's labels are read and never written, training one aspect, and
-finally the first label suggestions a trained classifier emits over real
-session text, which are the first result (`label_suggestion_emitted`).
+repository ships in `onboarding_first_use.json`. Its first action can adopt a
+real existing corpus through the same operation as `corpus-adopt`:
+
+```sh
+transcript-label-trainer onboarding --corpus /path/to/dataset-bundle.json
+```
+
+The source is the schema-v1 `dataset-bundle` JSON written by this trainer's
+Transcript Lake/Stado export boundary: top-level `schema_version`, `aspect`, and
+`labels`; each label has `session_id`, `value`, `source`, RFC 3339 `ts`,
+nullable `runtime`, and nonempty reconstructed `text`. Unknown fields, malformed
+timestamps, empty required values, and duplicate native session IDs reject the
+whole file before corpus state changes. No unsupported row is dropped.
+
+Validated content is retained at
+`<training root>/corpora/<sha256>.json`; the selected native content identity
+and every older corpus remain in `<training root>/corpora/registry.json`.
+Identical content is idempotent and reports every row unchanged. A different
+valid corpus is preserved beside earlier data and becomes selected. Use
+`--skip-corpus` to keep an empty usable trainer and adopt later.
+
 Progress is recorded per operator per machine under
 `~/.local/state/transcript-label-trainer/onboarding.json`, outside the training
-root and outside the lake; `--reset` discards it and replays the journey. The
-first success itself is recorded by `infer`, where the suggestions are emitted,
-so reaching it without the walkthrough completes the journey just the same.
+root and outside the lake; `--reset` replays the journey. The journey continues
+through training to real label suggestions, which are recorded by `infer` only
+when emitted.
 
 Train one aspect from the manual labels in the lake:
 
@@ -141,20 +160,19 @@ transcript-label-trainer info
 
 ## CLI
 
-One binary, fourteen subcommands. Global flags: `--training-root PATH` (where
-model artifacts live; beats `$TLT_HOME` and the Stado registry declaration),
-`--storage-root PATH` (the lake data root; beats `$LAKE_DATA` and the
-registry), and `-V` / `--version`, which prints the crate version bare — the
-way `transcript-lake --version` prints its own — so a build installed from
-this checkout can say which one it is instead of being identified by hashing
-its bytes. Every subcommand answers `--help` with its full contract; the
-one-line summaries below are those help texts, not paraphrases.
+One binary, sixteen subcommands. Global flags: `--training-root PATH` (where
+model artifacts and adopted corpora live; beats `$TLT_HOME` and the Stado
+registry declaration), `--storage-root PATH` (the live lake data root; beats
+`$LAKE_DATA` and the registry), and `-V` / `--version`. Every subcommand answers
+`--help` with its full contract.
 
 First use:
 
 | command | does |
 |---|---|
 | `onboarding` | walk the published first-use journey to your first suggestions |
+| `corpus-adopt BUNDLE [--json]` | validate, retain, and select an existing canonical dataset bundle; reports imported, unchanged, conflicting, and rejected counts |
+| `corpus-status [--json]` | show the selected adopted corpus and every retained corpus |
 
 Aspect classifiers (local, cheap, sklearn or HF):
 

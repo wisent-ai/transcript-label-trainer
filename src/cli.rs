@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::util::{float_repr, json_text, json_truthy, Error, Result, TrainFailure};
 use crate::{
-    autolabel, brama, discover, evaluate, goal, jobs, model, onboarding, placement, stado,
+    autolabel, brama, corpus, discover, evaluate, goal, jobs, model, onboarding, placement, stado,
 };
 
 /// `println!` that does not panic when the reader has closed the pipe.
@@ -141,6 +141,8 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "evaluate" => cmd_evaluate(&parsed),
         "infer" => cmd_infer(&parsed),
         "autolabel" => cmd_autolabel(&parsed),
+        "corpus-adopt" => cmd_corpus_adopt(&parsed),
+        "corpus-status" => cmd_corpus_status(&parsed),
         "aspect-discover" => cmd_aspect_discover(&parsed),
         "info" => cmd_info(&parsed),
         "onboarding" => cmd_onboarding(&parsed),
@@ -464,11 +466,60 @@ fn cmd_info(args: &Parsed) -> Result<i32> {
     Ok(0)
 }
 
+fn cmd_corpus_adopt(args: &Parsed) -> Result<i32> {
+    let report = corpus::adopt(std::path::Path::new(args.positional(0)))?;
+    if args.flag("--json") {
+        outln!("{}", dumps(&report));
+        return Ok(0);
+    }
+    outln!(
+        "selected corpus {} for aspect '{}' ({} imported, {} unchanged, {} conflicting, {} rejected)",
+        report.get("corpusId").and_then(Value::as_str).unwrap_or(""),
+        report.get("aspect").and_then(Value::as_str).unwrap_or(""),
+        report.get("imported").and_then(Value::as_u64).unwrap_or(0),
+        report.get("unchanged").and_then(Value::as_u64).unwrap_or(0),
+        report.get("conflicting").and_then(Value::as_u64).unwrap_or(0),
+        report.get("rejected").and_then(Value::as_u64).unwrap_or(0),
+    );
+    outln!(
+        "retained bundle: {}",
+        report
+            .get("bundlePath")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+    );
+    Ok(0)
+}
+
+fn cmd_corpus_status(args: &Parsed) -> Result<i32> {
+    let report = corpus::status()?;
+    if args.flag("--json") {
+        outln!("{}", dumps(&report));
+        return Ok(0);
+    }
+    match report.get("selected").filter(|value| !value.is_null()) {
+        Some(selected) => outln!(
+            "selected corpus {} for aspect '{}' ({} records)\nretained bundle: {}",
+            selected.get("id").and_then(Value::as_str).unwrap_or(""),
+            selected.get("aspect").and_then(Value::as_str).unwrap_or(""),
+            selected.get("records").and_then(Value::as_u64).unwrap_or(0),
+            selected
+                .get("bundlePath")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        ),
+        None => outln!("no adopted corpus is selected"),
+    }
+    Ok(0)
+}
+
 fn cmd_onboarding(args: &Parsed) -> Result<i32> {
     onboarding::onboarding(
         args.flag("--reset"),
         args.flag("--yes"),
         args.flag("--json"),
+        args.text("--corpus"),
+        args.flag("--skip-corpus"),
     )
 }
 
@@ -1142,6 +1193,42 @@ fn build_specs() -> Vec<Spec> {
         ],
     };
 
+    let corpus_adopt = Spec {
+        name: "corpus-adopt",
+        help: "adopt and select an existing Transcript Lake dataset bundle".to_string(),
+        description: Some(
+            "Validate the complete schema-v1 dataset bundle before mutation, retain an \
+             immutable content-addressed copy under <training root>/corpora, and select it \
+             as the input used by train, infer, and evaluate. A repeated import of identical \
+             content is unchanged; existing corpora remain retained."
+                .to_string(),
+        ),
+        positionals: vec![Positional {
+            name: "bundle",
+            help: "dataset-bundle JSON written by a Transcript Label Trainer/Stado export"
+                .to_string(),
+        }],
+        opts: vec![option(
+            "--json",
+            "",
+            Kind::Flag,
+            "print machine-readable import counts and retained state".to_string(),
+        )],
+    };
+
+    let corpus_status = Spec {
+        name: "corpus-status",
+        help: "show the selected adopted corpus and retained corpus store".to_string(),
+        description: None,
+        positionals: Vec::new(),
+        opts: vec![option(
+            "--json",
+            "",
+            Kind::Flag,
+            "print machine-readable JSON".to_string(),
+        )],
+    };
+
     let info = Spec {
         name: "info",
         help: "list trained aspects, artifacts, and metrics".to_string(),
@@ -1160,16 +1247,34 @@ fn build_specs() -> Vec<Spec> {
         help: "walk the published first-use journey to your first suggestions".to_string(),
         description: Some(
             "Walk the first-use journey this repository publishes in \
-             onboarding_first_use.json, screen by screen, up to the first label \
-             suggestions a trained classifier emits over real session text. Progress \
-             is recorded per operator per machine outside the training root and \
-             outside the lake; the first success itself is recorded by 'infer', where \
-             the suggestions are emitted. Re-running a completed journey reports it \
-             complete and changes nothing."
+             onboarding_first_use.json, beginning with an optional existing canonical \
+             dataset bundle and ending when a trained classifier emits label suggestions \
+             over real transcript text. --corpus calls the same atomic adoption operation \
+             as corpus-adopt. Re-running a completed journey reports it complete and \
+             changes nothing."
                 .to_string(),
         ),
         positionals: Vec::new(),
         opts: vec![
+            Opt {
+                group: 1,
+                ..option(
+                    "--corpus",
+                    "BUNDLE",
+                    Kind::Text,
+                    "adopt this existing dataset-bundle JSON at the source-selection step"
+                        .to_string(),
+                )
+            },
+            Opt {
+                group: 1,
+                ..option(
+                    "--skip-corpus",
+                    "",
+                    Kind::Flag,
+                    "leave the trainer empty and usable without adopting a corpus".to_string(),
+                )
+            },
             option(
                 "--reset",
                 "",
@@ -1506,6 +1611,8 @@ fn build_specs() -> Vec<Spec> {
         run,
         evaluate,
         infer,
+        corpus_adopt,
+        corpus_status,
         info,
         onboarding,
         autolabel,
