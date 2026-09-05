@@ -12,7 +12,8 @@ use serde_json::Value;
 
 use crate::util::{float_repr, json_text, json_truthy, Error, Result, TrainFailure};
 use crate::{
-    autolabel, brama, corpus, discover, evaluate, goal, jobs, model, onboarding, placement, stado,
+    autolabel, brama, corpus, discover, evaluate, goal, gui, jobs, model, onboarding, placement,
+    stado,
 };
 
 /// `println!` that does not panic when the reader has closed the pipe.
@@ -143,6 +144,7 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "autolabel" => cmd_autolabel(&parsed),
         "corpus-adopt" => cmd_corpus_adopt(&parsed),
         "corpus-status" => cmd_corpus_status(&parsed),
+        "gui" => cmd_gui(&parsed),
         "aspect-discover" => cmd_aspect_discover(&parsed),
         "info" => cmd_info(&parsed),
         "onboarding" => cmd_onboarding(&parsed),
@@ -511,6 +513,13 @@ fn cmd_corpus_status(args: &Parsed) -> Result<i32> {
         None => outln!("no adopted corpus is selected"),
     }
     Ok(0)
+}
+
+fn cmd_gui(args: &Parsed) -> Result<i32> {
+    gui::serve(
+        args.text("--bind").unwrap_or("127.0.0.1"),
+        args.int("--port").unwrap_or(0),
+    )
 }
 
 fn cmd_onboarding(args: &Parsed) -> Result<i32> {
@@ -1229,6 +1238,34 @@ fn build_specs() -> Vec<Spec> {
         )],
     };
 
+    let gui = Spec {
+        name: "gui",
+        help: "serve the graphical corpus importer and HTML documentation".to_string(),
+        description: Some(
+            "Serve the installed, loopback-only browser workspace for corpus adoption. \
+             The GUI uploads one canonical dataset bundle to the same atomic Rust adoption \
+             engine as corpus-adopt, then reads back the retained registry. It prints a \
+             session-token URL but never opens a browser or starts training, inference, \
+             evaluation, teacher/judge work, or a fleet job."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            option(
+                "--bind",
+                "IP",
+                Kind::Text,
+                "loopback IP listener (default: 127.0.0.1; also accepts ::1)".to_string(),
+            ),
+            option(
+                "--port",
+                "PORT",
+                Kind::Int,
+                "listener port (default: 0, select an available port)".to_string(),
+            ),
+        ],
+    };
+
     let info = Spec {
         name: "info",
         help: "list trained aspects, artifacts, and metrics".to_string(),
@@ -1613,6 +1650,7 @@ fn build_specs() -> Vec<Spec> {
         infer,
         corpus_adopt,
         corpus_status,
+        gui,
         info,
         onboarding,
         autolabel,

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Corpus importer · Transcript Label Trainer</title>
+  <link rel="stylesheet" href="/web/styles.css">
+  <script src="/web/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to importer</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Transcript Label Trainer corpus importer">Wisent <span>Transcript Label Trainer</span></a>
+    <nav aria-label="Primary navigation">
+      <a aria-current="page" href="/">Import corpus</a>
+      <a href="/docs/">Documentation</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="page-title">
+      <p class="eyebrow">Existing-data onboarding</p>
+      <h1 id="page-title">Bring a labeled corpus into the trainer.</h1>
+      <p class="lede">Choose one canonical schema-v1 dataset bundle. The same atomic adoption engine used by <code>corpus-adopt</code> validates the complete file, retains it by content identity, and selects it. This workspace never starts training, inference, evaluation, or a fleet job.</p>
+    </section>
+
+    <section class="placement" aria-labelledby="placement-title">
+      <div>
+        <p class="eyebrow" id="placement-title">Resolved placement</p>
+        <p class="muted">Set these roots when launching the GUI; they cannot change inside a running session.</p>
+      </div>
+      <dl>
+        <div><dt>Training root</dt><dd><code id="training-root">Loading…</code></dd></div>
+        <div><dt>Storage root</dt><dd><code id="storage-root">Loading…</code></dd></div>
+      </dl>
+    </section>
+
+    <div class="workspace">
+      <section class="panel importer" aria-labelledby="import-title">
+        <div class="step">1</div>
+        <div>
+          <h2 id="import-title">Select a dataset bundle</h2>
+          <p>The file must contain <code>schema_version</code>, one <code>aspect</code>, and nonempty <code>labels</code>. Imports are limited to <strong id="upload-limit">16 MiB</strong> before JSON parsing.</p>
+          <label class="file-picker" for="corpus-file">
+            <span>Corpus JSON</span>
+            <input id="corpus-file" name="corpus" type="file" accept=".json,application/json" required>
+            <small id="file-detail">No file selected</small>
+          </label>
+          <button id="import-button" class="primary" type="button" disabled>Validate and import corpus</button>
+          <p class="policy"><strong>Selection policy:</strong> identical content is unchanged. Different valid content is retained beside older corpora and becomes selected. Any invalid record rejects the whole upload.</p>
+        </div>
+      </section>
+
+      <section class="panel results" aria-labelledby="result-title">
+        <div class="step">2</div>
+        <div>
+          <h2 id="result-title">Import report</h2>
+          <p id="result-status" class="status" role="status" aria-live="polite">Choose a file to begin.</p>
+          <dl class="counts" aria-label="Import counts">
+            <div><dt>Imported</dt><dd id="count-imported">0</dd></div>
+            <div><dt>Unchanged</dt><dd id="count-unchanged">0</dd></div>
+            <div><dt>Conflicting</dt><dd id="count-conflicting">0</dd></div>
+            <div><dt>Rejected</dt><dd id="count-rejected">0</dd></div>
+          </dl>
+          <dl class="report-detail">
+            <div><dt>Corpus identity</dt><dd><code id="corpus-id">—</code></dd></div>
+            <div><dt>Source identity</dt><dd><code id="source-id">—</code></dd></div>
+            <div><dt>Aspect</dt><dd id="aspect">—</dd></div>
+            <div><dt>Records</dt><dd id="records">—</dd></div>
+          </dl>
+        </div>
+      </section>
+    </div>
+
+    <section class="retained" aria-labelledby="retained-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Persisted readback</p>
+          <h2 id="retained-title">Retained corpora</h2>
+        </div>
+        <button id="refresh-button" class="secondary" type="button">Refresh</button>
+      </div>
+      <p id="empty-retained" class="muted">No corpus has been adopted.</p>
+      <div class="table-wrap" id="retained-table-wrap" hidden>
+        <table>
+          <thead><tr><th scope="col">Selected</th><th scope="col">Aspect</th><th scope="col">Records</th><th scope="col">Corpus identity</th><th scope="col">Source</th><th scope="col">Adopted</th></tr></thead>
+          <tbody id="retained-body"></tbody>
+        </table>
+      </div>
+      <p class="registry">Registry: <code id="registry-path">Loading…</code></p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Need the schema, command flags, or refusal meanings? <a href="/docs/corpus-import.html">Read the corpus import guide</a>.</p>
+  </footer>
+  <noscript>This importer requires JavaScript to upload a locally selected file. The CLI alternative is documented at <a href="/docs/corpus-import.html">Corpus import</a>.</noscript>
+</body>
+</html>

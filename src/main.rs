@@ -7,6 +7,7 @@ mod corpus;
 mod discover;
 mod evaluate;
 mod goal;
+mod gui;
 #[cfg(feature = "hf")]
 mod hf;
 mod humanizer;

@@ -52,6 +52,8 @@ pub struct AdoptedCorpus {
     pub source_path: PathBuf,
     #[serde(rename = "adoptedAt")]
     pub adopted_at: String,
+    #[serde(rename = "sourceName", default, skip_serializing_if = "Option::is_none")]
+    pub source_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -74,13 +76,31 @@ pub fn adopt(path: &Path) -> Result<Value> {
         )));
     }
     let raw = fs::read(&source_path)?;
-    let bundle: CorpusBundle = serde_json::from_slice(&raw).map_err(|error| {
+    adopt_raw(&raw, source_path, None)
+}
+
+/// Adopt bytes selected in the browser without staging them in a temporary
+/// directory. The raw-content identity is stable across GUI sessions and the
+/// canonical bundle is retained by the same operation the path-based CLI uses.
+pub fn adopt_upload(file_name: &str, raw: &[u8]) -> Result<Value> {
+    validate_upload_name(file_name)?;
+    let source_sha256 = format!("{:x}", Sha256::digest(raw));
+    let source_identity = PathBuf::from(format!("browser-upload:sha256:{source_sha256}"));
+    adopt_raw(raw, source_identity, Some(file_name.to_string()))
+}
+
+fn adopt_raw(
+    raw: &[u8],
+    source_identity: PathBuf,
+    source_name: Option<String>,
+) -> Result<Value> {
+    let bundle: CorpusBundle = serde_json::from_slice(raw).map_err(|error| {
         Error(format!(
             "invalid dataset bundle {}: {error}; no corpus state was changed",
-            source_path.display()
+            source_identity.display()
         ))
     })?;
-    validate_bundle(&bundle, &source_path)?;
+    validate_bundle(&bundle, &source_identity)?;
     let mut canonical = serde_json::to_vec_pretty(&bundle)?;
     canonical.push(b'\n');
     let sha256 = format!("{:x}", Sha256::digest(&canonical));
@@ -113,8 +133,9 @@ pub fn adopt(path: &Path) -> Result<Value> {
                 aspect: bundle.aspect.clone(),
                 records: bundle.labels.len(),
                 bundle_path: bundle_path.clone(),
-                source_path,
+                source_path: source_identity.clone(),
                 adopted_at: now_iso(),
+                source_name: source_name.clone(),
             };
             registry.corpora.push(entry.clone());
             entry
@@ -128,6 +149,8 @@ pub fn adopt(path: &Path) -> Result<Value> {
         "status": if already_present { "unchanged" } else { "adopted" },
         "corpusId": adopted.id,
         "aspect": adopted.aspect,
+        "sourceIdentity": source_identity,
+        "sourceName": source_name,
         "sourcePath": adopted.source_path,
         "bundlePath": adopted.bundle_path,
         "selected": true,
@@ -137,6 +160,22 @@ pub fn adopt(path: &Path) -> Result<Value> {
         "conflicting": 0,
         "rejected": 0,
     }))
+}
+
+fn validate_upload_name(file_name: &str) -> Result<()> {
+    if file_name.is_empty()
+        || file_name.len() > 255
+        || file_name == "."
+        || file_name == ".."
+        || file_name
+            .chars()
+            .any(|character| character.is_control() || character == '/' || character == '\\')
+    {
+        return Err(Error(
+            "uploaded corpus filename must be a 1-255 character basename".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn status() -> Result<Value> {

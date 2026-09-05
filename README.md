@@ -32,10 +32,12 @@ Aspects are independent dimensions ("kąty"): topic, quality, reviewed,
 task-type — many per session. This repository turns the manual labels into a
 model that suggests the rest.
 
-Durable platform documentation is published at
-[`wisent.com/docs/ground-truth`](https://wisent.com/docs/ground-truth). This
-README remains the repository-local contract for installation, CLI behavior,
-training, qualification, and placement.
+Navigable repository-local operator documentation begins at
+[`docs/index.html`](docs/index.html), including the complete
+[`docs/corpus-import.html`](docs/corpus-import.html) CLI/GUI contract. The
+installed binary serves those same pages from `transcript-label-trainer gui`;
+durable platform documentation is also published at
+[`wisent.com/docs/ground-truth`](https://wisent.com/docs/ground-truth).
 
 ## Product boundary
 
@@ -82,6 +84,41 @@ cargo install --path .
 be on `PATH`. To build without installing, run `cargo build --release` and
 invoke `target/release/transcript-label-trainer` directly. Building needs a
 Rust toolchain at version `1.85` or newer; nothing else.
+
+### Graphical corpus importer
+
+Launch the product-owned browser workspace:
+
+```sh
+transcript-label-trainer gui
+```
+
+The command binds an available port on `127.0.0.1`, prints a session-token URL
+and the documentation URL, and waits; it does not open a browser. Copy the
+printed **Corpus importer** URL into a local browser, select a real schema-v1
+dataset-bundle JSON, and import. The frontend is compiled into the installed
+binary and calls the same atomic Rust adoption engine as `corpus-adopt`. It
+shows the resolved training and storage roots, all imported/unchanged/
+conflicting/rejected counts, the stable source identity, and the registry state
+read back from disk.
+
+Choose roots before the command and optionally pin the listener:
+
+```sh
+transcript-label-trainer \
+  --training-root /srv/wisent/trainer \
+  --storage-root /srv/wisent/lake \
+  gui --bind 127.0.0.1 --port 8765
+```
+
+Only loopback IPs are accepted (`127.0.0.1` by default; `::1` is supported);
+port `0` selects an available port. Requests require the exact listener host,
+API calls require the per-session token, and mutation also requires the exact
+origin. Uploads are capped at 16 MiB before JSON parsing. Importing never starts
+training, evaluation, inference, teacher/judge work, or a fleet job. Open the
+served **Documentation** navigation or read
+[`docs/corpus-import.html`](docs/corpus-import.html) for the exact schema,
+selection rules, identities, flags, refusals, and diagnostic meanings.
 
 `transcript-label-trainer onboarding` walks the first-use journey this
 repository ships in `onboarding_first_use.json`. Its first action can adopt a
@@ -160,11 +197,12 @@ transcript-label-trainer info
 
 ## CLI
 
-One binary, sixteen subcommands. Global flags: `--training-root PATH` (where
+One binary, seventeen subcommands. Global flags: `--training-root PATH` (where
 model artifacts and adopted corpora live; beats `$TLT_HOME` and the Stado
 registry declaration), `--storage-root PATH` (the live lake data root; beats
-`$LAKE_DATA` and the registry), and `-V` / `--version`. Every subcommand answers
-`--help` with its full contract.
+`$LAKE_DATA` and the registry), and `-V` / `--version`. Global root flags must
+precede the subcommand. Every subcommand answers `--help` with its full
+contract.
 
 First use:
 
@@ -173,6 +211,7 @@ First use:
 | `onboarding` | walk the published first-use journey to your first suggestions |
 | `corpus-adopt BUNDLE [--json]` | validate, retain, and select an existing canonical dataset bundle; reports imported, unchanged, conflicting, and rejected counts |
 | `corpus-status [--json]` | show the selected adopted corpus and every retained corpus |
+| `gui [--bind IP] [--port PORT]` | serve the embedded graphical corpus importer and navigable HTML documentation on a loopback listener; prints but does not open its session-token URL |
 
 Aspect classifiers (local, cheap, sklearn or HF):
 

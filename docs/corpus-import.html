@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Import an existing corpus · Transcript Label Trainer</title>
+  <link rel="stylesheet" href="../web/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to guide</a>
+  <header class="topbar">
+    <a class="brand" href="../" aria-label="Transcript Label Trainer corpus importer">Wisent <span>Transcript Label Trainer</span></a>
+    <nav aria-label="Primary navigation">
+      <a href="../">Import corpus</a>
+      <a aria-current="page" href="index.html">Documentation</a>
+    </nav>
+  </header>
+  <main id="main" class="docs-main prose">
+    <p class="eyebrow">Existing-data onboarding</p>
+    <h1>Import an existing labeled corpus</h1>
+    <p class="lede">Use the CLI with a filesystem path or upload the same canonical bundle in the local browser workspace. Both surfaces call the same Rust adoption engine and produce the same retained corpus identity and counts.</p>
+
+    <nav aria-label="On this page">
+      <a href="#launch">Launch the GUI</a>
+      <a href="#cli">CLI import</a>
+      <a href="#schema">Bundle schema</a>
+      <a href="#results">Results</a>
+      <a href="#refusals">Refusals</a>
+      <a href="#runtime">Runtime and security</a>
+    </nav>
+
+    <h2 id="launch">Launch the graphical importer</h2>
+    <pre><code>transcript-label-trainer gui</code></pre>
+    <p>The command binds an available port on <code>127.0.0.1</code>, prints a session-specific URL, and waits. It deliberately does not open a browser. Copy the printed <code>Corpus importer</code> URL into a modern local browser. The URL fragment carries a random session token; the frontend moves it into tab-scoped session storage before calling the API.</p>
+    <p>Choose roots before the command name. An explicit port is optional:</p>
+    <pre><code>transcript-label-trainer \
+  --training-root /srv/wisent/trainer \
+  --storage-root /srv/wisent/lake \
+  gui --bind 127.0.0.1 --port 8765</code></pre>
+    <dl class="refusals">
+      <dt><code>--bind IP</code></dt><dd>Listener IP. Default: <code>127.0.0.1</code>. Only loopback IP literals are accepted; <code>::1</code> is also supported.</dd>
+      <dt><code>--port PORT</code></dt><dd>Listener port from 0 through 65535. Default: <code>0</code>, which asks the operating system for an available port.</dd>
+      <dt><code>--training-root PATH</code></dt><dd>Global flag controlling the model and adopted-corpus root. It overrides <code>$TLT_HOME</code> and Stado placement and must precede <code>gui</code>.</dd>
+      <dt><code>--storage-root PATH</code></dt><dd>Global flag selecting the read-only lake root. It overrides <code>$LAKE_DATA</code> and Stado placement and must precede <code>gui</code>. Corpus adoption does not write there.</dd>
+    </dl>
+    <p>The workspace shows both resolved roots, accepts a real local file through the browser file picker, displays imported/unchanged/conflicting/rejected counts, and reads <code>&lt;training root&gt;/corpora/registry.json</code> back after adoption. Refresh performs another persisted-state read; it does not infer success from the chosen filename.</p>
+
+    <h2 id="cli">Import from the CLI</h2>
+    <pre><code>transcript-label-trainer \
+  --training-root /srv/wisent/trainer \
+  corpus-adopt /absolute/path/dataset-bundle.json
+
+transcript-label-trainer \
+  --training-root /srv/wisent/trainer \
+  corpus-status --json</code></pre>
+    <p><code>corpus-adopt BUNDLE [--json]</code> canonicalizes the source path, validates the complete file before mutation, retains the canonical bytes, and selects the corpus. <code>corpus-status [--json]</code> reads the registry and reports the selected entry plus every retained entry. The onboarding journey's <code>--corpus BUNDLE</code> option calls this same path-based operation.</p>
+
+    <h2 id="schema">Canonical dataset-bundle schema</h2>
+    <p>The JSON object has exactly three top-level fields. Unknown fields are refused.</p>
+    <pre><code>{
+  "schema_version": 1,
+  "aspect": "reviewed",
+  "labels": [
+    {
+      "session_id": "native-session-id",
+      "value": "yes",
+      "source": "manual",
+      "ts": "2026-09-05T12:00:00Z",
+      "runtime": "omp",
+      "text": "Reconstructed user and assistant transcript text"
+    }
+  ]
+}</code></pre>
+    <p><code>schema_version</code> must be <code>1</code>. <code>aspect</code> must be a safe trainer aspect name. <code>labels</code> must be nonempty. Every row requires nonblank <code>session_id</code>, <code>value</code>, <code>source</code>, and <code>text</code>; <code>ts</code> must be RFC 3339; <code>runtime</code> is either a nonblank string or <code>null</code>. A native session ID may occur only once in a bundle.</p>
+
+    <h2 id="results">Identity, selection, and result counts</h2>
+    <p>The engine serializes the validated bundle canonically and hashes those bytes with SHA-256. Its durable identity is <code>dataset-bundle:&lt;sha256&gt;</code>, and its retained file is <code>&lt;training root&gt;/corpora/&lt;sha256&gt;.json</code>. This is the training input selected by later explicit train, infer, and evaluate commands.</p>
+    <p>A CLI source identity is its canonical absolute path. A browser source identity is <code>browser-upload:sha256:&lt;raw-upload-sha256&gt;</code>; it is stable without staging the uploaded bytes in <code>/tmp</code> or another transient file. The original browser basename is retained separately for display. The corpus identity remains canonical-content based, so it is independent of the transport.</p>
+    <dl class="refusals">
+      <dt>Imported</dt><dd>Records in a valid canonical corpus whose content-addressed file was newly retained.</dd>
+      <dt>Unchanged</dt><dd>Records in an identical corpus already retained. The operation is idempotent and selects that corpus again.</dd>
+      <dt>Conflicting</dt><dd>An existing file at the computed identity path did not contain the canonical bytes. The engine refuses to overwrite it and changes no registry state.</dd>
+      <dt>Rejected</dt><dd>The complete upload was refused before selection. The GUI reports one rejected source; the diagnostic identifies the first violated contract.</dd>
+    </dl>
+    <p>A different valid corpus never overwrites the prior corpus. Both remain in the registry, and the newly imported identity becomes selected. There is no merge, per-row overwrite, or drop-invalid-rows mode.</p>
+
+    <h2 id="refusals">Refusals and diagnostics</h2>
+    <dl class="refusals">
+      <dt><code>invalid dataset bundle …; no corpus state was changed</code></dt><dd>The upload is not valid JSON or does not match the exact schema and field types.</dd>
+      <dt><code>unsupported dataset bundle schema …; expected 1</code></dt><dd>The top-level <code>schema_version</code> is not supported by this binary.</dd>
+      <dt><code>invalid aspect name '…': use lowercase letters, digits, '-' and '_'</code></dt><dd>The aspect is empty, starts with punctuation or an uppercase letter, or contains a character that cannot safely name a trainer artifact directory.</dd>
+      <dt><code>dataset bundle … contains no label records</code></dt><dd>The <code>labels</code> array is empty.</dd>
+      <dt><code>requires nonempty session_id, value, source, and text</code></dt><dd>At least one required row value is empty or whitespace.</dd>
+      <dt><code>has invalid RFC 3339 ts</code></dt><dd>A row timestamp cannot be parsed as RFC 3339.</dd>
+      <dt><code>has an empty runtime; use null when unknown</code></dt><dd>An optional runtime was supplied as an empty string rather than <code>null</code>.</dd>
+      <dt><code>repeats native session_id …</code></dt><dd>Two rows claim the same native session identity. The whole file is refused.</dd>
+      <dt><code>corpus identity conflict …; no corpus state was changed</code></dt><dd>The content-addressed retained file was modified or replaced. Restore or investigate the retained store; the importer will not overwrite evidence.</dd>
+      <dt><code>could not resolve corpus …</code> / <code>corpus is not a regular file</code></dt><dd>The CLI source path is missing, inaccessible, or does not identify a file.</dd>
+      <dt><code>invalid corpus registry …</code> / <code>unsupported corpus registry schema …</code> / <code>selects unknown corpus …</code></dt><dd>The persisted registry cannot be trusted or understood. Adoption and status refuse rather than replacing it.</dd>
+      <dt><code>corpus upload must contain 1-16777216 bytes</code></dt><dd>The GUI rejected an empty or oversized request before parsing JSON. CLI reads are bounded only by the filesystem and available memory.</dd>
+      <dt><code>uploaded corpus filename must be a 1-255 character basename</code></dt><dd>The browser-supplied name is empty, too long, a path, or contains control characters.</dd>
+    </dl>
+
+    <h2 id="runtime">Runtime, security, and side effects</h2>
+    <p>The installed binary contains the HTML, JavaScript, CSS, and these documentation pages; no source checkout or asset server is needed at runtime. Installation requires Rust 1.85 or newer. Running the GUI requires only the installed binary, a local browser, and read/write access to the selected training root. A lake installation is not required to adopt or inspect a corpus, and the storage root is not changed.</p>
+    <div class="callout"><strong>No model side effects:</strong> importing a corpus does not run <code>train</code>, <code>run</code>, <code>evaluate</code>, <code>infer</code>, teacher/judge calls, or Stado fleet work. Those remain separate commands.</div>
+    <p>The host only accepts loopback IP listeners and loopback clients. Every request must carry the listener's exact <code>Host</code>; API calls require the random session token; mutation also requires the exact listener <code>Origin</code>. This rejects cross-origin submission and DNS rebinding. Upload length is checked before the JSON parser. Responses carry a restrictive Content Security Policy, untrusted values are inserted as text rather than HTML, and no permissive CORS headers are emitted.</p>
+  </main>
+  <footer><p><a href="index.html">Documentation index</a> · <a href="../">Corpus importer</a></p></footer>
+</body>
+</html>
