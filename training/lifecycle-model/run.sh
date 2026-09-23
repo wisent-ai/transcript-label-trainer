@@ -68,7 +68,7 @@ if [ ! -s "$WORK/metrics-gguf.json" ]; then
   LIFECYCLE_EVAL_SYSTEM_PROMPT="$ROOT/training/lifecycle-model/lifecycle-system-prompt.txt" \
   LIFECYCLE_EVAL_OUTPUT_SCHEMA="$ROOT/training/lifecycle-model/lifecycle-output-schema.json" \
   LIFECYCLE_EVAL_PARALLEL="${LIFECYCLE_EVAL_PARALLEL:-8}" \
-    "$VENV/bin/python" "$ROOT/training/lifecycle-model/evaluate-gguf-host.py"
+    "$VENV/bin/python" "$ROOT/training/lifecycle-model/host/evaluate-gguf-host.py"
 fi
 
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORK/cargo-target}"
