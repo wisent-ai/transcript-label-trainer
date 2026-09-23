@@ -7,6 +7,7 @@
 #
 # Installed and started through Stado:
 #   stado host install-helper <target> training/lifecycle-model/train.py oko-lifecycle-train.py
+#   stado host install-helper <target> training/lifecycle-model/lifecycle_training_rows.py lifecycle_training_rows.py
 #   stado host install-helper <target> training/lifecycle-model/lifecycle-system-prompt.txt lifecycle-system-prompt.txt
 #   stado host install-helper <target> training/lifecycle-model/host/training/launch-training-host.sh oko-lifecycle-train-launch.sh
 #   stado host run-helper <target> oko-lifecycle-train-launch.sh --uuid <JOB_UUID>
@@ -26,6 +27,7 @@ unit_path="/etc/systemd/system/$unit"
 
 [ -x "$stado" ] || { echo "stado CLI absent at $stado" >&2; exit 1; }
 [ -f "$trainer" ] || { echo "trainer absent at $trainer" >&2; exit 1; }
+[ -f "$HOME/.stado/bin/lifecycle_training_rows.py" ] || { echo "trainer rows module absent beside $trainer" >&2; exit 1; }
 case "$work" in
     /mnt/wisent-training/*) ;;
     *) echo "refusing work root outside the declared training mount" >&2; exit 1 ;;
