@@ -16,6 +16,24 @@ SYSTEM_PROMPT = (Path(__file__).resolve().parent / "lifecycle-system-prompt.txt"
 
 
 
+def augment_train_rows(rows):
+    buckets = defaultdict(list)
+    for row in rows:
+        buckets[target_for(row)["action"]].append(row)
+    required = {"startGoal", "continueCurrent", "finishGoal", "ignore"}
+    missing = required - buckets.keys()
+    if missing:
+        raise ValueError(f"training split is missing actions: {', '.join(sorted(missing))}")
+    augmented = list(rows)
+    for action in sorted(required):
+        bucket = buckets[action]
+        for index in range(max(0, MIN_TRAIN_ROWS_PER_ACTION - len(bucket))):
+            augmented.append(bucket[index % len(bucket)])
+    return augmented, {action: len(buckets[action]) for action in sorted(required)}
+
+
+
+
 def prompt_messages(row):
     messages = [item for item in row["messages"] if item["role"] != "assistant"]
     if len(messages) != 2 or messages[0]["role"] != "system" or messages[1]["role"] != "user":
