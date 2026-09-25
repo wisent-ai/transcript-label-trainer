@@ -23,7 +23,7 @@ pub(crate) const HELP_HELP: &str = "show this help message and exit";
 /// The crate version, printed bare by `--version`, exactly as the lake's CLI
 /// prints its own (`transcript-lake --version` -> `0.2.0`). A catalogued
 /// product built from a checkout has to be able to state its version, or
-/// `wisent-products status` can only answer by hashing bytes.
+/// `stado product status` can only answer by hashing bytes.
 pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub(crate) const VERSION_HELP: &str = "show program's version number and exit";
