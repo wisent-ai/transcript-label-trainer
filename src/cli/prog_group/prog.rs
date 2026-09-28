@@ -130,6 +130,7 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "humanizer-audit" => cmd_humanizer_audit(&parsed),
         "lifecycle-audit" => cmd_lifecycle_audit(&parsed),
         "goal-audit" => cmd_goal_audit(&parsed),
+        "release-publish" => cmd_release_publish(&parsed),
         other => Err(Error(format!("unknown command '{other}'"))),
     }
 }

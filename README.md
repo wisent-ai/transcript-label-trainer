@@ -172,6 +172,12 @@ repository's.
   default to Brama's `best` alias; the Python scripts asked for `-best`, a
   name Brama's source does not define. Only `train.py` and `publish.py` stay Python,
   because they drive torch and the HuggingFace hub.
+- `release-publish SOURCE --model goal|lifecycle` replaces the goal and
+  lifecycle `publish-qualified-release` Python scripts; the goal host scripts
+  that wrapped `goal-audit` with fixed job paths and printed rejected rows are
+  gone, because `goal-audit` resolves its own Brama credentials and each
+  audit record now carries the judged message, reference goal and student
+  output.
 
 - Transcript Label Trainer is now implemented in Rust and ships as one binary.
   Existing command behavior remains compatible; the Stado and `--best`

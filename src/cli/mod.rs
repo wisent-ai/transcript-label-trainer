@@ -41,7 +41,9 @@ pub use build_specs_group::*;
 mod specs_corpus;
 mod specs_humanizer;
 mod specs_models;
+mod specs_release;
 
 pub use specs_corpus::*;
 pub use specs_humanizer::*;
 pub use specs_models::*;
+pub use specs_release::*;

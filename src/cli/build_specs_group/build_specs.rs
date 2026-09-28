@@ -5,6 +5,7 @@ pub(crate) fn build_specs() -> Vec<Spec> {
     specs.extend(corpus_specs());
     specs.extend(model_specs());
     specs.extend(humanizer_specs());
+    specs.extend(release_specs());
     specs
 }
 

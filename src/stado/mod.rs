@@ -18,6 +18,8 @@ use crate::{lake, model};
 
 mod repository;
 mod execute_goal_model;
+mod release;
 
 pub use repository::*;
 pub use execute_goal_model::*;
+pub use release::*;

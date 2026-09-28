@@ -128,25 +128,28 @@ pub fn audit_predictions(input: &Path, output: &Path, review_model: &str) -> Res
                 handles.push(scope.spawn(move || {
                     for prediction in chunk {
                         let outcome = chat_retry(&client, review_model, &audit_prompt(prediction));
-                        if sender
-                            .send((prediction.session_id.as_str(), outcome))
-                            .is_err()
-                        {
+                        if sender.send((*prediction, outcome)).is_err() {
                             break;
                         }
                     }
                 }));
             }
             drop(sender);
-            for (session_id, outcome) in receiver {
+            for (prediction, outcome) in receiver {
+                let session_id = prediction.session_id.as_str();
                 match outcome {
                     Ok(answer) => {
                         let verdict = crate::brama::parse_answer(&answer, &AUDIT_VALUES)
                             .map(|(value, _)| value)
                             .unwrap_or_else(|| "unparseable".to_string());
+                        // The judged case travels with its verdict, so a
+                        // rejected prediction is read from this record alone.
                         records.push(serde_json::json!({
                             "session_id": session_id,
                             "verdict": verdict,
+                            "message": prediction.message,
+                            "goal": prediction.goal,
+                            "student": prediction.student,
                         }));
                         records.sort_by_key(|record| {
                             prediction_order

@@ -84,6 +84,13 @@ Stado also retains its canonical `status/<job-id>/output/` copy. All model calls
 use `brama.rs`; the pipeline has no direct provider credentials or second auth
 implementation.
 
+A qualified job output enters the Jeden Desktop release namespace through
+`transcript-label-trainer release-publish <job-output-uri> --model goal`, which
+publishes under `stado://releases/jeden-desktop/models/goal-qwen3-4b/<model-sha256>`.
+Each final-audit record carries the judged `message`, reference `goal` and
+`student` output beside its `verdict`, so a rejected prediction is read from
+`final-judge.json` itself.
+
 The qualified 4B release is also public at
 [`lbartoszcze/jeden-goal-qwen3-4b`](https://huggingface.co/lbartoszcze/jeden-goal-qwen3-4b),
 revision `d9ce79f106ead1176b74bb0d9fb875521ca712b1`. Its 2,497,280,320-byte
@@ -142,6 +149,15 @@ precision, and a passing independent audit. Qualified artifacts are
 content-addressed under
 `stado://releases/oko/models/lifecycle-qwen3-4b/<model-sha256>`; an unqualified
 candidate remains available for diagnosis but cannot enter that namespace.
+`transcript-label-trainer release-publish <job-output-uri> --model lifecycle`
+moves a qualified job output there.
+
+`release-publish` refuses, with exit 1 and a sentence naming the cause, when the
+manifest is not qualified, does not require `final-judge.json`, names another
+contract, when the judge did not pass or is incomplete, when any evidence file
+or model part differs from the manifest's SHA-256, or when the ordered parts do
+not rebuild the qualified artifact. Objects already present at the digest
+coordinate are left untouched, so a rerun resumes where a failed one stopped.
 
 Qualification is measured on the shipped inference surface, not only in the
 trainer. For the qualified lifecycle release, the 485-row held-out split on
