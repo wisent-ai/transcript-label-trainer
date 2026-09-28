@@ -10,6 +10,10 @@ pub(crate) const BEARER_SECRET: &str = "BRAMA_TOKEN=jeden-model-router#token";
 
 pub(crate) const HUGGINGFACE_SECRET: &str = "HF_TOKEN=stado-huggingface#token";
 
+/// Scratch space for one Stado exchange, removed when dropped. It lives in the
+/// ignored `target/scratch/` of the checkout this binary was built from, never
+/// in the system temporary directory, so a run's leftovers stay inside the one
+/// checkout and `cargo clean` removes them.
 pub(crate) struct TempDir(pub(crate) PathBuf);
 
 impl TempDir {
@@ -18,11 +22,15 @@ impl TempDir {
             .duration_since(UNIX_EPOCH)
             .map_err(|error| Error(format!("system clock is before Unix epoch: {error}")))?
             .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "transcript-label-trainer-stado-{}-{nonce}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&path)?;
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("scratch")
+            .join(format!(
+                "transcript-label-trainer-stado-{}-{nonce}",
+                std::process::id()
+            ));
+        std::fs::create_dir_all(&path)
+            .map_err(|error| Error(format!("cannot create {}: {error}", path.display())))?;
         Ok(Self(path))
     }
 }
