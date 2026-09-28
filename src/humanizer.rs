@@ -1,25 +1,39 @@
-//! Privacy-masked corpus export for Echo's personal-voice humanizer.
+//! Echo's personal-voice humanizer: the privacy-masked corpus export, the
+//! Brama-built inverse style-transfer dataset (`prepare`), and the independent
+//! Brama audit of the trained adapter (`audit`).
 //!
-//! Transcript Lake owns source parsing and masking. This module selects only
-//! likely human-authored user turns, deduplicates them, and caps each session so
-//! one conversation cannot dominate the fine-tune.
+//! Transcript Lake owns source parsing and masking. The export selects only
+//! likely human-authored user turns, deduplicates them, and caps each session
+//! so one conversation cannot dominate the fine-tune.
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::lake;
 use crate::util::{Error, Result};
 
+mod anchors;
+mod audit;
+mod calls;
+mod prepare;
+mod prompts;
+
+pub use audit::audit_outputs;
+pub use prepare::prepare_dataset;
+
 const MAX_PER_SESSION: usize = 6;
 const FETCH_MULTIPLIER: usize = 12;
 
-#[derive(Clone, Serialize)]
+/// Version of the `preparation.json` and `audit.json` record layouts.
+const REPORT_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Clone, Deserialize, Serialize)]
 struct TargetRow {
     id: String,
     session_id: String,

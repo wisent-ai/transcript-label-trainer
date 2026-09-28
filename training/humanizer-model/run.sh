@@ -19,11 +19,9 @@ python3 -m venv "$VENV"
 "$VENV/bin/python" -m pip install --quiet \
   'torch>=2.6,<3' 'transformers>=4.51,<5' 'datasets>=3.5,<5' \
   'accelerate>=1.6,<2' 'sentencepiece>=0.2,<1' 'safetensors>=0.5,<1' \
-  'peft>=0.17,<1' 'bitsandbytes>=0.46,<1' \
-  'requests>=2.32,<3' 'huggingface-hub>=0.34,<1'
+  'peft>=0.17,<1' 'bitsandbytes>=0.46,<1' 'huggingface-hub>=0.34,<1'
 
 export HUMANIZER_TARGETS="$WORK/targets.jsonl"
-export HUMANIZER_DATASET_DIR="$WORK"
 export HUMANIZER_TRAIN_DATASET="$WORK/train.jsonl"
 export HUMANIZER_VALIDATION_DATASET="$WORK/validation.jsonl"
 export HUMANIZER_TEST_DATASET="$WORK/test.jsonl"
@@ -35,9 +33,12 @@ export HUMANIZER_PREPARATION="$WORK/preparation.json"
 export HUMANIZER_BASE_MODEL="TheDrummer/Cydonia-24B-v4.3"
 export HUMANIZER_BASE_REVISION="db0426d39d4bd4a6d34fdc71db97569da68f55e1"
 
-"$VENV/bin/python" "$ROOT/training/humanizer-model/prepare.py"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORK/cargo-target}"
+TRAINER=("$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release --)
+
+"${TRAINER[@]}" humanizer-prepare "$HUMANIZER_TARGETS" --output-dir "$WORK"
 "$VENV/bin/python" "$ROOT/training/humanizer-model/train.py"
-"$VENV/bin/python" "$ROOT/training/humanizer-model/audit.py"
+"${TRAINER[@]}" humanizer-audit "$HUMANIZER_PREDICTIONS" --output "$HUMANIZER_AUDIT_OUTPUT"
 "$VENV/bin/python" "$ROOT/training/humanizer-model/publish.py"
 "$VENV/bin/python" -m pip freeze > "$WORK/python-requirements.lock"
 

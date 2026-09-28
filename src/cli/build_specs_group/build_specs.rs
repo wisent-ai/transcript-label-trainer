@@ -4,6 +4,7 @@ pub(crate) fn build_specs() -> Vec<Spec> {
     let mut specs = training_specs();
     specs.extend(corpus_specs());
     specs.extend(model_specs());
+    specs.extend(humanizer_specs());
     specs
 }
 

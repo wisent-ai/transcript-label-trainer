@@ -165,6 +165,13 @@ repository's.
   `evaluate --best` independently audits both stored labels and the first
   judge's opinions through Brama's `best` route. Both are quality gates with
   machine-readable records and nonzero status for nonsensical results.
+- `humanizer-prepare` and `humanizer-audit` replace
+  `training/humanizer-model/prepare.py` and `audit.py`: the humanizer's
+  Brama-built dataset and its independent audit now run in this binary, and
+  the Stado job calls them through `cargo run`. The review and judge routes
+  default to Brama's `best` alias; the Python scripts asked for `-best`, a
+  name Brama's source does not define. Only `train.py` and `publish.py` stay Python,
+  because they drive torch and the HuggingFace hub.
 
 - Transcript Label Trainer is now implemented in Rust and ships as one binary.
   Existing command behavior remains compatible; the Stado and `--best`
