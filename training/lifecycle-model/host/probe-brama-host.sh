@@ -6,8 +6,8 @@
 #
 # Every address tried here is one the fleet declares for this machine: the
 # forward marker Stado wrote, the directory endpoint, or a `service_resolver`
-# adapter this target is told to dial. A public URL is never assumed — on
-# 2026-08-17 the public hop was the thing that broke.
+# adapter this target is told to dial. A public URL is never assumed: the
+# public hop is the one that breaks.
 set -eu
 
 stado="$HOME/.stado/bin/stado"
