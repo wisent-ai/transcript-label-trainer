@@ -12,8 +12,10 @@ use tiny_http::{Header, Method, Request, Response, StatusCode};
 use crate::util::{Error, Result};
 use crate::{corpus, placement};
 
+mod corpus_change;
 mod index_html;
 mod unauthorized;
 
+pub use corpus_change::*;
 pub use index_html::*;
 pub use unauthorized::*;

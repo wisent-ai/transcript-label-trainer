@@ -42,6 +42,33 @@ pub(crate) fn corpus_specs() -> Vec<Spec> {
         )],
     };
 
+    let corpus_select = Spec {
+        name: "corpus-select",
+        help: "select an adopted corpus as the input train, infer and evaluate read".to_string(),
+        description: None,
+        positionals: vec![Positional {
+            name: "corpus",
+            help: "corpus id, as corpus-status prints it".to_string(),
+        }],
+        opts: vec![option("--json", "", Kind::Flag, "print machine-readable JSON".to_string())],
+    };
+
+    let corpus_remove = Spec {
+        name: "corpus-remove",
+        help: "remove an adopted corpus and its retained bundle".to_string(),
+        description: Some(
+            "Refused for the selected corpus while others remain (select another first); \
+             removing the last corpus removes the registry with it. The bundle the corpus was \
+             adopted from is not touched."
+                .to_string(),
+        ),
+        positionals: vec![Positional {
+            name: "corpus",
+            help: "corpus id, as corpus-status prints it".to_string(),
+        }],
+        opts: vec![option("--json", "", Kind::Flag, "print machine-readable JSON".to_string())],
+    };
+
     let gui = Spec {
         name: "gui",
         help: "serve the graphical corpus importer and HTML documentation".to_string(),
@@ -187,5 +214,27 @@ pub(crate) fn corpus_specs() -> Vec<Spec> {
             ),
         ],
     };
-    vec![corpus_adopt, corpus_status, gui, info, onboarding, autolabel]
+    vec![corpus_adopt, corpus_status, corpus_select, corpus_remove, gui, info, onboarding, autolabel]
+}
+
+/// `corpus-select` and `corpus-remove`: the registry after the change, as
+/// corpus-status reports it.
+pub(crate) fn cmd_corpus_change(args: &Parsed, remove: bool) -> Result<i32> {
+    let id = args.positional(0);
+    let report = if remove { corpus::remove(id)? } else { corpus::select(id)? };
+    if args.flag("--json") {
+        outln!("{}", dumps(&report));
+        return Ok(0);
+    }
+    if remove {
+        outln!("removed corpus {id}");
+    }
+    match report.get("selected").filter(|value| !value.is_null()) {
+        Some(selected) => outln!(
+            "selected corpus {}",
+            selected.get("id").and_then(Value::as_str).unwrap_or("")
+        ),
+        None => outln!("no adopted corpus is selected"),
+    }
+    Ok(0)
 }

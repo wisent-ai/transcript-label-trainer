@@ -200,6 +200,10 @@ pub(crate) fn handle(mut request: Request, authority: &str, origin: &str, token:
                 }
             }
         }
+        // corpus-select and corpus-remove: POST /api/corpora/<id>/select, DELETE /api/corpora/<id>.
+        (&Method::Post, route) | (&Method::Delete, route) if route.starts_with("/api/corpora/") => {
+            corpus_change(request, route, method == Method::Post, origin, token)
+        }
         _ => respond_json(
             request,
             404,

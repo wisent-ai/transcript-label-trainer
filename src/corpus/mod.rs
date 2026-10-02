@@ -17,7 +17,9 @@ use crate::placement::resolve_placement;
 use crate::util::{now_iso, Error, Result};
 
 mod bundle_schema;
+mod manage;
 mod read_registry;
 
 pub use bundle_schema::*;
+pub use manage::*;
 pub use read_registry::*;

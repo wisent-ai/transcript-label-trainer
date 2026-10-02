@@ -54,7 +54,7 @@
 transcript-label-trainer \
   --training-root /srv/wisent/trainer \
   corpus-status --json</code></pre>
-    <p><code>corpus-adopt BUNDLE [--json]</code> canonicalizes the source path, validates the complete file before mutation, retains the canonical bytes, and selects the corpus. <code>corpus-status [--json]</code> reads the registry and reports the selected entry plus every retained entry. The onboarding journey's <code>--corpus BUNDLE</code> option calls this same path-based operation.</p>
+    <p><code>corpus-adopt BUNDLE [--json]</code> canonicalizes the source path, validates the complete file before mutation, retains the canonical bytes, and selects the corpus. <code>corpus-status [--json]</code> reads the registry and reports the selected entry plus every retained entry. <code>corpus-select CORPUS</code> makes another retained corpus the input, and <code>corpus-remove CORPUS</code> removes a retained corpus with its bundle; the selected corpus is refused while others remain, and removing the last one removes the registry. The importer window offers the same two as <strong>Select</strong> and <strong>Remove</strong> on each retained row. The onboarding journey's <code>--corpus BUNDLE</code> option calls the same path-based adoption.</p>
 
     <h2 id="schema">Canonical dataset-bundle schema</h2>
     <p>The JSON object has exactly three top-level fields. Unknown fields are refused.</p>

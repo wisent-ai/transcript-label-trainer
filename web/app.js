@@ -58,11 +58,40 @@ function showRetained(corpus) {
       cell.textContent = value == null ? "—" : String(value);
       row.appendChild(cell);
     });
+    const actions = document.createElement("td");
+    if (entry.id !== selectedId) {
+      actions.appendChild(actionButton("Select", "POST", `/api/corpora/${encodeURIComponent(entry.id)}/select`));
+    }
+    actions.appendChild(actionButton("Remove", "DELETE", `/api/corpora/${encodeURIComponent(entry.id)}`));
+    row.appendChild(actions);
     body.appendChild(row);
   }
   document.getElementById("empty-retained").hidden = rows.length > 0;
   document.getElementById("retained-table-wrap").hidden = rows.length === 0;
   setText("registry-path", corpus?.registry);
+}
+
+// corpus-select and corpus-remove from the window: the same registry
+// operations, and the refusal sentence when one is refused.
+function actionButton(label, method, path) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      const payload = await readJson(await fetch(path, { method, headers: apiHeaders() }));
+      showRetained(payload.corpus);
+      statusLine.dataset.kind = "ok";
+      statusLine.textContent = `${label} done. Persisted state is shown below.`;
+    } catch (error) {
+      statusLine.dataset.kind = "error";
+      statusLine.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+  return button;
 }
 
 async function readJson(response) {

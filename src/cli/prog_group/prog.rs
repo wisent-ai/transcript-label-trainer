@@ -118,6 +118,8 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "autolabel" => cmd_autolabel(&parsed),
         "corpus-adopt" => cmd_corpus_adopt(&parsed),
         "corpus-status" => cmd_corpus_status(&parsed),
+        "corpus-select" => cmd_corpus_change(&parsed, false),
+        "corpus-remove" => cmd_corpus_change(&parsed, true),
         "gui" => cmd_gui(&parsed),
         "aspect-discover" => cmd_aspect_discover(&parsed),
         "info" => cmd_info(&parsed),
