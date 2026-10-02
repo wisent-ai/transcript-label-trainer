@@ -59,9 +59,11 @@ messages into the 3–7 word task goals Jeden displays. It reads messages only
 from Transcript Lake's normalized `events` view; raw agent session files are
 not an input, so the lake's masking boundary remains intact.
 
+Replace `TARGET` below with the registered Stado GPU target selected for training.
+
 ```sh
 transcript-label-trainer goal-model \
-  --compute-target ubuntu-server-rtx-pro-6000 \
+  --compute-target TARGET \
   --limit 1500
 ```
 
@@ -138,7 +140,7 @@ target:
 transcript-label-trainer lifecycle-model \
   ~/.transcript-label-trainer/lifecycle-model/reviewed-train.jsonl \
   ~/.transcript-label-trainer/lifecycle-model/reviewed-eval.jsonl \
-  --compute-target ubuntu-server-rtx-pro-6000
+  --compute-target TARGET
 ```
 
 The job fine-tunes the pinned Qwen3-4B base, evaluates the untouched reviewed

@@ -48,11 +48,11 @@ error or a run the lake does not hold enough labeled data for.
 
 ### Goals quickstart
 
-The goal path in three commands, assuming a registered Stado GPU target:
+The goal path in three commands. Replace `TARGET` with a registered Stado GPU target:
 
 ```sh
 # 1. Title model: curate, teacher-label, review, train, audit, publish GGUF.
-transcript-label-trainer goal-model --compute-target ubuntu-server-rtx-pro-6000
+transcript-label-trainer goal-model --compute-target TARGET
 
 # 2. Lifecycle datasets: review masked envelopes into immutable splits.
 transcript-label-trainer lifecycle-review envelopes.jsonl \
@@ -62,7 +62,7 @@ transcript-label-trainer lifecycle-review held-out.jsonl \
 
 # 3. Lifecycle model: train, audit every held-out decision, gate, publish.
 transcript-label-trainer lifecycle-model reviewed-train.jsonl reviewed-eval.jsonl \
-  --compute-target ubuntu-server-rtx-pro-6000 --brama-url https://brama.wisent.com
+  --compute-target TARGET --brama-url https://brama.wisent.com
 ```
 
 Each step refuses to continue when its gate fails: no reviewed dataset, no
