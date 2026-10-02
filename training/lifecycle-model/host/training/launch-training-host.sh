@@ -78,10 +78,10 @@ UNIT
 mkdir -p /mnt/wisent-staging/hf-cache
 systemctl daemon-reload
 systemctl enable "$unit" >/dev/null 2>&1
-systemctl restart "$unit"
-sleep 3
-systemctl is-active "$unit" >/dev/null || {
-    echo "unit failed to start" >&2
+# restart returns once systemd has started the process or failed to; its
+# status and the unit state right after it are the answer.
+systemctl restart "$unit" && systemctl is-active "$unit" >/dev/null || {
+    echo "unit $unit failed to start" >&2
     systemctl status "$unit" --no-pager --lines 20 >&2
     exit 1
 }
