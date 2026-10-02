@@ -6,19 +6,9 @@ pub const DEFAULT_AGENT_ITEM: &str = "agent:wisent-app";
 
 pub const DEFAULT_TOKEN_ITEM: &str = "jeden-model-router";
 
-// Being listed by /v1/models is not the same as being servable: that list is
-// the public models.dev catalogue, several thousand ids wide, and on 2026-08-09
-// only 59 of 6244 came back with `available: true` for this agent. The previous
-// default, `302ai/claude-haiku-4-5`, was chosen off that list and answered 503
-// `direct '302ai' credential is unavailable` on every call, because the fleet
-// vault has never held a 302ai credential.
-//
-// This one is billed to an existing subscription rather than per-token credits,
-// handles the mixed Polish/English transcripts, and was measured answering
-// through this client. There is no free local fallback for label work:
-// `wisent-backend/chat/primary` is an unrelated product route, it labelled
-// 1,617 curriculum rows against the held-out convention before 2026-08-18, and
-// naming it here is what made that look allowed. Override with --brama-model.
+// Catalogue membership is not proof that the configured agent can use a route.
+// Label work uses an operator subscription through Brama, not an unrelated
+// product route or a local fallback. Override the route with --brama-model.
 pub const DEFAULT_MODEL: &str = "codex/gpt-5.6-sol";
 
 /// Strongest active operator subscription route exposed by Brama.
