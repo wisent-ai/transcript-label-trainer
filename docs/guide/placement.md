@@ -31,7 +31,7 @@ canonical registry target:
 
 ```sh
 transcript-label-trainer run jobs/example-topic.yaml \
-  --compute-target ubuntu-server-rtx-pro-6000
+  --compute-target <training-target>
 ```
 
 The submitter resolves the job against the local Transcript Lake, exports only
@@ -65,13 +65,13 @@ going local cannot hide behind another that resolved:
 ```
 placement:
     source:        local-fallback
-    training host: ubuntu-server-rtx-pro-6000
-    training root: /Users/lukaszbartoszcze/.transcript-label-trainer
-    storage root:  /Users/lukaszbartoszcze/.transcript-lake
+    training host: <training-target>
+    training root: <local-home>/.transcript-label-trainer
+    storage root:  <local-home>/.transcript-lake
     fallback:      training root … — local fallback because Stado places
-                   label-model training on ubuntu-server-rtx-pro-6000 at
-                   /mnt/wisent-training/stado/training, and this machine is
-                   lukasz-macbook; storage root … declared in the Stado registry
+                   label-model training on <training-target> at
+                   <declared-training-root>, and this machine is
+                   <local-target>; storage root … declared in the Stado registry
 ```
 
 Everything that can stop Stado from answering degrades this way and names
