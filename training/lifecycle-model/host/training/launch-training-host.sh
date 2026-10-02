@@ -1,9 +1,6 @@
 #!/bin/sh
-# Launch lifecycle label-model training on this host's accelerator, as a unit
-# that survives a power cut: on 2026-08-17 a tripped breaker killed a detached
-# run that kept no checkpoint, and roughly two hundred optimizer steps were
-# lost. The trainer now checkpoints and resumes, and this unit restarts it on
-# failure and on boot.
+# Launch lifecycle label-model training as a managed unit. The trainer
+# checkpoints and resumes; the unit restarts on failure and boot.
 #
 # Installed and started through Stado:
 #   stado host install-helper <target> training/lifecycle-model/train.py oko-lifecycle-train.py

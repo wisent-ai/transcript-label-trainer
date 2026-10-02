@@ -4,11 +4,8 @@
 #
 #   stado host run-helper <target> oko-lifecycle-requantize.sh --uuid <JOB_UUID>
 #
-# Why: on 2026-08-18 the Q4_K_M build of the corrected candidate measured
-# joint 0.767 on the served surface against 0.907 from the trainer's own bf16
-# generation, and finish_precision fell from 1.0 to 0.889. The quality gate
-# reads the served surface, so the shipped quantization is part of the model,
-# not a packaging detail.
+# The served quantization must pass the quality gate; training precision
+# alone does not qualify the released model.
 set -eu
 
 job="${1:?job uuid required}"

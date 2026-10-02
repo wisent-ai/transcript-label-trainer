@@ -4,11 +4,8 @@
 #
 #   stado host run-helper <target> oko-lifecycle-inspect-student.sh --uuid <JOB_UUID>
 #
-# Why: on 2026-08-18 the served GGUF answered differently from the trainer's own
-# bf16 generation on identical prompts, over-predicting the majority class, with
-# Q8_0 no better than Q4_K_M. A full fine-tune updates the output projection; if
-# the checkpoint ties it to the input embedding, or the converter drops it, the
-# served model is a different function from the one that was measured.
+# Check the served conversion against the trained output projection. A
+# missing or incorrectly tied projection changes the measured function.
 set -eu
 
 job="${1:?job uuid required}"
