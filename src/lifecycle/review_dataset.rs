@@ -161,13 +161,6 @@ pub(crate) fn read_predictions(path: &Path) -> Result<Vec<AuditPrediction>> {
         .collect()
 }
 
-pub(crate) fn retryable_audit_error(error: &Error) -> bool {
-    error.0.contains("\"retryable\":true")
-        || ["HTTP 429", "HTTP 503", "HTTP 504"]
-            .iter()
-            .any(|status| error.0.contains(status))
-}
-
 pub(crate) fn audit_one(
     client: &BramaClient,
     model: &str,
@@ -198,26 +191,13 @@ pub(crate) fn audit_one(
             }))?,
         },
     ];
-    let mut last = Error("lifecycle audit did not run".to_string());
-    for attempt in 0..3 {
-        match client
-            .chat(model, &request)
-            .and_then(|answer| parse_json_object(&answer))
-            .and_then(|value| serde_json::from_value::<AuditDecision>(value).map_err(Error::from))
-        {
-            Ok(decision)
-                if ["student-sensible", "student-wrong", "unjudgeable"]
-                    .contains(&decision.verdict.as_str()) =>
-            {
-                return Ok(decision);
-            }
-            Ok(_) => last = Error(format!("{} has an unknown audit verdict", prediction.id)),
-            Err(error) => last = error,
-        }
-        if attempt == 2 || !retryable_audit_error(&last) {
-            break;
-        }
-        thread::sleep(Duration::from_secs(1 << attempt));
+    let decision = client
+        .chat(model, &request)
+        .and_then(|answer| parse_json_object(&answer))
+        .and_then(|value| serde_json::from_value::<AuditDecision>(value).map_err(Error::from))
+        .map_err(|error| Error(format!("{}: {error}", prediction.id)))?;
+    match decision.verdict.as_str() {
+        "student-sensible" | "student-wrong" | "unjudgeable" => Ok(decision),
+        other => Err(Error(format!("{} has an unknown audit verdict {other:?}", prediction.id))),
     }
-    Err(Error(format!("{}: {last}", prediction.id)))
 }

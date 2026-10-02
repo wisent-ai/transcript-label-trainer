@@ -14,10 +14,6 @@ pub const DEFAULT_MODEL: &str = "codex/gpt-5.6-sol";
 /// Strongest active operator subscription route exposed by Brama.
 pub const BEST_MODEL: &str = "best";
 
-pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
-
-pub(crate) const STADO_TIMEOUT: Duration = Duration::from_secs(20);
-
 pub(crate) const ANSWER_MAX_TOKENS: u32 = 64;
 
 /// One OpenAI chat message. Field order is `role` then `content`, matching the
@@ -37,14 +33,12 @@ impl Message {
     }
 }
 
-/// Run a child process, capture stdout, drain stderr, and optionally give up
-/// after `timeout` the way `subprocess.run(..., timeout=)` does. `None` means
-/// the process could not be started, could not be waited on, or timed out.
+/// Run a child process, capture stdout and drain stderr. It ends when the
+/// child exits; `None` means it could not be started or waited on.
 pub(crate) fn run_capture(
     program: &str,
     args: &[&str],
     extra_env: &[(&str, String)],
-    timeout: Option<Duration>,
 ) -> Option<(bool, String)> {
     let mut command = Command::new(program);
     command
@@ -68,26 +62,7 @@ pub(crate) fn run_capture(
         let mut sink = Vec::new();
         let _ = stderr.read_to_end(&mut sink);
     });
-    let status = match timeout {
-        None => child.wait().ok()?,
-        Some(limit) => {
-            let deadline = Instant::now() + limit;
-            loop {
-                match child.try_wait() {
-                    Ok(Some(status)) => break status,
-                    Ok(None) => {
-                        if Instant::now() >= deadline {
-                            let _ = child.kill();
-                            let _ = child.wait();
-                            return None;
-                        }
-                        thread::sleep(Duration::from_millis(20));
-                    }
-                    Err(_) => return None,
-                }
-            }
-        }
-    };
+    let status = child.wait().ok()?;
     Some((status.success(), collect.join().ok()?))
 }
 
@@ -109,7 +84,6 @@ pub(crate) fn stado_url() -> String {
         &stado,
         &["service", "directory", "connect", "--json", "brama"],
         &[],
-        Some(STADO_TIMEOUT),
     ) else {
         return String::new();
     };
@@ -188,7 +162,7 @@ pub(crate) fn skarbiec_read(item: &str, field: &str) -> String {
     };
     if Path::new(&skarbiec).is_file() && Path::new(&vault).is_file() {
         let env = [("SKARBIEC_VAULT_FILE", vault)];
-        if let Some((true, stdout)) = run_capture(&skarbiec, &["get", item], &env, None) {
+        if let Some((true, stdout)) = run_capture(&skarbiec, &["get", item], &env) {
             let value = serde_json::from_str::<serde_json::Value>(&stdout)
                 .ok()
                 .and_then(|parsed| parsed.get("fields").cloned())
@@ -225,7 +199,6 @@ pub(crate) fn skarbiec_read(item: &str, field: &str) -> String {
         &stado,
         &["credentials", "get", "--field", field, item],
         &env,
-        None,
     ) {
         Some((true, stdout)) => stdout.trim().to_string(),
         _ => String::new(),

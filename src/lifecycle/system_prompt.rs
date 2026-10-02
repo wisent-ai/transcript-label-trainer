@@ -138,19 +138,11 @@ pub(crate) fn classify(client: &BramaClient, model: &str, row: &TrainingRow) -> 
             content: serde_json::to_string(&envelope)?,
         },
     ];
-    let mut last = Error("lifecycle reviewer did not run".to_string());
-    for attempt in 0..3 {
-        match client
-            .chat(model, &request)
-            .and_then(|answer| parse_json_object(&answer))
-            .and_then(|value| validate_decision(row, value))
-        {
-            Ok(decision) => return Ok(decision),
-            Err(error) => last = error,
-        }
-        thread::sleep(Duration::from_secs(1 << attempt));
-    }
-    Err(Error(format!("{}: {last}", row.id)))
+    client
+        .chat(model, &request)
+        .and_then(|answer| parse_json_object(&answer))
+        .and_then(|value| validate_decision(row, value))
+        .map_err(|error| Error(format!("{}: {error}", row.id)))
 }
 
 pub(crate) fn reviewed_row(

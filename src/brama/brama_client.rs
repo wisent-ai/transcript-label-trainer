@@ -2,8 +2,10 @@ use super::*;
 
 impl BramaClient {
     pub fn new(url: &str, agent_id: String, secret: String, token: Option<String>) -> Result<Self> {
+        // No clock on a request: it ends with Brama's answer or a transport
+        // error, and reqwest's built-in 30 s limit is switched off.
         let http = reqwest::blocking::Client::builder()
-            .timeout(REQUEST_TIMEOUT)
+            .timeout(None)
             .build()
             .map_err(|error| Error(format!("could not build the Brama HTTP client: {error}")))?;
         Ok(BramaClient {

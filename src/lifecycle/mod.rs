@@ -12,7 +12,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

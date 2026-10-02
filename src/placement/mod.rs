@@ -29,7 +29,6 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{LazyLock, Mutex};
-use std::time::{Duration, Instant};
 
 use serde_json::Value;
 

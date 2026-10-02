@@ -10,7 +10,6 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};

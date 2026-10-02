@@ -13,18 +13,6 @@ pub(crate) fn messages(system: String, user: String) -> [Message; 2] {
     ]
 }
 
-pub(crate) fn chat_retry(client: &BramaClient, model: &str, request: &[Message]) -> Result<String> {
-    let mut last = String::new();
-    for attempt in 0..3 {
-        match client.chat(model, request) {
-            Ok(answer) => return Ok(answer),
-            Err(error) => last = error.to_string(),
-        }
-        std::thread::sleep(Duration::from_secs(1 << attempt));
-    }
-    Err(Error(last))
-}
-
 pub(crate) fn parse_goal(answer: &str) -> Option<ParsedGoal> {
     let answer = answer.trim();
     if answer == "<goal/>" || answer == "<goal></goal>" {
@@ -68,7 +56,7 @@ pub(crate) fn review_goal(client: &BramaClient, message: &str, goal: Option<&str
         format!("<user>{message}</user>\n{rendered_goal}"),
     );
     for _ in 0..2 {
-        let answer = chat_retry(client, CURATION_REVIEW_MODEL, &request)?;
+        let answer = client.chat(CURATION_REVIEW_MODEL, &request)?;
         let parsed = crate::brama::parse_answer(&answer, &REVIEW_VALUES).map(|(value, _)| value);
         if parsed.as_deref() != Some("sensible") {
             return Ok(false);
@@ -93,7 +81,7 @@ pub(crate) fn process_candidate(
                 SYSTEM_PROMPT.trim().to_string(),
                 format!("<user>{}</user>", candidate.row.message),
             );
-            parse_goal(&chat_retry(client, teacher_model, &request)?)
+            parse_goal(&client.chat(teacher_model, &request)?)
         }
     };
     let Some(parsed) = parsed else {

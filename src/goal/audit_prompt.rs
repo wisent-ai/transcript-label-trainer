@@ -127,7 +127,7 @@ pub fn audit_predictions(input: &Path, output: &Path, review_model: &str) -> Res
                 let sender = sender.clone();
                 handles.push(scope.spawn(move || {
                     for prediction in chunk {
-                        let outcome = chat_retry(&client, review_model, &audit_prompt(prediction));
+                        let outcome = client.chat(review_model, &audit_prompt(prediction));
                         if sender.send((*prediction, outcome)).is_err() {
                             break;
                         }

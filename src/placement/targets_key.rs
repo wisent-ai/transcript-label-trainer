@@ -27,8 +27,6 @@ pub(crate) const LOCAL_STORAGE_DIR: &str = ".transcript-lake";
 
 pub(crate) const STADO_BIN: &str = "stado";
 
-pub(crate) const STADO_TIMEOUT_SECONDS: u64 = 20;
-
 // Weakest to strongest. `Placement.source` is the weakest one in play.
 pub(crate) const SOURCE_ORDER: [&str; 4] = ["local-fallback", "stado", "env", "flag"];
 

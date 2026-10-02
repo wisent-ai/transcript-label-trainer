@@ -101,7 +101,7 @@ pub(crate) fn run_stado(args: &[&str]) -> (Option<String>, String) {
 
     // Drain both pipes from their own threads: a registry document is larger
     // than a pipe buffer, and a writer blocked on a full pipe would never
-    // reach the deadline below.
+    // exit for the wait below.
     let (Some(mut out_pipe), Some(mut err_pipe)) = (child.stdout.take(), child.stderr.take())
     else {
         let _ = child.kill();
@@ -119,23 +119,9 @@ pub(crate) fn run_stado(args: &[&str]) -> (Option<String>, String) {
         buffer
     });
 
-    let deadline = Instant::now() + Duration::from_secs(STADO_TIMEOUT_SECONDS);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return (
-                        None,
-                        format!("'{printable}' timed out after {STADO_TIMEOUT_SECONDS}s"),
-                    );
-                }
-                std::thread::sleep(Duration::from_millis(25));
-            }
-            Err(error) => return (None, format!("'{printable}' could not run: {error}")),
-        }
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(error) => return (None, format!("'{printable}' could not run: {error}")),
     };
 
     let stdout = String::from_utf8_lossy(&out_reader.join().unwrap_or_default()).into_owned();
