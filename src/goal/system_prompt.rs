@@ -5,9 +5,7 @@ pub(crate) const SYSTEM_PROMPT: &str = include_str!("../../training/goal-model/g
 pub(crate) const REVIEW_VALUES: [&str; 2] = ["sensible", "nonsensical"];
 
 /// Curation decides which rows become training labels, so it uses the
-/// strongest operator-approved route. It named `wisent-backend/chat/primary`
-/// until 2026-08-18 — an unrelated product model with no business judging
-/// task labels.
+/// strongest operator-approved route rather than a product-serving route.
 pub(crate) const CURATION_REVIEW_MODEL: &str = BEST_MODEL;
 
 pub(crate) const AUDIT_VALUES: [&str; 4] = [

@@ -111,12 +111,7 @@ pub(crate) fn cmd_goal_audit(args: &Parsed) -> Result<i32> {
 
 pub(crate) fn cmd_lifecycle_review(args: &Parsed) -> Result<i32> {
     // Labels are ground truth for every model trained from them, so the
-    // reviewer must be the strongest operator-approved route. This defaulted to
-    // `wisent-backend/chat/primary` until 2026-08-18, which is an unrelated
-    // product model: it labelled 1,617 curriculum rows, put a subagent
-    // completion report in the `ignore` class where the human-reviewed held-out
-    // split says `continueCurrent`, and its rows went into the candidate that
-    // then failed the quality gate on false completions.
+    // reviewer must use the strongest operator-approved route.
     let model = args.text("--brama-model").unwrap_or(crate::brama::BEST_MODEL);
     let result = crate::lifecycle::review_dataset(
         std::path::Path::new(args.positional(0)),
