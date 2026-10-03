@@ -12,6 +12,11 @@ publish = false
 name = "transcript-label-trainer"
 path = "src/main.rs"
 
+[[test]]
+name = "publication"
+path = "tests/publication/main.rs"
+harness = false
+
 [features]
 # The HuggingFace fine-tune backend. Off by default: it pulls candle and
 # tokenizers, which the tfidf-logreg path does not need.
@@ -23,7 +28,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 serde_yaml = "0.9"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-# Brama is the only network dependency: an HMAC-signed OpenAI-compatible call.
+# Brama inference and Hugging Face repository metadata share this HTTP client.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 hmac = "0.12"
 sha2 = "0.10"

@@ -94,7 +94,28 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
             workers_option(AUDIT_WORKERS),
         ],
     };
-    vec![prepare, audit]
+    let publish = Spec {
+        name: "humanizer-publish",
+        help: "publish a qualified adapter to an explicitly named private Hugging Face repository".to_string(),
+        description: Some(
+            "Require the humanizer metrics contract and a passed audit, refuse public destinations, \
+             upload through the supported hf CLI on an isolated publication branch, and read back \
+             its private immutable revision and file inventory. No account default or visibility change."
+                .to_string(),
+        ),
+        positionals: vec![Positional {
+            name: "model",
+            help: "qualified adapter directory".to_string(),
+        }],
+        opts: vec![
+            required("--repo", "OWNER/REPOSITORY", Kind::Text, "explicit private destination".to_string()),
+            required("--metrics", "PATH", Kind::Text, "metrics from the qualified training run".to_string()),
+            required("--audit", "PATH", Kind::Text, "passed independent audit".to_string()),
+            required("--preparation", "PATH", Kind::Text, "preparation evidence from the same run".to_string()),
+            required("--output", "PATH", Kind::Text, "JSON publication or refusal receipt".to_string()),
+        ],
+    };
+    vec![prepare, audit, publish]
 }
 
 pub(crate) fn cmd_humanizer_prepare(args: &Parsed) -> Result<i32> {
@@ -123,4 +144,29 @@ pub(crate) fn cmd_humanizer_audit(args: &Parsed) -> Result<i32> {
     Ok(i32::from(
         summary.get("passed").and_then(Value::as_bool) != Some(true),
     ))
+}
+
+pub(crate) fn cmd_humanizer_publish(args: &Parsed) -> Result<i32> {
+    use std::io::Write;
+    use std::path::Path;
+
+    let path = Path::new(args.text("--output").unwrap_or_default());
+    let mut output = std::fs::OpenOptions::new().write(true).create_new(true).open(path)
+        .map_err(|error| Error(format!("cannot create publication report {}: {error}", path.display())))?;
+    let report = match crate::humanizer::publish_adapter(crate::humanizer::Publication {
+        model: Path::new(args.positional(0)),
+        metrics: Path::new(args.text("--metrics").unwrap_or_default()),
+        audit: Path::new(args.text("--audit").unwrap_or_default()),
+        preparation: Path::new(args.text("--preparation").unwrap_or_default()),
+        repository: args.text("--repo").unwrap_or_default(),
+    }) {
+        Ok(report) => report,
+        Err(error) => serde_json::json!({"qualified": false, "error": error.to_string()}),
+    };
+    let failed = report.get("qualified").and_then(Value::as_bool) != Some(true);
+    let mut encoded = dumps(&report);
+    encoded.push('\n');
+    output.write_all(encoded.as_bytes())?;
+    outln!("{}", encoded.trim_end_matches('\n'));
+    Ok(i32::from(failed))
 }

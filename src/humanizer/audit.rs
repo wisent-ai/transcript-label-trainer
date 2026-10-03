@@ -12,7 +12,7 @@ use serde_json::{json, Map, Value};
 
 use super::calls::{ask, fan_out, json_object, read_jsonl, ERROR_EXCERPT};
 use super::prompts::JUDGE_PROMPT;
-use super::REPORT_SCHEMA_VERSION;
+use super::{MODEL_CONTRACT, REPORT_SCHEMA_VERSION};
 use crate::brama::{truncate_chars, BramaClient};
 use crate::util::{Error, Result};
 
@@ -165,7 +165,7 @@ pub fn audit_outputs(
         && semantic_delta >= MIN_SEMANTIC_DELTA;
     let mut report = json!({
         "schema_version": REPORT_SCHEMA_VERSION,
-        "contract": "echo-lukasz-humanizer-v1",
+        "contract": MODEL_CONTRACT,
         "review_model": model,
         "rows": records.len(),
         "base": base,

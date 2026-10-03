@@ -130,6 +130,7 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "humanizer-model" => cmd_humanizer_model(&parsed),
         "humanizer-prepare" => cmd_humanizer_prepare(&parsed),
         "humanizer-audit" => cmd_humanizer_audit(&parsed),
+        "humanizer-publish" => cmd_humanizer_publish(&parsed),
         "lifecycle-audit" => cmd_lifecycle_audit(&parsed),
         "goal-audit" => cmd_goal_audit(&parsed),
         "release-publish" => cmd_release_publish(&parsed),

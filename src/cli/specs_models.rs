@@ -209,7 +209,8 @@ pub(crate) fn model_specs() -> Vec<Spec> {
              derive inverse style-transfer inputs through Brama, freeze session-separated \
              train, validation, and test splits, train a LoRA adapter on the pinned Cydonia-24B \
              deployment base on the named exclusive Stado GPU target, compare it with the base \
-             model, require an independent Brama audit, and publish only a qualified private adapter revision."
+             model, require an independent Brama audit, and publish only a qualified private adapter revision. \
+             HUMANIZER_HF_REPO must name the destination repository; there is no account default."
                 .to_string(),
         ),
         positionals: Vec::new(),

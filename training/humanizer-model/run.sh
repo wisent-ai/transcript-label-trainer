@@ -2,6 +2,7 @@
 # Stado GPU job: curate, train, audit, and privately publish Echo's humanizer.
 set -euo pipefail
 
+: "${HUMANIZER_HF_REPO:?Set HUMANIZER_HF_REPO to the private Hugging Face destination}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGETS="${1:?usage: run.sh TARGETS_JSONL}"
 JOB_ID="${WC_JOB_ID:?WC_JOB_ID is required}"
@@ -19,7 +20,7 @@ python3 -m venv "$VENV"
 "$VENV/bin/python" -m pip install --quiet \
   'torch>=2.6,<3' 'transformers>=4.51,<5' 'datasets>=3.5,<5' \
   'accelerate>=1.6,<2' 'sentencepiece>=0.2,<1' 'safetensors>=0.5,<1' \
-  'peft>=0.17,<1' 'bitsandbytes>=0.46,<1' 'huggingface-hub>=0.34,<1'
+  'peft>=0.17,<1' 'bitsandbytes>=0.46,<1' 'huggingface-hub>=0.36,<1'
 
 export HUMANIZER_TARGETS="$WORK/targets.jsonl"
 export HUMANIZER_TRAIN_DATASET="$WORK/train.jsonl"
@@ -39,7 +40,10 @@ TRAINER=("$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locke
 "${TRAINER[@]}" humanizer-prepare "$HUMANIZER_TARGETS" --output-dir "$WORK"
 "$VENV/bin/python" "$ROOT/training/humanizer-model/train.py"
 "${TRAINER[@]}" humanizer-audit "$HUMANIZER_PREDICTIONS" --output "$HUMANIZER_AUDIT_OUTPUT"
-"$VENV/bin/python" "$ROOT/training/humanizer-model/publish.py"
+HF_BIN="$VENV/bin/hf" "${TRAINER[@]}" humanizer-publish "$HUMANIZER_MODEL_DIR" \
+  --repo "$HUMANIZER_HF_REPO" --metrics "$HUMANIZER_METRICS" \
+  --audit "$HUMANIZER_AUDIT_OUTPUT" --preparation "$HUMANIZER_PREPARATION" \
+  --output "$WORK/publication.json"
 "$VENV/bin/python" -m pip freeze > "$WORK/python-requirements.lock"
 
 cp "$WORK/preparation.json" "$WORK/metrics.json" "$WORK/audit.json" \

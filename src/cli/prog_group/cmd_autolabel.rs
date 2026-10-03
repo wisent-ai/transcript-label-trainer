@@ -137,6 +137,11 @@ pub(crate) fn cmd_lifecycle_model(args: &Parsed) -> Result<i32> {
 }
 
 pub(crate) fn cmd_humanizer_model(args: &Parsed) -> Result<i32> {
+    let hf_repo = std::env::var("HUMANIZER_HF_REPO")
+        .map_err(|error| Error(format!("cannot read required HUMANIZER_HF_REPO: {error}")))?;
+    if hf_repo.trim().is_empty() {
+        return Err(Error("HUMANIZER_HF_REPO must explicitly name a private destination".into()));
+    }
     let root = placement::resolve_placement()
         .training_root
         .join("humanizer-model")
@@ -149,6 +154,7 @@ pub(crate) fn cmd_humanizer_model(args: &Parsed) -> Result<i32> {
     let job = stado::execute_humanizer_model(
         &targets,
         args.text("--compute-target").unwrap_or_default(),
+        &hf_repo,
     )?;
     outln!("Stado job: {}", job.job_id);
     outln!("model artifact: {}", job.output_uri);

@@ -165,13 +165,11 @@ repository's.
   `evaluate --best` independently audits both stored labels and the first
   judge's opinions through Brama's `best` route. Both are quality gates with
   machine-readable records and nonzero status for nonsensical results.
-- `humanizer-prepare` and `humanizer-audit` replace
-  `training/humanizer-model/prepare.py` and `audit.py`: the humanizer's
-  Brama-built dataset and its independent audit now run in this binary, and
-  the Stado job calls them through `cargo run`. The review and judge routes
-  default to Brama's `best` alias; the Python scripts asked for `-best`, a
-  name Brama's source does not define. Only `train.py` and `publish.py` stay Python,
-  because they drive torch and the HuggingFace hub.
+- `humanizer-prepare`, `humanizer-audit` and `humanizer-publish` run in the native
+  binary. The Stado job calls these commands around its Torch training worker.
+  Publication requires an explicit `HUMANIZER_HF_REPO`, preserves the model's
+  qualification gates, refuses public destinations without changing visibility,
+  and uses the supported `hf` CLI only for repository creation and file transfer.
 - `release-publish SOURCE --model goal|lifecycle` replaces the goal and
   lifecycle `publish-qualified-release` Python scripts; the goal host scripts
   that wrapped `goal-audit` with fixed job paths and printed rejected rows are

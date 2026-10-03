@@ -32,9 +32,8 @@ what changed is only that no human reviews the suggestion. Rules:
 - **Failure isolation.** A Brama error or an unparseable answer fails that
   one session, writes nothing for it, and is counted in the final summary
   (`labeled` / `skipped_labeled` / `failed`).
-- The teacher defaults to `codex/gpt-5.6-sol` — one of the few model ids this
-  fleet's Brama can actually serve, and multilingual, which the mixed
-  Polish/English transcripts need; override with `--brama-model`.
+- The teacher defaults to the Brama route `codex/gpt-5.6-sol`; override it with
+  `--brama-model`. Brama resolves the route and reports unavailable capabilities.
 - Auth mirrors jeden: HMAC-signed requests keyed by the Skarbiec item
   `agent:wisent-app`, bearer from `jeden-model-router`, endpoint from
   `BRAMA_URL` (falling back to jeden's own configured URL). Secrets are read
@@ -99,6 +98,10 @@ revision `d9ce79f106ead1176b74bb0d9fb875521ca712b1`. Its 2,497,280,320-byte
 GGUF has SHA-256
 `2512d7a455a50a16742b75d8fe38bf02b46b5d6b607f785be32a6345d999d310`,
 the same immutable artifact consumed by Jeden Desktop.
+
+This immutable public model is a release reference, not publication configuration.
+New qualified goal outputs use `release-publish`; the completed, fixed-artifact
+Hugging Face repository migration is not a reusable publication workflow.
 
 ## Reviewed Oko goal-lifecycle model
 
@@ -167,3 +170,77 @@ MLX bf16/Metal produced 100% valid JSON, 94.23% action accuracy, 92.58% joint
 accuracy, and 100% finish precision. GGUF/llama.cpp measurements did not meet
 the joint gate, so the release manifest declares MLX weights and runtime.
 
+## Private personal-voice publication
+
+Choose the destination explicitly before starting the humanizer:
+
+```sh
+HUMANIZER_HF_REPO=OWNER/PRIVATE_MODEL \
+  transcript-label-trainer humanizer-model --compute-target TARGET
+```
+
+The controller forwards that repository into the Stado job. A missing or empty
+destination is refused before submission; the worker and publisher also require
+it. No account is selected from source code.
+
+Publication requires the existing model contract and a passed audit. The native
+publisher can also publish a retained qualified job output directly:
+
+```sh
+transcript-label-trainer humanizer-publish JOB_OUTPUT/adapter \
+  --repo OWNER/PRIVATE_MODEL --metrics JOB_OUTPUT/metrics.json \
+  --audit JOB_OUTPUT/audit.json --preparation JOB_OUTPUT/preparation.json \
+  --output publication.json
+```
+
+`HF_TOKEN` authenticates both metadata reads and transfers. The supported `hf`
+CLI, version 0.36 or later within the 0.x series, must be installed; `HF_BIN`
+selects its executable. `HF_ENDPOINT` optionally selects the Hub base URL.
+The Stado worker installs that CLI and invokes the same native publisher.
+The output path must not already exist. An existing path is refused before
+provider access, so a receipt cannot overwrite training inputs or older evidence.
+
+A public destination is refused before reading or uploading model files.
+The receipt reports `repository_not_private`, the `model_info` operation, the
+repository and its observed privacy state. Publication never changes repository
+visibility. It checks privacy before each transfer and at the final revision.
+Each attempt uses its own publication branch, so another writer's main branch
+cannot be mistaken for the published commit.
+
+The output receipt records the immutable revision, privacy, file inventory and
+verified SHA-256 values. Required adapter files and evidence must match the
+pre-transfer inputs: LFS objects are checked by their content-addressed digest,
+and ordinary files are read from the immutable revision and hashed. Missing
+files, changed bytes, an unpassed audit, a different metrics contract or a
+provider error returns exit 1 with `qualified: false` and the actual cause.
+The GUI owns corpus import and documentation; model publication uses this CLI
+and the Stado training job, not a separate graphical publisher.
+
+### Real publication qualification
+
+`tests/publication/` exercises this command against Hugging Face itself:
+
+```sh
+cargo test --locked --test publication
+```
+
+Provide `HF_TOKEN` with permission to create and delete isolated model
+repositories. `TLT_PUBLICATION_NAMESPACE` optionally selects an authorized
+namespace; otherwise the live authenticated account is used. No account name
+is stored in source. `TLT_PUBLICATION_FIXTURE` must point to an actual qualified
+humanizer job output containing `adapter/`, `metrics.json`, `audit.json` and
+`preparation.json`; the runner does not manufacture a passed audit or weights.
+
+The public-destination journey creates an empty isolated public repository,
+requires refusal without visibility or revision changes, and deletes it.
+The private journey publishes the real fixture into a new private repository,
+downloads the required files at the reported immutable revision, compares their
+bytes with the source hashes, deletes the repository and confirms its absence.
+Every repository has a fresh random name; existing repositories are refused.
+
+The runner requires a clean committed checkout and retains the source revision,
+binary checksum, commands, exit statuses, provider observations and receipts
+under the ignored `.build/publication-*/report.json` directories. Payload download
+caches are removed; reports stay private. Exit 0 means both journeys passed,
+exit 1 means failure, and exit 2 means a prerequisite is missing. A blocked
+journey is not a pass.

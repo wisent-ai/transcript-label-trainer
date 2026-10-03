@@ -170,10 +170,18 @@ pub fn execute_lifecycle_model(
 }
 
 /// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
-pub fn execute_humanizer_model(targets_path: &Path, compute_target: &str) -> Result<GoalModelJob> {
+pub fn execute_humanizer_model(
+    targets_path: &Path,
+    compute_target: &str,
+    hf_repo: &str,
+) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
         return Err(Error("--compute-target cannot be empty".to_string()));
+    }
+    let hf_repo = hf_repo.trim();
+    if hf_repo.is_empty() {
+        return Err(Error("HUMANIZER_HF_REPO cannot be empty".to_string()));
     }
     let targets_bytes = std::fs::read(targets_path)?;
     let key = digest(&targets_bytes);
@@ -190,11 +198,13 @@ pub fn execute_humanizer_model(targets_path: &Path, compute_target: &str) -> Res
         .join("humanizer-model")
         .join("jobs");
     let work_root = shell_quote(&work_root.to_string_lossy());
+    let hf_repo = shell_quote(hf_repo);
     let command = format!(
         "set -euo pipefail; work={work_root}/echo-humanizer-{key}; \
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{targets_uri}' \"$work/targets.jsonl\"; \
-         HUMANIZER_WORK_DIR=\"$work\" ./training/humanizer-model/run.sh \"$work/targets.jsonl\""
+         HUMANIZER_HF_REPO={hf_repo} HUMANIZER_WORK_DIR=\"$work\" \
+         ./training/humanizer-model/run.sh \"$work/targets.jsonl\""
     );
     let args = vec![
         OsString::from("submit"),
