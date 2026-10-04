@@ -76,7 +76,7 @@ set +e
 "$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
   lifecycle-audit "$WORK/predictions-gguf.jsonl" \
   --output "$WORK/final-judge.json" \
-  --brama-model "${LIFECYCLE_AUDIT_MODEL:-claude-code/claude-sonnet-4-6}"
+  --brama-model "${LIFECYCLE_AUDIT_MODEL:-best}"
 AUDIT_EXIT=$?
 set -e
 [ -s "$WORK/final-judge.json" ]

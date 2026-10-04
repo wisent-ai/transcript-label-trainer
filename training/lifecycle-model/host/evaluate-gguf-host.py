@@ -4,6 +4,7 @@
 import copy
 import json
 import os
+import socket
 import subprocess
 import time
 import urllib.error
@@ -13,52 +14,35 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 
-WORK = Path(
-    os.environ.get(
-        "LIFECYCLE_EVAL_WORK",
-        "/mnt/wisent-staging/oko-lifecycle-model-b5de55bd",
-    )
-)
-MODEL = Path(
-    os.environ.get(
-        "LIFECYCLE_EVAL_MODEL",
-        str(WORK / "oko-lifecycle-qwen3-8b-q4_k_m.gguf"),
-    )
-)
-DATASET = Path(
-    os.environ.get("LIFECYCLE_EVAL_DATASET", str(WORK / "reviewed-eval-curriculum.jsonl"))
-)
-PREDICTIONS = Path(
-    os.environ.get("LIFECYCLE_EVAL_PREDICTIONS", str(WORK / "predictions-gguf.jsonl"))
-)
-METRICS = Path(os.environ.get("LIFECYCLE_EVAL_METRICS", str(WORK / "metrics-gguf.json")))
-SERVER_LOG = Path(
-    os.environ.get("LIFECYCLE_EVAL_SERVER_LOG", str(WORK / "llama-server-eval.log"))
-)
-SERVER = Path(
-    os.environ.get(
-        "LIFECYCLE_EVAL_SERVER",
-        str(WORK / "llama.cpp/build/bin/llama-server"),
-    )
-)
-PORT = int(os.environ.get("LIFECYCLE_EVAL_PORT", "11440"))
+def declared(name):
+    """A path the caller must declare: run.sh passes every one from its job's
+    work directory, so no host's mount, job or model file is written here."""
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise SystemExit(f"{name} is required: run.sh declares it from the job's work directory")
+    return Path(value)
+
+
+def free_port():
+    """A loopback port the operating system has free right now."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+WORK = declared("LIFECYCLE_EVAL_WORK")
+MODEL = declared("LIFECYCLE_EVAL_MODEL")
+DATASET = declared("LIFECYCLE_EVAL_DATASET")
+PREDICTIONS = declared("LIFECYCLE_EVAL_PREDICTIONS")
+METRICS = declared("LIFECYCLE_EVAL_METRICS")
+SERVER_LOG = declared("LIFECYCLE_EVAL_SERVER_LOG")
+SERVER = declared("LIFECYCLE_EVAL_SERVER")
+PORT = int(os.environ.get("LIFECYCLE_EVAL_PORT") or free_port())
 ENDPOINT = f"http://127.0.0.1:{PORT}/v1/chat/completions"
 PARALLEL = int(os.environ.get("LIFECYCLE_EVAL_PARALLEL", "4"))
 SLOT_CONTEXT = int(os.environ.get("LIFECYCLE_EVAL_SLOT_CONTEXT", "4096"))
-SYSTEM_PROMPT = Path(
-    os.environ.get(
-        "LIFECYCLE_EVAL_SYSTEM_PROMPT",
-        str(WORK / "audit-source/training/lifecycle-model/lifecycle-system-prompt.txt"),
-    )
-).read_text(encoding="utf-8").strip()
-OUTPUT_SCHEMA = json.loads(
-    Path(
-        os.environ.get(
-            "LIFECYCLE_EVAL_OUTPUT_SCHEMA",
-            str(WORK / "audit-source/training/lifecycle-model/lifecycle-output-schema.json"),
-        )
-    ).read_text(encoding="utf-8")
-)
+SYSTEM_PROMPT = declared("LIFECYCLE_EVAL_SYSTEM_PROMPT").read_text(encoding="utf-8").strip()
+OUTPUT_SCHEMA = json.loads(declared("LIFECYCLE_EVAL_OUTPUT_SCHEMA").read_text(encoding="utf-8"))
 
 
 from lifecycle_decisions import ACTIONS, EVIDENCE, input_for, parse_decision, read_rows, target_for  # noqa: E402,F401
