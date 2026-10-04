@@ -13,20 +13,32 @@ pub(crate) fn release_specs() -> Vec<Spec> {
             "Fetch the job output's model-manifest.json, refuse unless it is qualified by \
              final-judge.json and the judge passed, verify every evidence file and model part \
              against the manifest's SHA-256, check that the ordered parts rebuild the qualified \
-             artifact, and publish them under the artifact's digest. Objects already present at \
-             that coordinate are left untouched, so a rerun resumes."
+             artifact, and publish it where the model runs. A model that ships inside a desktop \
+             application goes to the release channel under the artifact's digest; objects already \
+             present there are left untouched, so a rerun resumes. A model served from a GPU host \
+             goes to the private Hugging Face repository --repo names, as one new branch whose \
+             immutable revision is read back and checked file by file; the release store receives \
+             nothing."
                 .to_string(),
         ),
         positionals: vec![Positional {
             name: "source",
             help: "Stado job output URI holding model-manifest.json".to_string(),
         }],
-        opts: vec![required(
-            "--model",
-            "MODEL",
-            Kind::Text,
-            format!("which fine-tune the output holds ({models})"),
-        )],
+        opts: vec![
+            required(
+                "--model",
+                "MODEL",
+                Kind::Text,
+                format!("which fine-tune the output holds ({models})"),
+            ),
+            option(
+                "--repo",
+                "OWNER/REPOSITORY",
+                Kind::Text,
+                "private Hugging Face repository of a model served from a GPU host (lifecycle); refused for a model that ships through the release channel (goal)".to_string(),
+            ),
+        ],
     }]
 }
 
@@ -45,7 +57,7 @@ pub(crate) fn cmd_release_publish(args: &Parsed) -> Result<i32> {
                 .join(", ")
         )));
     };
-    let published = stado::publish_release(model, args.positional(0))?;
+    let published = stado::publish_release(model, args.positional(0), args.text("--repo"))?;
     outln!("{}", dumps(&published));
     Ok(0)
 }

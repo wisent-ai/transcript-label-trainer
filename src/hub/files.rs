@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use crate::util::{Error, Result};
 
 #[derive(Serialize)]
-pub(super) struct Signature {
+pub(crate) struct Signature {
     pub size: u64,
     pub sha256: String,
 }

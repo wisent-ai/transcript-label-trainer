@@ -1,3 +1,9 @@
+//! The private Hugging Face repository every qualified model of this trainer
+//! is published to: one client for metadata reads, digest checks and the
+//! supported `hf` CLI uploads, shared by the humanizer adapter and the
+//! goal-lifecycle model. A model is served from the host that runs it, which
+//! fetches the immutable revision into its own model cache; the fleet's
+//! release store is not a model store.
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
@@ -8,10 +14,12 @@ use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 
 use crate::util::{Error, Result};
-use super::files::Signature;
+
+mod files;
+pub(crate) use files::Signature;
 
 #[derive(Deserialize)]
-pub(super) struct ModelInfo {
+pub(crate) struct ModelInfo {
     pub private: bool,
     pub sha: Option<String>,
     #[serde(default)]
@@ -19,18 +27,18 @@ pub(super) struct ModelInfo {
 }
 
 #[derive(Deserialize)]
-pub(super) struct RemoteFile {
+pub(crate) struct RemoteFile {
     pub rfilename: String,
     pub size: Option<u64>,
     pub lfs: Option<LfsObject>,
 }
 
 #[derive(Deserialize)]
-pub(super) struct LfsObject {
+pub(crate) struct LfsObject {
     sha256: String,
 }
 
-pub(super) struct Hub {
+pub(crate) struct Hub {
     client: Client,
     endpoint: Url,
     executable: OsString,
@@ -132,7 +140,10 @@ impl Hub {
                 .map_err(|error| Error(format!("cannot read published file {}: {error}", file.rfilename)))?;
             let status = response.status();
             if !status.is_success() {
-                let detail = response.text()?;
+                let detail = response.text().map_err(|error| Error(format!(
+                    "cannot read published file {}: HTTP {status}; cannot read response: {error}",
+                    file.rfilename
+                )))?;
                 return Err(Error(format!("cannot read published file {}: HTTP {status}: {detail}", file.rfilename)));
             }
             let signature = Signature::stream(&mut response)
@@ -178,11 +189,18 @@ impl Hub {
         Self::execute("repo create", repo, command)
     }
 
-    pub fn upload(&self, repo: &str, branch: &str, source: &Path, destination: &str) -> Result<()> {
+    pub fn upload(
+        &self,
+        repo: &str,
+        branch: &str,
+        source: &Path,
+        destination: &str,
+        message: &str,
+    ) -> Result<()> {
         let mut command = self.command();
         command.args(["upload", repo]).arg(source).arg(destination).args([
             "--repo-type", "model", "--revision", branch, "--private", "--quiet",
-            "--commit-message", "Publish qualified personal-voice artifact",
+            "--commit-message", message,
         ]);
         Self::execute("upload", repo, command)
     }

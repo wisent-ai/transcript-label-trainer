@@ -9,10 +9,7 @@ use sha2::{Digest, Sha256};
 use super::MODEL_CONTRACT;
 use crate::util::{Error, Result};
 
-mod files;
-use files::Signature;
-mod hub;
-use hub::{Hub, ModelInfo};
+use crate::hub::{Hub, ModelInfo, Signature};
 
 pub struct Publication<'a> {
     pub model: &'a Path,
@@ -105,7 +102,7 @@ pub fn publish_adapter(request: Publication<'_>) -> Result<Value> {
         if let Some(report) = refusal(repository, &info) {
             return Ok(report);
         }
-        hub.upload(repository, &branch, source, destination)
+        hub.upload(repository, &branch, source, destination, "Publish qualified personal-voice artifact")
             .map_err(|error| Error(format!("publication {repository}@{branch}, path {destination:?}: {error}")))?;
     }
     let info = hub.info(repository, Some(&branch), true)?

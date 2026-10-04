@@ -157,19 +157,39 @@ The job fine-tunes the pinned Qwen3-4B base, evaluates the untouched reviewed
 split, converts and quantizes the model to Q4_K_M GGUF, and runs an independent
 Brama `--best` audit over every held-out prediction. Publication requires at
 least 99% valid JSON, 90% action accuracy, 88% joint accuracy, perfect finish
-precision, and a passing independent audit. Qualified artifacts are
-content-addressed under
-`stado://releases/oko/models/lifecycle-qwen3-4b/<model-sha256>`; an unqualified
-candidate remains available for diagnosis but cannot enter that namespace.
-`transcript-label-trainer release-publish <job-output-uri> --model lifecycle`
-moves a qualified job output there.
+precision, and a passing independent audit.
+
+Oko asks Brama for this model under the alias `OKO_LIFECYCLE_MODEL_ALIAS`
+declares, and Brama routes that alias to a model server on a fleet GPU host. The
+weights therefore go where that host fetches them, a private Hugging Face
+repository, and never into the fleet's release store, which lives on the vault
+host where no model runs:
+
+```sh
+transcript-label-trainer release-publish <job-output-uri> --model lifecycle \
+  --repo OWNER/PRIVATE_REPOSITORY
+```
+
+The command joins the verified parts into the qualified artifact, uploads it
+with `model-manifest.json` and every evidence file as one new
+`lifecycle-publication-<random>` branch, reads that branch's immutable revision
+back and checks each file's size and SHA-256 against what it verified. It prints
+`repo_id`, `revision`, `artifact`, `digest` and `verified_files`; the serving
+host pins that revision. `HF_TOKEN` authenticates the upload. An unqualified
+candidate remains in its job output for diagnosis and is never published.
 
 `release-publish` refuses, with exit 1 and a sentence naming the cause, when the
 manifest is not qualified, does not require `final-judge.json`, names another
 contract, when the judge did not pass or is incomplete, when any evidence file
 or model part differs from the manifest's SHA-256, or when the ordered parts do
-not rebuild the qualified artifact. Objects already present at the digest
-coordinate are left untouched, so a rerun resumes where a failed one stopped.
+not rebuild the qualified artifact. It also refuses before downloading anything
+when `--model lifecycle` has no `--repo` (`the lifecycle model is served from a
+GPU host, which fetches it from a private Hugging Face repository: name it with
+--repo OWNER/REPOSITORY; the fleet's release store is not a model store`), when
+`--model goal` is given a `--repo` (the goal model ships inside Jeden Desktop
+through the release channel), and when the named repository exists and is
+public. For the goal model, objects already present at the digest coordinate are
+left untouched, so a rerun resumes where a failed one stopped.
 
 Qualification is measured on the shipped inference surface, not only in the
 trainer. For the qualified lifecycle release, the 485-row held-out split on

@@ -10,6 +10,7 @@ mod goal;
 mod gui;
 #[cfg(feature = "hf")]
 mod hf;
+mod hub;
 mod humanizer;
 mod jobs;
 mod lake;
