@@ -97,8 +97,7 @@ impl BramaClient {
         let status = response.status();
         let text = response.text().unwrap_or_default();
         if status.as_u16() != 200 {
-            let detail = truncate_chars(&text, 300);
-            let detail = detail.trim();
+            let detail = text.trim();
             let detail = if detail.is_empty() {
                 "(empty body)"
             } else {
@@ -121,7 +120,7 @@ impl BramaClient {
             Some(content) => Ok(content.trim().to_string()),
             None => bail!(
                 "Brama response was not an OpenAI chat completion: {}",
-                truncate_chars(&text, 300)
+                text.trim()
             ),
         }
     }

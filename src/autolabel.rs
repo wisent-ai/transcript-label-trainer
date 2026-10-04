@@ -117,11 +117,7 @@ pub fn autolabel(
         let answer = match client.chat(&model_id, &prompt) {
             Ok(answer) => answer,
             Err(error) => {
-                failures.push(record(
-                    session_id,
-                    "error",
-                    brama::truncate_chars(&error.0, 200),
-                ));
+                failures.push(record(session_id, "error", error.0.clone()));
                 continue;
             }
         };
@@ -129,10 +125,7 @@ pub fn autolabel(
             failures.push(record(
                 session_id,
                 "error",
-                format!(
-                    "unparseable answer: {}",
-                    jobs::py_repr_str(&brama::truncate_chars(&answer, 80))
-                ),
+                format!("unparseable answer: {}", jobs::py_repr_str(&answer)),
             ));
             continue;
         };
@@ -146,10 +139,7 @@ pub fn autolabel(
                     failures.push(record(
                         session_id,
                         "error",
-                        format!(
-                            "final label review failed: {}",
-                            brama::truncate_chars(&error.0, 160)
-                        ),
+                        format!("final label review failed: {}", error.0),
                     ));
                     continue;
                 }
@@ -162,7 +152,7 @@ pub fn autolabel(
                     "error",
                     format!(
                         "unparseable final label review: {}",
-                        jobs::py_repr_str(&brama::truncate_chars(&answer, 80))
+                        jobs::py_repr_str(&answer)
                     ),
                 ));
                 continue;
@@ -188,11 +178,7 @@ pub fn autolabel(
             AUTOLABEL_NOTE
         };
         if let Err(error) = lake::label_add(session_id, aspect, &value, &source, note) {
-            failures.push(record(
-                session_id,
-                "error",
-                brama::truncate_chars(&error.0, 200),
-            ));
+            failures.push(record(session_id, "error", error.0.clone()));
             continue;
         }
         let mut labeled = Map::new();

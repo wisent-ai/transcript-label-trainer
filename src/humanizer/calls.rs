@@ -12,16 +12,13 @@ use std::thread;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::brama::{truncate_chars, BramaClient, Message};
+use crate::brama::{BramaClient, Message};
 use crate::util::{Error, Result};
 
 /// Calls Brama makes for one question before the row is given up: the first
 /// ask plus three more, as the Python preparation allowed. A row that fails
 /// every attempt is counted with its last error, never dropped silently.
 const ATTEMPTS: usize = 4;
-
-/// Longest error excerpt kept in a rejection reason or failure count.
-pub(crate) const ERROR_EXCERPT: usize = 160;
 
 /// Every non-blank line of `path`, parsed as `T`; the line number names the
 /// row that does not parse.
@@ -50,16 +47,10 @@ pub(crate) fn json_object(answer: &str, what: &str) -> Result<serde_json::Map<St
     let start = answer.find('{');
     let end = answer.rfind('}');
     let (Some(start), Some(end)) = (start, end) else {
-        crate::bail!(
-            "{what} is not JSON: {}",
-            truncate_chars(answer, ERROR_EXCERPT)
-        );
+        crate::bail!("{what} is not JSON: {answer}");
     };
     if end < start {
-        crate::bail!(
-            "{what} is not JSON: {}",
-            truncate_chars(answer, ERROR_EXCERPT)
-        );
+        crate::bail!("{what} is not JSON: {answer}");
     }
     match serde_json::from_str::<Value>(&answer[start..=end])? {
         Value::Object(object) => Ok(object),

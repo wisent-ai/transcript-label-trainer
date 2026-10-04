@@ -11,10 +11,10 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::anchors::valid_source;
-use super::calls::{ask, fan_out, json_object, read_jsonl, ERROR_EXCERPT};
+use super::calls::{ask, fan_out, json_object, read_jsonl};
 use super::prompts::{REVIEW_PROMPT, SYSTEM_PROMPT, TEACHER_PROMPT};
 use super::{TargetRow, REPORT_SCHEMA_VERSION};
-use crate::brama::{truncate_chars, BramaClient};
+use crate::brama::BramaClient;
 use crate::util::{Error, Result};
 
 /// Rows prepared between two progress lines.
@@ -68,7 +68,7 @@ fn pair(
 ) -> Result<Value, String> {
     let target = row.target.trim();
     let budget = (target.chars().count() * 2).clamp(TEACHER_MIN_TOKENS, TEACHER_MAX_TOKENS);
-    let excerpt = |error: Error| format!("error:{}", truncate_chars(&error.0, ERROR_EXCERPT));
+    let excerpt = |error: Error| format!("error:{}", error.0);
     let source = ask(
         client,
         teacher,

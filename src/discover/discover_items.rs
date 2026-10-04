@@ -59,7 +59,7 @@ pub fn discover(
             Err(error) => {
                 failures.push(json!({
                     "chunk": chunks,
-                    "error": brama::truncate_chars(&error.0, 200),
+                    "error": error.0,
                 }));
                 continue;
             }
@@ -67,10 +67,7 @@ pub fn discover(
         let Some(proposals) = parse_proposals(&answer) else {
             failures.push(json!({
                 "chunk": chunks,
-                "error": format!(
-                    "unparseable proposals: {}",
-                    brama::truncate_chars(&answer, 120)
-                ),
+                "error": format!("unparseable proposals: {answer}"),
             }));
             continue;
         };
@@ -171,10 +168,7 @@ pub fn discover(
                         review_failed += 1;
                         failures.push(json!({
                             "aspect": aspect,
-                            "error": format!(
-                                "unparseable best review: {}",
-                                brama::truncate_chars(&answer, 80)
-                            ),
+                            "error": format!("unparseable best review: {answer}"),
                         }));
                         continue;
                     }
@@ -183,10 +177,7 @@ pub fn discover(
                     review_failed += 1;
                     failures.push(json!({
                         "aspect": aspect,
-                        "error": format!(
-                            "best review failed: {}",
-                            brama::truncate_chars(&error.0, 160)
-                        ),
+                        "error": format!("best review failed: {}", error.0),
                     }));
                     continue;
                 }

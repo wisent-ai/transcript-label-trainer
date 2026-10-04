@@ -42,7 +42,7 @@ pub(crate) fn judge_sessions(
                     session_id,
                     &format!(
                         "unparseable judge answer: {}",
-                        jobs::py_repr_str(&brama::truncate_chars(&answer, 80))
+                        jobs::py_repr_str(&answer)
                     ),
                 )),
             },
@@ -138,7 +138,7 @@ pub(crate) fn best_review_sessions(
                     &session_id,
                     &format!(
                         "unparseable final review answer: {}",
-                        jobs::py_repr_str(&brama::truncate_chars(&answer, 80))
+                        jobs::py_repr_str(&answer)
                     ),
                 )),
             },

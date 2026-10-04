@@ -10,10 +10,10 @@ use std::path::Path;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
-use super::calls::{ask, fan_out, json_object, read_jsonl, ERROR_EXCERPT};
+use super::calls::{ask, fan_out, json_object, read_jsonl};
 use super::prompts::JUDGE_PROMPT;
 use super::{MODEL_CONTRACT, REPORT_SCHEMA_VERSION};
-use crate::brama::{truncate_chars, BramaClient};
+use crate::brama::BramaClient;
 use crate::util::{Error, Result};
 
 /// Cases judged between two progress lines.
@@ -143,7 +143,7 @@ pub fn audit_outputs(
             Ok(record) => records.push(record),
             Err(error) => {
                 *failures
-                    .entry(truncate_chars(&error.0, ERROR_EXCERPT))
+                    .entry(error.0.clone())
                     .or_default() += 1
             }
         }
