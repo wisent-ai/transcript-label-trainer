@@ -42,9 +42,9 @@ pub fn execute_goal_model(dataset_path: &Path, compute_target: &str) -> Result<G
         OsString::from("--output-uri"),
         OsString::from(&output_uri),
         OsString::from("--secret-env"),
-        OsString::from(SIGNING_SECRET),
+        signing_secret()?,
         OsString::from("--secret-env"),
-        OsString::from(BEARER_SECRET),
+        bearer_secret()?,
         OsString::from(command),
     ];
     let submitted = run(&stado, &args)?;
@@ -137,9 +137,9 @@ pub fn execute_lifecycle_model(
         OsString::from("--output-uri"),
         OsString::from(&output_uri),
         OsString::from("--secret-env"),
-        OsString::from(SIGNING_SECRET),
+        signing_secret()?,
         OsString::from("--secret-env"),
-        OsString::from(BEARER_SECRET),
+        bearer_secret()?,
         OsString::from(command),
     ];
     let submitted = run(&stado, &args)?;
@@ -228,11 +228,11 @@ pub fn execute_humanizer_model(
         OsString::from("--output-uri"),
         OsString::from(&output_uri),
         OsString::from("--secret-env"),
-        OsString::from(SIGNING_SECRET),
+        signing_secret()?,
         OsString::from("--secret-env"),
-        OsString::from(BEARER_SECRET),
+        bearer_secret()?,
         OsString::from("--secret-env"),
-        OsString::from(HUGGINGFACE_SECRET),
+        secret_env("HF_TOKEN", "TLT_HF_TOKEN_ROLE", "the Hugging Face token")?,
         OsString::from(command),
     ];
     let submitted = run(&stado, &args)?;

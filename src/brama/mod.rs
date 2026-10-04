@@ -13,18 +13,18 @@
 //!   "{agent_id}:{timestamp}:{body_hash}" keyed by the shared secret);
 //! - bearer Authorization when the gateway demands one (the fleet gateway does).
 //!
-//! Credential resolution mirrors jeden's launcher: environment first
-//! (WISENT_APP_AGENT_AUTH_SECRET / BRAMA_TOKEN), then Skarbiec — the signing
-//! secret is item `agent:wisent-app` field `value` (vault-first, stado
-//! fallback), the bearer is item `jeden-model-router` field `token`. Secret
-//! values are only ever held in memory — never printed, never logged.
+//! Credential resolution: environment first (WISENT_APP_AGENT_AUTH_SECRET /
+//! BRAMA_TOKEN), then the vault role each is declared under —
+//! `TLT_BRAMA_AGENT_ROLE` and `TLT_BRAMA_TOKEN_ROLE`, each `ROLE#FIELD`, read
+//! with `stado credentials get --role`. No item and no agent is named in
+//! code. Secret values are only ever held in memory — never printed, never
+//! logged.
 //!
 //! Endpoint resolution: BRAMA_URL, then JEDEN_BRAMA_URL, then the BRAMA_URL
 //! line of jeden's own config (~/.jeden/.env — the same value jeden uses), then
 //! Stado's service directory, which derives the address from where the gateway
 //! is placed.
 use std::io::Read;
-use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};

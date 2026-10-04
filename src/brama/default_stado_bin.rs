@@ -2,17 +2,15 @@ use super::*;
 
 pub const DEFAULT_STADO_BIN: &str = "stado";
 
-pub const DEFAULT_AGENT_ITEM: &str = "agent:wisent-app";
-
-pub const DEFAULT_TOKEN_ITEM: &str = "jeden-model-router";
-
-// Catalogue membership is not proof that the configured agent can use a route.
-// Label work uses an operator subscription through Brama, not an unrelated
-// product route or a local fallback. Override the route with --brama-model.
-pub const DEFAULT_MODEL: &str = "codex/gpt-5.6-sol";
-
-/// Strongest active operator subscription route exposed by Brama.
+/// Brama's delegating alias: the strongest operator subscription the caller's
+/// signed identity may use. Which model answers is Brama's route table's
+/// business, never a provider id written here.
 pub const BEST_MODEL: &str = "best";
+
+/// The default teacher. Label work is paid by an operator subscription, so it
+/// asks the same alias the reviewer does; override it with --brama-model or
+/// --teacher-model, or `judge.model` in a job file.
+pub const DEFAULT_MODEL: &str = BEST_MODEL;
 
 pub(crate) const ANSWER_MAX_TOKENS: u32 = 64;
 
@@ -136,72 +134,58 @@ pub(crate) fn resolve_url() -> Result<String> {
     )
 }
 
-/// Read one field of one Skarbiec item; empty string when unavailable.
-///
-/// Vault-first (the gateway verifies against the vault's current revision),
-/// then the managed `stado credentials get` path as fallback — the same order
-/// as jeden's run-with-stado.sh.
-pub(crate) fn skarbiec_read(item: &str, field: &str) -> String {
-    let home = home_dir();
-    let vault = match env_trimmed("SKARBIEC_VAULT_FILE") {
-        value if value.is_empty() => home
-            .join(".stado")
-            .join("skarbiec.vault.json")
-            .to_string_lossy()
-            .into_owned(),
-        value => value,
-    };
-    let skarbiec = match env_trimmed("TLT_SKARBIEC_BIN") {
-        value if value.is_empty() => home
-            .join(".stado")
-            .join("bin")
-            .join("skarbiec")
-            .to_string_lossy()
-            .into_owned(),
-        value => value,
-    };
-    if Path::new(&skarbiec).is_file() && Path::new(&vault).is_file() {
-        let env = [("SKARBIEC_VAULT_FILE", vault)];
-        if let Some((true, stdout)) = run_capture(&skarbiec, &["get", item], &env) {
-            let value = serde_json::from_str::<serde_json::Value>(&stdout)
-                .ok()
-                .and_then(|parsed| parsed.get("fields").cloned())
-                .and_then(|fields| fields.get(field).cloned())
-                .and_then(|value| value.as_str().map(str::to_string))
-                .unwrap_or_default();
-            let value = value.trim();
-            if !value.is_empty() {
-                return value.to_string();
-            }
+/// The vault role and field an environment variable declares as `ROLE#FIELD`.
+/// A role, not an item: the item playing it can be replaced or renamed
+/// without anything here changing. `holds` says what the value is for, so the
+/// refusal tells the operator what to declare.
+pub(crate) fn role_reference(variable: &str, holds: &str) -> Result<(String, String)> {
+    let reference = env_trimmed(variable);
+    match reference.split_once('#') {
+        Some((role, field)) if !role.is_empty() && !field.is_empty() => {
+            Ok((role.to_string(), field.to_string()))
         }
+        _ => bail!(
+            "{variable} must declare the vault role holding {holds} and its field as ROLE#FIELD \
+             (it is {reference:?}); the value is read with `stado credentials get --role ROLE \
+             --field FIELD`"
+        ),
     }
+}
+
+/// Read the secret behind a `ROLE#FIELD` environment variable through Stado,
+/// which selects the one item playing that role. Secret values are held in
+/// memory only. `TLT_SKARBIEC_CONSUMER` and `TLT_SKARBIEC_TOKEN_FILE`, when
+/// set, choose the identity Stado reads as; unset, Stado uses its own.
+pub(crate) fn read_role(variable: &str, holds: &str) -> Result<String> {
+    let (role, field) = role_reference(variable, holds)?;
     let stado = match env_trimmed("TLT_STADO_BIN") {
         value if value.is_empty() => DEFAULT_STADO_BIN.to_string(),
         value => value,
     };
-    let consumer = match env_trimmed("TLT_SKARBIEC_CONSUMER") {
-        value if value.is_empty() => "local-operator".to_string(),
-        value => value,
-    };
-    let token_file = match env_trimmed("TLT_SKARBIEC_TOKEN_FILE") {
-        value if value.is_empty() => home
-            .join(".stado")
-            .join("local-operator-skarbiec-token")
-            .to_string_lossy()
-            .into_owned(),
-        value => value,
-    };
-    let env = [
-        ("WC_SKARBIEC_CONSUMER", consumer),
-        ("WC_SKARBIEC_TOKEN_FILE", token_file),
-    ];
+    let mut env = Vec::new();
+    let consumer = env_trimmed("TLT_SKARBIEC_CONSUMER");
+    if !consumer.is_empty() {
+        env.push(("WC_SKARBIEC_CONSUMER", consumer));
+    }
+    let token_file = env_trimmed("TLT_SKARBIEC_TOKEN_FILE");
+    if !token_file.is_empty() {
+        env.push(("WC_SKARBIEC_TOKEN_FILE", token_file));
+    }
+    let command = format!("{stado} credentials get --role {role} --field {field}");
     match run_capture(
         &stado,
-        &["credentials", "get", "--field", field, item],
+        &["credentials", "get", "--role", &role, "--field", &field],
         &env,
     ) {
-        Some((true, stdout)) => stdout.trim().to_string(),
-        _ => String::new(),
+        Some((true, stdout)) if !stdout.trim().is_empty() => Ok(stdout.trim().to_string()),
+        Some((true, _)) => bail!("{variable}: `{command}` answered an empty value"),
+        Some((false, _)) => bail!(
+            "{variable}: `{command}` was refused; run it to read Stado's reason (no item plays \
+             the role, several do, or this consumer is not granted it)"
+        ),
+        None => bail!(
+            "{variable}: {stado} could not be started; set TLT_STADO_BIN to the stado executable"
+        ),
     }
 }
 

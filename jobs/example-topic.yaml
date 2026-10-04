@@ -49,4 +49,4 @@ eval_split:
 # Brama's `-best` route to audit both these labels and the teacher's opinions.
 # All inference goes through Brama.
 judge:
-  model: codex/gpt-5.6-sol
+  model: best

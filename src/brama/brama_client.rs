@@ -17,33 +17,21 @@ impl BramaClient {
         })
     }
 
+    /// The signing identity and the two secrets come from the environment or
+    /// from the vault roles the environment declares; nothing names an agent
+    /// or an item here.
     pub fn from_env() -> Result<Self> {
-        let agent_id = match env_trimmed("WISENT_APP_AGENT_ID") {
-            value if value.is_empty() => "wisent-app".to_string(),
-            value => value,
-        };
+        let agent_id = env_trimmed("WISENT_APP_AGENT_ID");
+        if agent_id.is_empty() {
+            bail!("WISENT_APP_AGENT_ID is required: the agent identity Brama verifies the signature against")
+        }
         let mut secret = env_trimmed("WISENT_APP_AGENT_AUTH_SECRET");
         if secret.is_empty() {
-            let item = match env_trimmed("TLT_BRAMA_AGENT_ITEM") {
-                value if value.is_empty() => DEFAULT_AGENT_ITEM.to_string(),
-                value => value,
-            };
-            secret = skarbiec_read(&item, "value");
-        }
-        if secret.is_empty() {
-            bail!(
-                "no Brama signing secret: set WISENT_APP_AGENT_AUTH_SECRET, or make \
-                 Skarbiec item '{DEFAULT_AGENT_ITEM}' readable (vault-first via \
-                 ~/.stado/bin/skarbiec, fallback 'stado credentials get')"
-            )
+            secret = read_role("TLT_BRAMA_AGENT_ROLE", "the agent's signing secret")?;
         }
         let mut token = env_trimmed("BRAMA_TOKEN");
         if token.is_empty() {
-            let item = match env_trimmed("TLT_BRAMA_TOKEN_ITEM") {
-                value if value.is_empty() => DEFAULT_TOKEN_ITEM.to_string(),
-                value => value,
-            };
-            token = skarbiec_read(&item, "token");
+            token = read_role("TLT_BRAMA_TOKEN_ROLE", "the Brama bearer")?;
         }
         let url = resolve_url()?;
         Self::new(&url, agent_id, secret, Some(token))

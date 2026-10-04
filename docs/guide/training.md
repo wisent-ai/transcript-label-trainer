@@ -72,13 +72,13 @@ eval_split:                        # optional; ON by default, shown with its def
   fraction: 0.2                    # share of labeled sessions frozen out of training
   seed: 20260808                   # fixed, so the first run's pick is reproducible
 judge:                             # optional; ON by default, shown with its default
-  model: codex/gpt-5.6-sol         # the Brama-routed teacher `evaluate` asks
+  model: best                      # the Brama alias `evaluate` asks
 ```
 
 Every field is validated with a clear error — there are no silent defaults.
 Note that `evaluator: manual` matches only `manual` exactly, not `human` or
 `brama:…`; to train on a teacher's labels, name it, e.g.
-`evaluator: brama:claude-opus-4.6`. Model-sourced labels are never ground
+`evaluator: brama:best`. Model-sourced labels are never ground
 truth unless you explicitly say so, because self-training on the model's own
 predictions is a confirmation loop.
 

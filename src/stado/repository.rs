@@ -4,11 +4,27 @@ pub(crate) const REPOSITORY: &str = "https://github.com/wisent-ai/transcript-lab
 
 pub(crate) const REPO_WORKDIR: &str = "transcript-label-trainer";
 
-pub(crate) const SIGNING_SECRET: &str = "WISENT_APP_AGENT_AUTH_SECRET=jeden-agent-auth#agent_auth_secret";
+/// One `--secret-env` value, `ENV=ROLE#FIELD`: the job's environment variable
+/// and the vault role and field `declared_by` names, so no vault item is
+/// written here and replacing the item changes nothing in the trainer.
+pub(crate) fn secret_env(env: &str, declared_by: &str, holds: &str) -> Result<OsString> {
+    let (role, field) = crate::brama::role_reference(declared_by, holds)?;
+    Ok(OsString::from(format!("{env}={role}#{field}")))
+}
 
-pub(crate) const BEARER_SECRET: &str = "BRAMA_TOKEN=jeden-model-router#token";
+/// The job's signing secret, from the role `TLT_BRAMA_AGENT_ROLE` declares.
+pub(crate) fn signing_secret() -> Result<OsString> {
+    secret_env(
+        "WISENT_APP_AGENT_AUTH_SECRET",
+        "TLT_BRAMA_AGENT_ROLE",
+        "the agent's signing secret",
+    )
+}
 
-pub(crate) const HUGGINGFACE_SECRET: &str = "HF_TOKEN=stado-huggingface#token";
+/// The job's Brama bearer, from the role `TLT_BRAMA_TOKEN_ROLE` declares.
+pub(crate) fn bearer_secret() -> Result<OsString> {
+    secret_env("BRAMA_TOKEN", "TLT_BRAMA_TOKEN_ROLE", "the Brama bearer")
+}
 
 /// Scratch space for one Stado exchange, removed when dropped. It lives in the
 /// ignored `target/scratch/` of the checkout this binary was built from, never
@@ -205,9 +221,9 @@ pub fn execute(job_path: &str, job: &Job, compute_target: &str) -> Result<i32> {
     if job.judge.enabled {
         args.extend([
             OsString::from("--secret-env"),
-            OsString::from(SIGNING_SECRET),
+            signing_secret()?,
             OsString::from("--secret-env"),
-            OsString::from(BEARER_SECRET),
+            bearer_secret()?,
         ]);
     }
     args.push(OsString::from(command));

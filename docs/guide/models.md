@@ -32,12 +32,19 @@ what changed is only that no human reviews the suggestion. Rules:
 - **Failure isolation.** A Brama error or an unparseable answer fails that
   one session, writes nothing for it, and is counted in the final summary
   (`labeled` / `skipped_labeled` / `failed`).
-- The teacher defaults to the Brama route `codex/gpt-5.6-sol`; override it with
-  `--brama-model`. Brama resolves the route and reports unavailable capabilities.
-- Auth mirrors jeden: HMAC-signed requests keyed by the Skarbiec item
-  `agent:wisent-app`, bearer from `jeden-model-router`, endpoint from
-  `BRAMA_URL` (falling back to jeden's own configured URL). Secrets are read
-  into memory only, never printed.
+- The teacher defaults to Brama's `best` alias, the strongest operator
+  subscription the signed identity may use; override it with `--brama-model`.
+  Brama resolves the alias and reports unavailable capabilities.
+- Auth: HMAC-signed requests as `WISENT_APP_AGENT_ID` (required), keyed by
+  `WISENT_APP_AGENT_AUTH_SECRET` or else the vault role `TLT_BRAMA_AGENT_ROLE`
+  declares as `ROLE#FIELD`; the bearer is `BRAMA_TOKEN` or else the role
+  `TLT_BRAMA_TOKEN_ROLE` declares. Roles are read with `stado credentials get
+  --role`, so no vault item is named and replacing one changes nothing here;
+  an unset or malformed variable is refused with its name. The endpoint is
+  `BRAMA_URL` (falling back to jeden's configured URL, then Stado's service
+  directory). Secrets are read into memory only, never printed. A Stado job
+  receives the same roles as `--secret-env ENV=ROLE#FIELD`, plus
+  `TLT_HF_TOKEN_ROLE` for the humanizer's Hugging Face token.
 
 The end-to-end story: autolabel an aspect, then train on the teacher's
 labels by naming the provenance in a job spec:
@@ -45,7 +52,7 @@ labels by naming the provenance in a job spec:
 ```yaml
 name: tasktype-v1
 task: classify what kind of work the session did
-evaluator: brama:codex/gpt-5.6-sol
+evaluator: brama:best
 model: tfidf-logreg
 scope:
   aspect: tasktype
