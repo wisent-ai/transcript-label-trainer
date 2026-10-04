@@ -153,29 +153,21 @@ pub(crate) fn role_reference(variable: &str, holds: &str) -> Result<(String, Str
 }
 
 /// Read the secret behind a `ROLE#FIELD` environment variable through Stado,
-/// which selects the one item playing that role. Secret values are held in
-/// memory only. `TLT_SKARBIEC_CONSUMER` and `TLT_SKARBIEC_TOKEN_FILE`, when
-/// set, choose the identity Stado reads as; unset, Stado uses its own.
+/// which selects the one item playing that role, as Stado's own identity.
+/// Secret values are held in memory only. A scoped consumer named only by
+/// environment could not resolve a role (it cannot list the vault), so no
+/// consumer override is taken here.
 pub(crate) fn read_role(variable: &str, holds: &str) -> Result<String> {
     let (role, field) = role_reference(variable, holds)?;
     let stado = match env_trimmed("TLT_STADO_BIN") {
         value if value.is_empty() => DEFAULT_STADO_BIN.to_string(),
         value => value,
     };
-    let mut env = Vec::new();
-    let consumer = env_trimmed("TLT_SKARBIEC_CONSUMER");
-    if !consumer.is_empty() {
-        env.push(("WC_SKARBIEC_CONSUMER", consumer));
-    }
-    let token_file = env_trimmed("TLT_SKARBIEC_TOKEN_FILE");
-    if !token_file.is_empty() {
-        env.push(("WC_SKARBIEC_TOKEN_FILE", token_file));
-    }
     let command = format!("{stado} credentials get --role {role} --field {field}");
     match run_capture(
         &stado,
         &["credentials", "get", "--role", &role, "--field", &field],
-        &env,
+        &[],
     ) {
         Some((true, stdout)) if !stdout.trim().is_empty() => Ok(stdout.trim().to_string()),
         Some((true, _)) => bail!("{variable}: `{command}` answered an empty value"),
