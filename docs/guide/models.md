@@ -70,7 +70,7 @@ Replace `TARGET` below with the registered Stado GPU target selected for trainin
 ```sh
 transcript-label-trainer goal-model \
   --compute-target TARGET \
-  --limit 1500 --workers 24 --audit-workers 4
+  --limit 1500 --workers N --audit-workers N
 ```
 
 The command generates task and no-task labels with a Brama teacher, then requires
@@ -128,10 +128,10 @@ JSONL outputs:
 ```sh
 transcript-label-trainer lifecycle-review path/to/train.jsonl \
   --output ~/.transcript-label-trainer/lifecycle-model/reviewed-train.jsonl \
-  --split train --brama-model=best --workers 16
+  --split train --brama-model=best --workers N
 transcript-label-trainer lifecycle-review path/to/eval.jsonl \
   --output ~/.transcript-label-trainer/lifecycle-model/reviewed-eval.jsonl \
-  --split eval --brama-model=best --workers 16
+  --split eval --brama-model=best --workers N
 ```
 
 When the decision semantics change, prior source rows are reviewed again rather

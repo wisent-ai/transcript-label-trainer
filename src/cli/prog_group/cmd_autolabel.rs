@@ -169,12 +169,15 @@ pub(crate) fn cmd_humanizer_model(args: &Parsed) -> Result<i32> {
     Ok(job.status)
 }
 
-/// A count the caller must state, at least one.
-fn stated_count(args: &Parsed, flag: &str) -> Result<usize> {
+/// A count the caller states on the command line, at least one. There is no
+/// default: a missing count is refused by its flag's name.
+pub(crate) fn stated_count(args: &Parsed, flag: &str) -> Result<usize> {
     match args.int(flag) {
         Some(value) if value >= 1 => Ok(value as usize),
         Some(value) => Err(Error(format!("{flag} must be at least 1, not {value}"))),
-        None => Err(Error(format!("{flag} is required"))),
+        None => Err(Error(format!(
+            "{flag} N is required on the command line; this command has no default for it"
+        ))),
     }
 }
 

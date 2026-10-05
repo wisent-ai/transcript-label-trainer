@@ -1,17 +1,5 @@
 use super::*;
 
-/// A count the caller states for one run, at least one: how many Brama calls
-/// run in parallel (`--workers`) or how many times one question is asked
-/// before its row is given up (`--attempts`). Neither has a default; the
-/// Brama route's own concurrency and reliability decide what is sensible.
-fn count(args: &Parsed, flag: &str) -> Result<usize> {
-    match args.int(flag) {
-        Some(value) if value >= 1 => Ok(value as usize),
-        Some(value) => Err(Error(format!("{flag} must be at least 1, not {value}"))),
-        None => Err(Error(format!("{flag} is required"))),
-    }
-}
-
 fn count_options() -> [Opt; 2] {
     [
         required("--workers", "N", Kind::Int, "parallel Brama calls".to_string()),
@@ -131,8 +119,8 @@ pub(crate) fn cmd_humanizer_prepare(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.text("--output-dir").unwrap_or_default()),
         teacher,
         reviewer,
-        count(args, "--workers")?,
-        count(args, "--attempts")?,
+        stated_count(args, "--workers")?,
+        stated_count(args, "--attempts")?,
     )?;
     outln!("{}", dumps(&report));
     Ok(0)
@@ -144,8 +132,8 @@ pub(crate) fn cmd_humanizer_audit(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),
         judge,
-        count(args, "--workers")?,
-        count(args, "--attempts")?,
+        stated_count(args, "--workers")?,
+        stated_count(args, "--attempts")?,
     )?;
     outln!("{}", dumps(&summary));
     Ok(i32::from(
