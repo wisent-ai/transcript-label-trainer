@@ -107,8 +107,6 @@ async function refresh() {
     const payload = await readJson(response);
     showPlacement(payload.placement);
     showRetained(payload.corpus);
-    const mib = payload.maxUploadBytes / (1024 * 1024);
-    setText("upload-limit", `${mib} MiB`);
   } catch (error) {
     statusLine.dataset.kind = "error";
     statusLine.textContent = error.message;

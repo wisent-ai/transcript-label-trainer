@@ -41,7 +41,7 @@
         <div class="step">1</div>
         <div>
           <h2 id="import-title">Select a dataset bundle</h2>
-          <p>The file must contain <code>schema_version</code>, one <code>aspect</code>, and nonempty <code>labels</code>. Imports are limited to <strong id="upload-limit">16 MiB</strong> before JSON parsing.</p>
+          <p>The file must contain <code>schema_version</code>, one <code>aspect</code>, and nonempty <code>labels</code>. The whole file is read before JSON parsing.</p>
           <label class="file-picker" for="corpus-file">
             <span>Corpus JSON</span>
             <input id="corpus-file" name="corpus" type="file" accept=".json,application/json" required>

@@ -98,7 +98,7 @@ transcript-label-trainer \
       <dt><code>corpus identity conflict …; no corpus state was changed</code></dt><dd>The content-addressed retained file was modified or replaced. Restore or investigate the retained store; the importer will not overwrite evidence.</dd>
       <dt><code>could not resolve corpus …</code> / <code>corpus is not a regular file</code></dt><dd>The CLI source path is missing, inaccessible, or does not identify a file.</dd>
       <dt><code>invalid corpus registry …</code> / <code>unsupported corpus registry schema …</code> / <code>selects unknown corpus …</code></dt><dd>The persisted registry cannot be trusted or understood. Adoption and status refuse rather than replacing it.</dd>
-      <dt><code>corpus upload must contain 1-16777216 bytes</code></dt><dd>The GUI rejected an empty or oversized request before parsing JSON. CLI reads are bounded only by the filesystem and available memory.</dd>
+      <dt><code>corpus upload is empty</code> / <code>corpus upload carried N bytes but declared Content-Length M</code></dt><dd>The GUI rejected an empty request, or one whose body did not match its declared length, before parsing JSON. Neither the GUI nor the CLI bounds a corpus's size; memory is the only limit.</dd>
       <dt><code>uploaded corpus filename must be a 1-255 character basename</code></dt><dd>The browser-supplied name is empty, too long, a path, or contains control characters.</dd>
     </dl>
 

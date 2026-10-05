@@ -10,8 +10,6 @@ pub(crate) const DOCS_INDEX: &[u8] = include_bytes!("../../docs/index.html");
 
 pub(crate) const CORPUS_DOCS: &[u8] = include_bytes!("../../docs/corpus-import.html");
 
-pub(crate) const MAX_UPLOAD_BYTES: usize = 16 * 1024 * 1024;
-
 pub fn serve(bind: &str, port: i64) -> Result<i32> {
     let ip: IpAddr = bind
         .parse()
@@ -128,13 +126,13 @@ pub(crate) fn handle(mut request: Request, authority: &str, origin: &str, token:
                     &json!({"ok": false, "error": "corpus upload requires Content-Length"}),
                 );
             };
-            if length == 0 || length > MAX_UPLOAD_BYTES {
+            if length == 0 {
                 return respond_json(
                     request,
-                    413,
+                    400,
                     &json!({
                         "ok": false,
-                        "error": format!("corpus upload must contain 1-{MAX_UPLOAD_BYTES} bytes"),
+                        "error": "corpus upload is empty",
                         "report": empty_report(1, 0),
                     }),
                 );
@@ -160,17 +158,17 @@ pub(crate) fn handle(mut request: Request, authority: &str, origin: &str, token:
                 }
             };
             let mut raw = Vec::with_capacity(length);
-            request
-                .as_reader()
-                .take((MAX_UPLOAD_BYTES + 1) as u64)
-                .read_to_end(&mut raw)?;
-            if raw.len() != length || raw.len() > MAX_UPLOAD_BYTES {
+            request.as_reader().read_to_end(&mut raw)?;
+            if raw.len() != length {
                 return respond_json(
                     request,
-                    413,
+                    400,
                     &json!({
                         "ok": false,
-                        "error": "corpus upload length did not match the bounded request",
+                        "error": format!(
+                            "corpus upload carried {} bytes but declared Content-Length {length}",
+                            raw.len()
+                        ),
                         "report": empty_report(1, 0),
                     }),
                 );
@@ -217,7 +215,6 @@ pub(crate) fn state() -> Result<Value> {
         "ok": true,
         "placement": placement::as_dict(),
         "corpus": corpus::status()?,
-        "maxUploadBytes": MAX_UPLOAD_BYTES,
     }))
 }
 

@@ -39,7 +39,7 @@ transcript-label-trainer \
 Only loopback IPs are accepted (`127.0.0.1` by default; `::1` is supported);
 port `0` selects an available port. Requests require the exact listener host,
 API calls require the per-session token, and mutation also requires the exact
-origin. Uploads are capped at 16 MiB before JSON parsing. Importing never starts
+origin. An upload is read whole before JSON parsing. Importing never starts
 training, evaluation, inference, teacher/judge work, or a fleet job. Open the
 served **Documentation** navigation or read
 [`docs/corpus-import.html`](../../docs/corpus-import.html for the exact schema,

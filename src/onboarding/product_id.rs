@@ -16,14 +16,6 @@ pub(crate) const FIRST_SUCCESS_FACT: &str = "label_suggestion_emitted";
 /// publisher discovers at `origin/main`.
 pub(crate) const DEFINITION: &str = include_str!("../../onboarding_first_use.json");
 
-/// Suggestions the walkthrough asks for: enough to read on one screen, and
-/// the same code path `infer --limit` takes.
-pub(crate) const WALKTHROUGH_LIMIT: i64 = 5;
-
-/// The published contract's own screen ceiling, used here only to keep a walk
-/// over a republished definition finite.
-pub(crate) const MAX_STEPS: usize = 128;
-
 pub fn onboarding(
     reset: bool,
     yes: bool,
@@ -138,13 +130,10 @@ pub fn onboarding(
             Some("first_success") => {
                 let aspect = trained_aspect()?
                     .ok_or_else(|| Error("no trained aspect to suggest labels for".into()))?;
-                report.note(&format!(
-                    "Running: transcript-label-trainer infer --aspect {aspect} \
-                     --limit {WALKTHROUGH_LIMIT}"
-                ));
+                report.note(&format!("Running: transcript-label-trainer infer --aspect {aspect}"));
                 // The product's own inference path, which is what records the
                 // first-success fact when it emits suggestions.
-                let suggestions = match model::infer(&aspect, None, Some(WALKTHROUGH_LIMIT)) {
+                let suggestions = match model::infer(&aspect, None, None) {
                     Ok(suggestions) => suggestions,
                     Err(error) => {
                         report.note(&format!("Suggestions could not be emitted: {error}"));
@@ -232,9 +221,17 @@ pub(crate) fn record(aspect: &str, suggestions: usize) -> Result<()> {
     }
     evidence.insert(FIRST_SUCCESS_FACT.to_string(), Value::Bool(true));
 
-    for _ in 0..MAX_STEPS {
+    // A republished definition could route back to a screen already passed;
+    // a second visit is a loop, so the walk stops there and names it.
+    let mut visited = std::collections::HashSet::new();
+    loop {
         let screen_id = string_field(&state, "current_screen_id")
             .ok_or_else(|| Error("onboarding state has no current screen".into()))?;
+        if !visited.insert(screen_id.clone()) {
+            return Err(Error(format!(
+                "published journey returns to screen {screen_id} without reaching a final screen"
+            )));
+        }
         let screen = screen_by_id(&definition, &screen_id)?.clone();
         if transitions(&screen).is_empty() {
             if !complete(&screen, &mut state, &evidence, &revision)? {
@@ -247,7 +244,6 @@ pub(crate) fn record(aspect: &str, suggestions: usize) -> Result<()> {
         advance(&definition, &screen, &mut state, &evidence, &revision)?
             .ok_or_else(|| Error("published journey has no eligible next screen".into()))?;
     }
-    Err(Error("published journey does not reach a final screen".into()))
 }
 
 /// The aspect the walkthrough demonstrates. Any aspect `info` reports a
