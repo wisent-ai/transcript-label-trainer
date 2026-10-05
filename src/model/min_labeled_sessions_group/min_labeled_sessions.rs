@@ -174,6 +174,7 @@ pub(crate) fn synthetic_job(name: &str, aspect: &str, eval_split: jobs::EvalSpli
             enabled: false,
             model: None,
         },
+        training: None,
     }
 }
 

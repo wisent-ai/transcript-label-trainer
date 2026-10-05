@@ -5,10 +5,12 @@
 //! counts as ground truth), WHICH model to train (model), the SCOPE of training
 //! data (scope), and the TASK (free text stored with the artifacts).
 //!
-//! Two more sections govern how the run is judged, and both are ON unless the
-//! spec turns them off: `eval_split` freezes a holdout of labeled sessions that
-//! training never sees, and `judge` has a Brama-routed teacher rule on whether
-//! the trained model's holdout predictions are acceptable.
+//! Two more sections govern how the run is judged. `eval_split` is required:
+//! the spec states the holdout's fraction and seed (or `false`), and that
+//! holdout is frozen out of training; `judge` has a Brama-routed teacher rule
+//! on whether the trained model's holdout predictions are acceptable, on
+//! unless the spec says `judge: false`. A HuggingFace model also states its
+//! `training` settings.
 //!
 //! Every field is validated here; invalid specs fail with clear errors and no
 //! silent defaults.

@@ -61,11 +61,11 @@ pub fn resolve_split(
             true,
         )
     } else {
-        let fraction = job
-            .eval_split
-            .fraction
-            .unwrap_or(jobs::DEFAULT_EVAL_FRACTION);
-        let seed = job.eval_split.seed.unwrap_or(jobs::DEFAULT_EVAL_SEED);
+        // An enabled split always carries the job's stated fraction and seed
+        // (jobs::eval_split refuses a spec without them).
+        let (Some(fraction), Some(seed)) = (job.eval_split.fraction, job.eval_split.seed) else {
+            return Err("eval_split is enabled but states no fraction and seed".into());
+        };
         let chosen = choose_holdout(&session_ids, &values, fraction, seed);
         (chosen, Some(fraction), Some(seed), Some(now_iso()), false)
     };

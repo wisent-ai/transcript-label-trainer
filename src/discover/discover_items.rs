@@ -208,7 +208,10 @@ pub fn discover(
                 format!(
                     "transcript-label-trainer autolabel --aspect {aspect} --values {values_csv} --best"
                 ),
-                format!("transcript-label-trainer train --aspect {aspect}"),
+                format!(
+                    "transcript-label-trainer train --aspect {aspect} \
+                     --eval-split-fraction F --eval-split-seed N"
+                ),
             ]),
         );
         proposals.push(Value::Object(proposal));

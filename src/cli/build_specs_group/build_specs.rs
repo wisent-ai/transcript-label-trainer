@@ -11,8 +11,6 @@ pub(crate) fn build_specs() -> Vec<Spec> {
 
 #[allow(unused_variables)]
 fn training_specs() -> Vec<Spec> {
-    let fraction = float_repr(jobs::DEFAULT_EVAL_FRACTION);
-    let seed = jobs::DEFAULT_EVAL_SEED;
     let teacher = brama::DEFAULT_MODEL;
 
     let train = Spec {
@@ -41,41 +39,40 @@ fn training_specs() -> Vec<Spec> {
                 "--epochs",
                 "EPOCHS",
                 Kind::Float,
-                "HF training epochs (default: 3)".to_string(),
+                "HF training epochs; required with --model".to_string(),
             ),
             option(
                 "--batch-size",
                 "BATCH_SIZE",
                 Kind::Int,
-                "HF batch size (default: 8)".to_string(),
+                "HF batch size; required with --model".to_string(),
             ),
             option(
                 "--lr",
                 "LR",
                 Kind::Float,
-                "HF learning rate (default: 2e-5)".to_string(),
+                "HF learning rate; required with --model".to_string(),
             ),
             option(
                 "--max-length",
                 "MAX_LENGTH",
                 Kind::Int,
-                "HF tokenizer max tokens per session (default: 512)".to_string(),
+                "HF tokenizer max tokens per session; required with --model".to_string(),
             ),
             option(
                 "--eval-split-fraction",
                 "F",
                 Kind::Float,
-                format!(
-                    "share of labeled sessions frozen out of training the first time \
-                     this aspect is trained (default: {fraction}); later runs reuse \
-                     the frozen eval-split.json unchanged"
-                ),
+                "share of labeled sessions (between 0 and 1) frozen out of training the \
+                 first time this aspect is trained; required unless --no-eval-split. Later \
+                 runs reuse the frozen eval-split.json unchanged"
+                    .to_string(),
             ),
             option(
                 "--eval-split-seed",
                 "N",
                 Kind::Int,
-                format!("seed that picks the frozen holdout (default: {seed})"),
+                "seed that picks the frozen holdout; required unless --no-eval-split".to_string(),
             ),
             option(
                 "--no-eval-split",
@@ -90,16 +87,16 @@ fn training_specs() -> Vec<Spec> {
         name: "run",
         help: "execute a declarative training job (YAML spec)".to_string(),
         description: Some(format!(
-            "Execute a declarative training job. Two spec sections are on unless the \
-             spec turns them off. 'eval_split' (fraction: {fraction}, seed: {seed}) \
-             freezes a holdout of labeled sessions into \
-             <training root>/models/<name>/eval-split.json the first time the job \
-             runs; every later run reuses that file unchanged, trains on nothing in \
-             it, and reports it under 'holdout_evaluation' in metrics.json. \
-             'eval_split: false' trains on every labeled session. 'judge' (model: \
-             {teacher}) names the Brama-routed teacher that 'evaluate' asks for a \
-             verdict; 'judge: false' skips it. run prints the resolved job, then the \
-             resolved split, then the metrics."
+            "Execute a declarative training job. 'eval_split' is required: a mapping \
+             with 'fraction' (between 0 and 1) and 'seed' freezes a holdout of labeled \
+             sessions into <training root>/models/<name>/eval-split.json the first time \
+             the job runs; every later run reuses that file unchanged, trains on \
+             nothing in it, and reports it under 'holdout_evaluation' in metrics.json. \
+             'eval_split: false' trains on every labeled session. A HuggingFace 'model' \
+             requires 'training' with epochs, batch_size, learning_rate and max_length; \
+             tfidf-logreg takes none. 'judge' (model: {teacher}) names the Brama-routed \
+             teacher that 'evaluate' asks for a verdict; 'judge: false' skips it. run \
+             prints the resolved job, then the resolved split, then the metrics."
         )),
         positionals: vec![Positional {
             name: "job_file",

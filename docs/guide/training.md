@@ -16,12 +16,16 @@ covers `distilbert-base-multilingual-cased` and `bert-base-multilingual-cased`;
 any other `model_type` fails with a sentence naming those two rather than
 pretending to train.
 
-Transcripts are mixed Polish and English, so prefer a multilingual base model:
+Transcripts are mixed Polish and English, so prefer a multilingual base model.
+Fine-tuning has no default settings: `--epochs`, `--batch-size`, `--lr` and
+`--max-length` are required with `--model` and are recorded in `metrics.json`;
+a missing one is refused by its flag's name.
 
 ```sh
 transcript-label-trainer train --aspect topic \
   --model distilbert-base-multilingual-cased \
-  --epochs 3 --batch-size 8 --lr 2e-5 --max-length 512
+  --epochs E --batch-size B --lr LR --max-length TOKENS \
+  --eval-split-fraction F --eval-split-seed N
 ```
 
 The data path is identical: labels from the lake label store, session text via
@@ -75,14 +79,16 @@ scope:
   since: "2026-07-01"              # optional; label ts must be on/after this
   values: [bugfix, feature, chore] # optional; restrict to these values
   min_text_chars: 200              # optional; skip shorter session texts
-eval_split:                        # optional; ON by default, shown with its defaults
-  fraction: 0.2                    # share of labeled sessions frozen out of training
-  seed: 20260808                   # fixed, so the first run's pick is reproducible
+eval_split:                        # required: fraction and seed, or false
+  fraction: F                      # share (between 0 and 1) frozen out of training
+  seed: N                          # makes the first run's pick reproducible
 judge:                             # optional; ON by default, shown with its default
   model: best                      # the Brama alias `evaluate` asks
 ```
 
 Every field is validated with a clear error — there are no silent defaults.
+A HuggingFace `model` also requires a `training` section with `epochs`,
+`batch_size`, `learning_rate` and `max_length`; `tfidf-logreg` refuses one.
 Note that `evaluator: manual` matches only `manual` exactly, not `human` or
 `brama:…`; to train on a teacher's labels, name it, e.g.
 `evaluator: brama:best`. Model-sourced labels are never ground
@@ -103,15 +109,16 @@ copy of the spec (`job.yaml`), and `metrics.json` carries the job metadata.
 ## The frozen evaluation split, and a Brama judge on top of it
 
 Comparing two models over time only means something when both were scored on
-the same untouched sessions. So every job and every `train` freezes a holdout
-**by default** — you have to say `eval_split: false` to train on everything —
-and the chosen session ids are written once to
-`<training root>/models/<name>/eval-split.json`:
+the same untouched sessions. So every job and every `train` states a holdout —
+`eval_split` with a `fraction` and `seed` (flags `--eval-split-fraction` and
+`--eval-split-seed` for `train`), or `eval_split: false` / `--no-eval-split` to
+train on everything; the trainer chooses neither number — and the chosen
+session ids are written once to `<training root>/models/<name>/eval-split.json`:
 
 ```json
 {
-  "fraction": 0.2,
-  "seed": 20260808,
+  "fraction": F,
+  "seed": N,
   "created_at": "2026-08-08T22:14:07Z",
   "session_ids": ["019f3a44-…", "session_95aaaf37-…"]
 }
@@ -151,7 +158,7 @@ transcript-label-trainer evaluate topic-v1 --best
 
 ```
 topic-v1 (aspect: topic, backend: sklearn):
-    frozen split:  5 session(s), fraction=0.2, seed=20260808, created 2026-08-08T22:14:07Z
+    frozen split:  5 session(s), fraction=F, seed=N, created 2026-08-08T22:14:07Z
     split file:    /…/models/topic-v1/eval-split.json
     holdout:       accuracy=0.6 on 5 session(s)
         agent: 3/3 correct
@@ -190,7 +197,7 @@ Rules, mirroring `autolabel`:
 - Auth is `brama.rs`'s single HMAC/Skarbiec path — the same one `autolabel`
   uses. There is no second credential route.
 
-`train` takes the same split as flags: `--eval-split-fraction`,
-`--eval-split-seed`, `--no-eval-split`. `evaluate <aspect>` then scores it the
-same way.
+`train` takes the same split as flags: `--eval-split-fraction` and
+`--eval-split-seed` are required unless `--no-eval-split` is given. `evaluate
+<aspect>` then scores it the same way.
 

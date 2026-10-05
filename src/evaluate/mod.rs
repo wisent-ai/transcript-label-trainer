@@ -9,7 +9,7 @@
 //! to the artifacts. Every later run of the same job reads that file back:
 //! sessions labeled since then can only join the training side, a session
 //! already in the holdout is never trained on, and the file is never rewritten.
-//! It is on by default (`eval_split: false` in the job spec turns it off).
+//! The job states its fraction and seed (`eval_split: false` turns it off).
 //!
 //! **The judge.** Accuracy on the holdout says how often the model matched the
 //! ground-truth label; it does not say whether the label it chose was

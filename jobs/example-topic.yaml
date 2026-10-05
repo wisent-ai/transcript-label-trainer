@@ -10,9 +10,10 @@
 #   the SCOPE of training data     -> scope (aspect plus optional filters)
 #   the TASK                       -> task (free text stored with the artifacts)
 #
-# Two more sections are ON by default and are written out below only to show
-# their defaults: eval_split (the frozen holdout training never sees) and
-# judge (the Brama teacher that rules on the result in `evaluate`).
+# eval_split is required and has no default: state the holdout share and seed
+# (or `eval_split: false`). judge is on unless the spec says `judge: false`.
+# A HuggingFace model also needs a `training` section (epochs, batch_size,
+# learning_rate, max_length); tfidf-logreg takes none.
 #
 # Run it with:  transcript-label-trainer run jobs/example-topic.yaml
 # Run it on a Stado target with:
@@ -33,15 +34,17 @@ scope:
   # values: [bugfix, feature, chore]  # only these label values
   # min_text_chars: 200               # skip sessions with shorter text
 
-# The frozen evaluation split, on by default. The holdout is chosen once,
-# written to $TLT_HOME/models/topic-v1/eval-split.json, and reused by every
-# later run of this job: sessions labeled later can only join the training
-# side, and nothing in the file is ever trained on. Both fields are optional;
-# these are the defaults. Use `eval_split: false` to train on every labeled
-# session instead — then there is nothing for `evaluate` to score.
+# The frozen evaluation split. The holdout is chosen once from the fraction
+# (between 0 and 1) and seed stated here, written to
+# $TLT_HOME/models/topic-v1/eval-split.json, and reused by every later run of
+# this job: sessions labeled later can only join the training side, and
+# nothing in the file is ever trained on. Both fields are yours to state; the
+# trainer chooses neither and refuses this file until they are filled in. Use
+# `eval_split: false` to train on every labeled session instead — then there
+# is nothing for `evaluate` to score.
 eval_split:
-  fraction: 0.2
-  seed: 20260808
+  fraction:
+  seed:
 
 # The Brama teacher that `transcript-label-trainer evaluate topic-v1` asks
 # whether the model's holdout predictions are acceptable. On by default;

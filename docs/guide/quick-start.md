@@ -73,17 +73,19 @@ root and outside the lake; `--reset` replays the journey. The journey continues
 through training to real label suggestions, which are recorded by `infer` only
 when emitted.
 
-Train one aspect from the manual labels in the lake:
+Train one aspect from the manual labels in the lake. The frozen holdout is
+yours to state: `--eval-split-fraction` (a share between 0 and 1) and
+`--eval-split-seed`, or `--no-eval-split` to train on every labeled session.
 
 ```sh
-transcript-label-trainer train --aspect reviewed
+transcript-label-trainer train --aspect reviewed \
+  --eval-split-fraction F --eval-split-seed N
 ```
 
 With too few labeled sessions this fails cleanly, stating the minimum and the
 actual count — that is correct behavior, not a crash. The minimum is 8 labeled
-sessions across at least 2 distinct values *on the training side*: a fifth of
-the labels is frozen out of training by default, so in practice about 10
-labeled sessions get you started. `--no-eval-split` trains on all of them.
+sessions across at least 2 distinct values *on the training side*, so the
+holdout you state comes on top of that.
 
 Emit suggestions for sessions that have no label on that aspect yet:
 

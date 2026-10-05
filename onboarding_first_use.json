@@ -2,11 +2,11 @@
   "schema_version": 1,
   "product_id": "transcript-label-trainer",
   "journey_id": "first-use",
-  "journey_version": "2026-09-05.1",
+  "journey_version": "2026-10-05.1",
   "entry_screen_id": "promise",
   "first_success_fact": "label_suggestion_emitted",
-  "published_at": "2026-09-05T00:00:00Z",
-  "source_revision": "transcript-label-trainer-first-use-2026-09-05.1",
+  "published_at": "2026-10-05T00:00:00Z",
+  "source_revision": "transcript-label-trainer-first-use-2026-10-05.1",
   "screens": [
     {
       "screen_id": "promise",
@@ -108,8 +108,8 @@
       "presentation": {
         "renderer": "first_action",
         "title": "Train one aspect from the labels you already made",
-        "body": "One classifier per aspect, TF-IDF and logistic regression by default, trains locally. It needs enough real labeled sessions over at least two values; the trainer never pads the corpus with sample rows. This step is satisfied only once a trained artifact exists under the training root.",
-        "command": "transcript-label-trainer train --aspect reviewed"
+        "body": "One classifier per aspect, TF-IDF and logistic regression by default, trains locally. It needs enough real labeled sessions over at least two values; the trainer never pads the corpus with sample rows. State the frozen holdout yourself: its share (between 0 and 1) and seed, or --no-eval-split to train on every labeled session. This step is satisfied only once a trained artifact exists under the training root.",
+        "command": "transcript-label-trainer train --aspect reviewed --eval-split-fraction F --eval-split-seed N"
       }
     },
     {

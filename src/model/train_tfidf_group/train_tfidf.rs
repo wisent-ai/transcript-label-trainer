@@ -80,10 +80,7 @@ pub(crate) const HF_FEATURE_MISSING: &str = "fine-tuning with --model requires t
 pub(crate) fn train_hf(
     plan: &Plan,
     model_id: &str,
-    epochs: f64,
-    batch_size: usize,
-    lr: f64,
-    max_length: usize,
+    training: &jobs::HfTraining,
 ) -> Result<Value, TrainFailure> {
     let (texts, values) = side(plan, &plan.split.train_index);
     let counts = class_counts(values.iter().map(String::as_str));
@@ -91,12 +88,13 @@ pub(crate) fn train_hf(
     let out_dir = aspect_dir(&plan.out_name)?;
     std::fs::create_dir_all(&out_dir).map_err(Error::from)?;
 
+    let max_length = training.max_length;
     let config = crate::hf::TrainConfig {
         aspect: &plan.aspect,
         model_id,
-        epochs,
-        batch_size,
-        lr,
+        epochs: training.epochs,
+        batch_size: training.batch_size,
+        lr: training.learning_rate,
         max_length,
     };
     let trained = crate::hf::train(&out_dir, &texts, &values, &config)?;
@@ -145,10 +143,7 @@ pub(crate) fn train_hf(
 pub(crate) fn train_hf(
     _plan: &Plan,
     _model_id: &str,
-    _epochs: f64,
-    _batch_size: usize,
-    _lr: f64,
-    _max_length: usize,
+    _training: &jobs::HfTraining,
 ) -> Result<Value, TrainFailure> {
     Err(TrainFailure::Failed(Error(HF_FEATURE_MISSING.to_string())))
 }
@@ -157,14 +152,12 @@ pub(crate) fn train_hf(
 // train
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::too_many_arguments)]
+/// Train one aspect from the command line. `training` carries the HuggingFace
+/// settings the caller stated and is required exactly when `model_id` is set.
 pub fn train(
     aspect: &str,
     model_id: Option<&str>,
-    epochs: f64,
-    batch_size: usize,
-    lr: f64,
-    max_length: usize,
+    training: Option<&jobs::HfTraining>,
     eval_split: &Value,
 ) -> Result<Value, TrainFailure> {
     let eval_split: jobs::EvalSplit =
@@ -179,9 +172,13 @@ pub fn train(
         None,
         None,
     )?;
-    match model_id {
-        None => train_tfidf(&plan),
-        Some(model_id) => train_hf(&plan, model_id, epochs, batch_size, lr, max_length),
+    match (model_id, training) {
+        (None, _) => train_tfidf(&plan),
+        (Some(model_id), Some(training)) => train_hf(&plan, model_id, training),
+        (Some(model_id), None) => Err(format!(
+            "fine-tuning {model_id} needs --epochs, --batch-size, --lr and --max-length"
+        )
+        .into()),
     }
 }
 

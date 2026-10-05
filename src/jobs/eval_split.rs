@@ -1,11 +1,10 @@
 use super::*;
 
-/// Validate the eval_split section. Absent means the default, on.
+/// Validate the eval_split section. It is required: a mapping with both
+/// `fraction` and `seed`, or `false` to train on every labeled session. The
+/// holdout is the job's to state; nothing here chooses its size or seed.
 pub(crate) fn eval_split(raw: &serde_yaml::Mapping) -> Result<EvalSplit> {
-    let value = get_raw(raw, "eval_split");
-    let value = match value {
-        None | Some(Yaml::Null) => return Ok(default_eval_split()),
-        Some(Yaml::Bool(true)) => return Ok(default_eval_split()),
+    let value = match get_raw(raw, "eval_split") {
         Some(Yaml::Bool(false)) => {
             return Ok(EvalSplit {
                 enabled: false,
@@ -13,27 +12,26 @@ pub(crate) fn eval_split(raw: &serde_yaml::Mapping) -> Result<EvalSplit> {
                 seed: None,
             })
         }
-        Some(other) => other,
+        Some(Yaml::Mapping(mapping)) => mapping,
+        _ => bail!(
+            "'eval_split' is required: a mapping with 'fraction' and 'seed', or false \
+             to train on every labeled session; the job states its holdout, \
+             transcript-label-trainer chooses none"
+        ),
     };
-    let Yaml::Mapping(mapping) = value else {
-        bail!(
-            "'eval_split' must be a mapping with 'fraction' and/or 'seed', \
-             true for the defaults, or false to train on every labeled session"
-        )
-    };
-    let unknown = unknown_keys(mapping, &EVAL_SPLIT_KEYS);
+    let unknown = unknown_keys(value, &EVAL_SPLIT_KEYS);
     if !unknown.is_empty() {
         bail!("unknown eval_split field(s): {}", unknown.join(", "))
     }
 
-    let fraction = match get(mapping, "fraction") {
-        None => DEFAULT_EVAL_FRACTION,
+    let fraction = match get(value, "fraction") {
+        None => bail!("eval_split.fraction is required (a share between 0 and 1)"),
         Some(Yaml::Number(number)) => {
             let fraction = number.as_f64().unwrap_or(f64::NAN);
-            if !(fraction > 0.0 && fraction <= MAX_EVAL_FRACTION) {
+            // Both sides must hold sessions, so 0 and 1 are the only bounds.
+            if !(fraction > 0.0 && fraction < 1.0) {
                 bail!(
-                    "eval_split.fraction must be greater than 0 and at most {}, got {}",
-                    float_repr(MAX_EVAL_FRACTION),
+                    "eval_split.fraction must be greater than 0 and less than 1, got {}",
                     py_repr(&Yaml::Number(number.clone()))
                 )
             }
@@ -47,8 +45,8 @@ pub(crate) fn eval_split(raw: &serde_yaml::Mapping) -> Result<EvalSplit> {
         }
     };
 
-    let seed = match get(mapping, "seed") {
-        None => DEFAULT_EVAL_SEED,
+    let seed = match get(value, "seed") {
+        None => bail!("eval_split.seed is required (a non-negative integer)"),
         Some(Yaml::Number(number)) if number.is_i64() || number.is_u64() => {
             match number.as_i64().filter(|seed| *seed >= 0) {
                 Some(seed) => seed,
@@ -71,6 +69,48 @@ pub(crate) fn eval_split(raw: &serde_yaml::Mapping) -> Result<EvalSplit> {
         fraction: Some(fraction),
         seed: Some(seed),
     })
+}
+
+/// Validate the training section: required with all four settings for a
+/// HuggingFace model, refused for the TF-IDF backend, which takes none.
+pub(crate) fn training(raw: &serde_yaml::Mapping, model: &str) -> Result<Option<HfTraining>> {
+    let section = get(raw, "training");
+    if model == SKLEARN_MODEL {
+        if section.is_some() {
+            bail!("'training' applies to a HuggingFace model; {SKLEARN_MODEL} takes no training settings")
+        }
+        return Ok(None);
+    }
+    let Some(Yaml::Mapping(mapping)) = section else {
+        bail!(
+            "'training' is required for HuggingFace model {}: a mapping with {}",
+            py_repr_str(model),
+            TRAINING_KEYS.join(", ")
+        )
+    };
+    let unknown = unknown_keys(mapping, &TRAINING_KEYS);
+    if !unknown.is_empty() {
+        bail!("unknown training field(s): {}", unknown.join(", "))
+    }
+    let positive = |key: &str| -> Result<f64> {
+        match get(mapping, key).and_then(Yaml::as_f64) {
+            Some(value) if value > 0.0 && value.is_finite() => Ok(value),
+            Some(value) => bail!("training.{key} must be greater than 0, got {value}"),
+            None => bail!("training.{key} is required and must be a number"),
+        }
+    };
+    let whole = |key: &str| -> Result<usize> {
+        match get(mapping, key).and_then(Yaml::as_u64) {
+            Some(value) if value >= 1 => Ok(value as usize),
+            _ => bail!("training.{key} is required and must be a whole number of at least 1"),
+        }
+    };
+    Ok(Some(HfTraining {
+        epochs: positive("epochs")?,
+        batch_size: whole("batch_size")?,
+        learning_rate: positive("learning_rate")?,
+        max_length: whole("max_length")?,
+    }))
 }
 
 /// Validate the judge section. Absent means the default teacher, on.
@@ -218,6 +258,7 @@ pub fn load(path: &str) -> Result<Job> {
         Some(_) => bail!("scope.min_text_chars must be a non-negative integer"),
     };
 
+    let hf_training = training(&raw, &model)?;
     Ok(Job {
         name,
         task,
@@ -232,5 +273,6 @@ pub fn load(path: &str) -> Result<Job> {
         },
         eval_split: eval_split(&raw)?,
         judge: judge(&raw)?,
+        training: hf_training,
     })
 }

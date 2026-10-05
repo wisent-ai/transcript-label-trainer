@@ -56,10 +56,9 @@ pub fn prepare_job(job: &jobs::Job, resolved: &Resolved) -> Result<Plan, TrainFa
 
 /// Train from a prepared job and persist spec copy + job metadata.
 pub fn run_job(job: &jobs::Job, plan: &Plan) -> Result<Value, TrainFailure> {
-    let metrics = if job.model == jobs::SKLEARN_MODEL {
-        train_tfidf(plan)?
-    } else {
-        train_hf(plan, &job.model, 3.0, 8, 2e-5, 512)?
+    let metrics = match &job.training {
+        None => train_tfidf(plan)?,
+        Some(training) => train_hf(plan, &job.model, training)?,
     };
     let mut spec_copy = match plan.job.clone() {
         Some(Value::Object(map)) => map,

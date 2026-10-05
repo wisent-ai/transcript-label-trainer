@@ -13,18 +13,12 @@ pub const NAME_PATTERN: &str = "^[a-z0-9][a-z0-9_-]*$";
 /// a HuggingFace model id and selects the HF backend.
 pub const SKLEARN_MODEL: &str = "tfidf-logreg";
 
-// The frozen evaluation split is on by default: model comparisons over time
-// have to run on the same untouched sessions, so the holdout is decided once
-// and persisted next to the artifacts. The seed is fixed so a first run on the
-// same labels always picks the same sessions.
-pub const DEFAULT_EVAL_FRACTION: f64 = 0.2;
+// The frozen evaluation split is stated by the job, never chosen here: model
+// comparisons over time have to run on the same untouched sessions, so the
+// holdout is decided once from the spec's own fraction and seed and persisted
+// next to the artifacts. `eval_split: false` trains on every session.
 
-pub const DEFAULT_EVAL_SEED: i64 = 20260808;
-
-/// A fraction above this would starve training rather than measure it.
-pub const MAX_EVAL_FRACTION: f64 = 0.5;
-
-pub(crate) const TOP_LEVEL_KEYS: [&str; 7] = [
+pub(crate) const TOP_LEVEL_KEYS: [&str; 8] = [
     "name",
     "task",
     "evaluator",
@@ -32,6 +26,7 @@ pub(crate) const TOP_LEVEL_KEYS: [&str; 7] = [
     "scope",
     "eval_split",
     "judge",
+    "training",
 ];
 
 pub(crate) const SCOPE_KEYS: [&str; 5] = ["aspect", "runtimes", "since", "values", "min_text_chars"];
@@ -39,6 +34,18 @@ pub(crate) const SCOPE_KEYS: [&str; 5] = ["aspect", "runtimes", "since", "values
 pub(crate) const EVAL_SPLIT_KEYS: [&str; 2] = ["fraction", "seed"];
 
 pub(crate) const JUDGE_KEYS: [&str; 1] = ["model"];
+
+pub(crate) const TRAINING_KEYS: [&str; 4] = ["epochs", "batch_size", "learning_rate", "max_length"];
+
+/// The fine-tuning settings a HuggingFace job states in its `training`
+/// section; the TF-IDF backend has none. Recorded with the job's metrics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HfTraining {
+    pub epochs: f64,
+    pub batch_size: usize,
+    pub learning_rate: f64,
+    pub max_length: usize,
+}
 
 /// The frozen holdout section of a validated spec. Serialized verbatim into
 /// `metrics.json["job"]["eval_split"]` and `job.yaml`, so the field order and
@@ -79,15 +86,8 @@ pub struct Job {
     pub scope: Scope,
     pub eval_split: EvalSplit,
     pub judge: Judge,
-}
-
-/// The frozen split every run gets unless the spec says `false`.
-pub fn default_eval_split() -> EvalSplit {
-    EvalSplit {
-        enabled: true,
-        fraction: Some(DEFAULT_EVAL_FRACTION),
-        seed: Some(DEFAULT_EVAL_SEED),
-    }
+    /// Present exactly when `model` is a HuggingFace model id.
+    pub training: Option<HfTraining>,
 }
 
 /// The Brama teacher verdict every run gets unless the spec says `false`.

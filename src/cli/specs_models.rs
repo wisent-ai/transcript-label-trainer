@@ -2,8 +2,6 @@ use super::*;
 
 #[allow(unused_variables)]
 pub(crate) fn model_specs() -> Vec<Spec> {
-    let fraction = float_repr(jobs::DEFAULT_EVAL_FRACTION);
-    let seed = jobs::DEFAULT_EVAL_SEED;
     let teacher = brama::DEFAULT_MODEL;
 
     let aspect_discover = Spec {

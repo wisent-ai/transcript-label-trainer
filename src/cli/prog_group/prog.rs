@@ -144,19 +144,42 @@ pub(crate) fn cmd_train(args: &Parsed) -> Result<i32> {
     let eval_split = if args.flag("--no-eval-split") {
         serde_json::json!({"enabled": false, "fraction": Value::Null, "seed": Value::Null})
     } else {
-        serde_json::json!({
-            "enabled": true,
-            "fraction": args.float("--eval-split-fraction").unwrap_or(jobs::DEFAULT_EVAL_FRACTION),
-            "seed": args.int("--eval-split-seed").unwrap_or(jobs::DEFAULT_EVAL_SEED),
-        })
+        let (Some(fraction), Some(seed)) = (
+            args.float("--eval-split-fraction"),
+            args.int("--eval-split-seed"),
+        ) else {
+            return Err(Error(
+                "train needs --eval-split-fraction F and --eval-split-seed N, or \
+                 --no-eval-split; transcript-label-trainer chooses no holdout"
+                    .to_string(),
+            ));
+        };
+        if !(fraction > 0.0 && fraction < 1.0) {
+            return Err(Error(format!(
+                "--eval-split-fraction must be greater than 0 and less than 1, not {fraction}"
+            )));
+        }
+        if seed < 0 {
+            return Err(Error(format!(
+                "--eval-split-seed must be a non-negative integer, not {seed}"
+            )));
+        }
+        serde_json::json!({"enabled": true, "fraction": fraction, "seed": seed})
+    };
+    let model_id = args.text("--model");
+    let training = match model_id {
+        None => None,
+        Some(_) => Some(jobs::HfTraining {
+            epochs: stated_positive(args, "--epochs")?,
+            batch_size: stated_count(args, "--batch-size")?,
+            learning_rate: stated_positive(args, "--lr")?,
+            max_length: stated_count(args, "--max-length")?,
+        }),
     };
     let metrics = match model::train(
         args.text("--aspect").unwrap_or_default(),
-        args.text("--model"),
-        args.float("--epochs").unwrap_or(3.0),
-        count(args.int("--batch-size"), 8),
-        args.float("--lr").unwrap_or(2e-5),
-        count(args.int("--max-length"), 512),
+        model_id,
+        training.as_ref(),
         &eval_split,
     ) {
         Ok(metrics) => metrics,
@@ -164,6 +187,18 @@ pub(crate) fn cmd_train(args: &Parsed) -> Result<i32> {
     };
     outln!("{}", dumps(&metrics));
     Ok(0)
+}
+
+/// A positive number the caller states for a HuggingFace fine-tune; there is
+/// no default, so a missing one is refused by its flag's name.
+fn stated_positive(args: &Parsed, flag: &str) -> Result<f64> {
+    match args.float(flag) {
+        Some(value) if value > 0.0 && value.is_finite() => Ok(value),
+        Some(value) => Err(Error(format!("{flag} must be greater than 0, not {value}"))),
+        None => Err(Error(format!(
+            "{flag} is required with --model; fine-tuning has no default for it"
+        ))),
+    }
 }
 
 pub(crate) fn cmd_run(args: &Parsed) -> Result<i32> {
