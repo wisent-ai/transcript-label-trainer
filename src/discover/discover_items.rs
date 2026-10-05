@@ -18,17 +18,17 @@ pub fn discover(
     if let Some(runtime) = runtime {
         sessions.retain(|session| session.runtime.as_deref() == Some(runtime));
     }
-    let session_limit = limit
-        .map(|value| value.max(0) as usize)
-        .unwrap_or(DEFAULT_SESSION_LIMIT);
     let mut targets: Vec<String> = sessions
         .into_iter()
         .map(|session| session.session_id)
         .collect();
-    if targets.len() > session_limit {
-        // The lake lists oldest first; the newest sessions are the ones the
-        // operator's current habits are visible in.
-        targets = targets.split_off(targets.len() - session_limit);
+    // Every session unless the caller names how many of the newest to read.
+    if let Some(session_limit) = limit.map(|value| value.max(0) as usize) {
+        if targets.len() > session_limit {
+            // The lake lists oldest first; the newest sessions are the ones the
+            // operator's current habits are visible in.
+            targets = targets.split_off(targets.len() - session_limit);
+        }
     }
     let texts = lake::session_texts(&targets)?;
 
@@ -118,12 +118,12 @@ pub fn discover(
             });
             entry.support += 1;
             for value in values {
-                if !entry.values.contains(&value) && entry.values.len() < MAX_VALUES {
+                if !entry.values.contains(&value) {
                     entry.values.push(value);
                 }
             }
             for session_id in evidence {
-                if !entry.evidence.contains(&session_id) && entry.evidence.len() < MAX_EVIDENCE {
+                if !entry.evidence.contains(&session_id) {
                     entry.evidence.push(session_id);
                 }
             }
@@ -141,10 +141,10 @@ pub fn discover(
             .cmp(&left.1.support)
             .then_with(|| left.0.cmp(&right.0))
     });
-    let keep = max_aspects
-        .map(|value| value.max(0) as usize)
-        .unwrap_or(DEFAULT_MAX_ASPECTS);
-    ranked.truncate(keep);
+    // Every merged proposal unless the caller names how many to keep.
+    if let Some(keep) = max_aspects.map(|value| value.max(0) as usize) {
+        ranked.truncate(keep);
+    }
 
     let mut proposals: Vec<Value> = Vec::new();
     let mut rejected: Vec<Value> = Vec::new();

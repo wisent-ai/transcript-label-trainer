@@ -26,13 +26,13 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 "--limit",
                 "LIMIT",
                 Kind::Int,
-                "newest sessions sampled (default: 60)".to_string(),
+                "newest sessions sampled (default: every session)".to_string(),
             ),
             option(
                 "--max-aspects",
                 "N",
                 Kind::Int,
-                "keep at most this many merged proposals (default: 8)".to_string(),
+                "keep at most this many merged proposals (default: every proposal)".to_string(),
             ),
             option(
                 "--brama-model",

@@ -10,17 +10,7 @@ pub(crate) const SESSION_CHARS: usize = 4000;
 /// A proposal list is a few hundred tokens of JSON, not one word.
 pub(crate) const PROPOSAL_MAX_TOKENS: u32 = 900;
 
-pub(crate) const DEFAULT_SESSION_LIMIT: usize = 60;
-
-pub(crate) const DEFAULT_MAX_ASPECTS: usize = 8;
-
 pub(crate) const REVIEW_VALUES: [&str; 2] = ["sensible", "nonsensical"];
-
-/// Values kept per merged aspect; a dimension needing more is a free-text
-/// field, not a classification aspect.
-pub(crate) const MAX_VALUES: usize = 8;
-
-pub(crate) const MAX_EVIDENCE: usize = 12;
 
 pub(crate) fn teacher_prompt(excerpts: &[(String, String)]) -> Vec<brama::Message> {
     let mut transcripts = String::new();
