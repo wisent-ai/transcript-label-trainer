@@ -1,5 +1,5 @@
-//! What preparation and audit share: reading JSONL, asking Brama with a
-//! bounded number of attempts, pulling the JSON object out of an answer, and
+//! What preparation and audit share: reading JSONL, asking Brama as many
+//! times as the caller states, pulling the JSON object out of an answer, and
 //! fanning rows out over worker threads while reporting progress.
 
 use std::fs::File;
@@ -14,11 +14,6 @@ use serde_json::Value;
 
 use crate::brama::{BramaClient, Message};
 use crate::util::{Error, Result};
-
-/// Calls Brama makes for one question before the row is given up: the first
-/// ask plus three more, as the Python preparation allowed. A row that fails
-/// every attempt is counted with its last error, never dropped silently.
-const ATTEMPTS: usize = 4;
 
 /// Every non-blank line of `path`, parsed as `T`; the line number names the
 /// row that does not parse.
@@ -58,11 +53,13 @@ pub(crate) fn json_object(answer: &str, what: &str) -> Result<serde_json::Map<St
     }
 }
 
-/// Ask `model` once per attempt until `accept` takes the answer. The error of
-/// the last attempt is returned when none is accepted.
+/// Ask `model` once per attempt, `attempts` times at most, until `accept`
+/// takes the answer. The count is the caller's (`--attempts`); a row that
+/// fails every attempt is counted with its last error, never dropped silently.
 pub(crate) fn ask<T>(
     client: &BramaClient,
     model: &str,
+    attempts: usize,
     system: &str,
     user: String,
     accept: impl Fn(&str) -> Result<T>,
@@ -72,7 +69,7 @@ pub(crate) fn ask<T>(
         Message::new("user", user),
     ];
     let mut last = Error(format!("{model} was never asked"));
-    for _ in 0..ATTEMPTS {
+    for _ in 0..attempts {
         let answer = client.chat(model, &messages);
         let answer = answer.and_then(|content| match content.is_empty() {
             true => Err(Error("Brama returned empty content".to_string())),

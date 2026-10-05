@@ -1,26 +1,27 @@
 use super::*;
 
-/// Parallel Brama calls while preparing pairs: two per row, short answers.
-const PREPARE_WORKERS: usize = 16;
-
-/// Parallel Brama judges during the audit: long answers on a strong route.
-const AUDIT_WORKERS: usize = 8;
-
-fn workers(args: &Parsed, standard: usize) -> Result<usize> {
-    match args.int("--workers") {
-        None => Ok(standard),
+/// A count the caller states for one run, at least one: how many Brama calls
+/// run in parallel (`--workers`) or how many times one question is asked
+/// before its row is given up (`--attempts`). Neither has a default; the
+/// Brama route's own concurrency and reliability decide what is sensible.
+fn count(args: &Parsed, flag: &str) -> Result<usize> {
+    match args.int(flag) {
         Some(value) if value >= 1 => Ok(value as usize),
-        Some(value) => Err(Error(format!("--workers must be at least 1, not {value}"))),
+        Some(value) => Err(Error(format!("{flag} must be at least 1, not {value}"))),
+        None => Err(Error(format!("{flag} is required"))),
     }
 }
 
-fn workers_option(standard: usize) -> Opt {
-    option(
-        "--workers",
-        "N",
-        Kind::Int,
-        format!("parallel Brama calls (default: {standard})"),
-    )
+fn count_options() -> [Opt; 2] {
+    [
+        required("--workers", "N", Kind::Int, "parallel Brama calls".to_string()),
+        required(
+            "--attempts",
+            "N",
+            Kind::Int,
+            "times one question is asked before its row is given up".to_string(),
+        ),
+    ]
 }
 
 pub(crate) fn humanizer_specs() -> Vec<Spec> {
@@ -61,8 +62,10 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
                 Kind::Text,
                 format!("Brama route that reviews every pair (default: {best})"),
             ),
-            workers_option(PREPARE_WORKERS),
-        ],
+        ]
+        .into_iter()
+        .chain(count_options())
+        .collect(),
     };
     let audit = Spec {
         name: "humanizer-audit",
@@ -91,8 +94,10 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
                 Kind::Text,
                 format!("Brama route of the independent judge (default: {best})"),
             ),
-            workers_option(AUDIT_WORKERS),
-        ],
+        ]
+        .into_iter()
+        .chain(count_options())
+        .collect(),
     };
     let publish = Spec {
         name: "humanizer-publish",
@@ -126,7 +131,8 @@ pub(crate) fn cmd_humanizer_prepare(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.text("--output-dir").unwrap_or_default()),
         teacher,
         reviewer,
-        workers(args, PREPARE_WORKERS)?,
+        count(args, "--workers")?,
+        count(args, "--attempts")?,
     )?;
     outln!("{}", dumps(&report));
     Ok(0)
@@ -138,7 +144,8 @@ pub(crate) fn cmd_humanizer_audit(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),
         judge,
-        workers(args, AUDIT_WORKERS)?,
+        count(args, "--workers")?,
+        count(args, "--attempts")?,
     )?;
     outln!("{}", dumps(&summary));
     Ok(i32::from(

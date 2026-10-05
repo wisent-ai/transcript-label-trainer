@@ -76,7 +76,7 @@ fn parse_verdict(answer: &str) -> Result<Map<String, Value>> {
     Ok(verdict)
 }
 
-fn judge(row: &Prediction, client: &BramaClient, model: &str) -> Result<Value> {
+fn judge(row: &Prediction, client: &BramaClient, model: &str, attempts: usize) -> Result<Value> {
     let question = json!({
         "source": row.source,
         "target": row.target,
@@ -84,7 +84,7 @@ fn judge(row: &Prediction, client: &BramaClient, model: &str) -> Result<Value> {
         "student": row.student,
     })
     .to_string();
-    let verdict = ask(client, model, JUDGE_PROMPT, question, parse_verdict)
+    let verdict = ask(client, model, attempts, JUDGE_PROMPT, question, parse_verdict)
         .map_err(|error| Error(format!("{}: {error}", row.id)))?;
     Ok(json!({"id": row.id, "verdict": verdict}))
 }
@@ -120,11 +120,12 @@ pub fn audit_outputs(
     output: &Path,
     model: &str,
     workers: usize,
+    attempts: usize,
 ) -> Result<Value> {
     let rows: Vec<Prediction> = read_jsonl(predictions)?;
     let client = BramaClient::from_env()?;
     let outcomes = fan_out(&rows, workers, "audited", PROGRESS_EVERY, |row| {
-        judge(row, &client, model)
+        judge(row, &client, model, attempts)
     });
     let mut records = Vec::new();
     let mut failures: BTreeMap<String, usize> = BTreeMap::new();

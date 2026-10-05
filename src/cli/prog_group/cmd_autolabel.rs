@@ -155,10 +155,21 @@ pub(crate) fn cmd_humanizer_model(args: &Parsed) -> Result<i32> {
         &targets,
         args.text("--compute-target").unwrap_or_default(),
         &hf_repo,
+        stated_count(args, "--workers")?,
+        stated_count(args, "--attempts")?,
     )?;
     outln!("Stado job: {}", job.job_id);
     outln!("model artifact: {}", job.output_uri);
     Ok(job.status)
+}
+
+/// A count the caller must state, at least one.
+fn stated_count(args: &Parsed, flag: &str) -> Result<usize> {
+    match args.int(flag) {
+        Some(value) if value >= 1 => Ok(value as usize),
+        Some(value) => Err(Error(format!("{flag} must be at least 1, not {value}"))),
+        None => Err(Error(format!("{flag} is required"))),
+    }
 }
 
 pub(crate) fn cmd_lifecycle_audit(args: &Parsed) -> Result<i32> {

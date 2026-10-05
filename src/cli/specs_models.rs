@@ -228,6 +228,18 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Int,
                 "maximum clean authored targets (default: 1500; minimum: 1000)".to_string(),
             ),
+            required(
+                "--workers",
+                "N",
+                Kind::Int,
+                "parallel Brama calls in the job's preparation and audit".to_string(),
+            ),
+            required(
+                "--attempts",
+                "N",
+                Kind::Int,
+                "times the job asks one Brama question before its row is given up".to_string(),
+            ),
         ],
     };
 

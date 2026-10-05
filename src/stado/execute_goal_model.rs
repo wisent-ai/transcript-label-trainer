@@ -170,10 +170,14 @@ pub fn execute_lifecycle_model(
 }
 
 /// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
+/// `workers` and `attempts` are the caller's counts for the job's Brama
+/// preparation and audit; the job is refused without them.
 pub fn execute_humanizer_model(
     targets_path: &Path,
     compute_target: &str,
     hf_repo: &str,
+    workers: usize,
+    attempts: usize,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
@@ -204,6 +208,7 @@ pub fn execute_humanizer_model(
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{targets_uri}' \"$work/targets.jsonl\"; \
          HUMANIZER_HF_REPO={hf_repo} HUMANIZER_WORK_DIR=\"$work\" \
+         HUMANIZER_WORKERS={workers} HUMANIZER_ATTEMPTS={attempts} \
          ./training/humanizer-model/run.sh \"$work/targets.jsonl\""
     );
     let args = vec![
