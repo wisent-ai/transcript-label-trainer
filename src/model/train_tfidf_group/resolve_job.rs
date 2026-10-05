@@ -243,7 +243,25 @@ pub fn loadable(backend: &str) -> bool {
 }
 
 /// (value, confidence) per text, from whichever backend the artifact is.
+///
+/// An artifact that does not record `session_text: whole` was trained on
+/// session text cut to a length this trainer no longer applies; feeding it
+/// whole sessions would score different input than it learned, so it is
+/// refused with the command that retrains it.
 pub fn predict(artifact: &Artifact, texts: &[String]) -> Result<Vec<(String, f64)>> {
+    if artifact.metrics.get("session_text").and_then(Value::as_str) != Some(SESSION_TEXT_WHOLE) {
+        let aspect = artifact
+            .metrics
+            .get("aspect")
+            .and_then(Value::as_str)
+            .unwrap_or("ASPECT");
+        return Err(Error(format!(
+            "artifact {} was trained on session text cut to a fixed length; this trainer reads \
+             whole sessions, so retrain it with 'transcript-label-trainer train --aspect {aspect}' \
+             or 'transcript-label-trainer run <job.yaml>'",
+            artifact.dir.display()
+        )));
+    }
     if artifact.backend == TFIDF_BACKEND {
         infer_tfidf(artifact, texts)
     } else {

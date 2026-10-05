@@ -2,8 +2,8 @@ use super::*;
 
 /// Concatenated user+assistant text per session, ordered by ts.
 ///
-/// Only sessions with at least one text event appear; each is capped at
-/// [`TEXT_CAP`] characters.
+/// Only sessions with at least one text event appear; each text is the whole
+/// session. A model or teacher that cannot take it answers so itself.
 pub fn session_texts(session_ids: &[String]) -> Result<HashMap<String, SessionText>> {
     if let Some(bundle) = read_pinned_bundle()? {
         let wanted: std::collections::HashSet<&str> =
@@ -78,13 +78,7 @@ pub fn session_texts(session_ids: &[String]) -> Result<HashMap<String, SessionTe
 
     let mut texts = HashMap::with_capacity(parts.len());
     for (session_id, parts) in parts {
-        let joined = parts.join("\n");
-        // The cap is on characters, not bytes: Polish transcripts would
-        // otherwise be cut to a different length than the Python cut them.
-        let text = match joined.char_indices().nth(TEXT_CAP) {
-            Some((end, _)) => joined[..end].to_string(),
-            None => joined,
-        };
+        let text = parts.join("\n");
         let runtime = runtimes.remove(&session_id).flatten();
         texts.insert(session_id, SessionText { runtime, text });
     }

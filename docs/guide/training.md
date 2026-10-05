@@ -43,6 +43,13 @@ everywhere else, the way the Python backend used MPS: `Cargo.toml` turns
 candle's `metal` feature on for macOS only. `metrics.json` records which one
 ran under `device`, as `metal` or `cpu`; the Python build wrote `mps` there.
 
+Every artifact's `metrics.json` records `session_text: "whole"`: the
+classifier learned from whole session texts, and `infer` and `evaluate` give
+it the same. An artifact without that field was trained on texts cut to a
+fixed length; `infer` and `evaluate` refuse it with `artifact … was trained on
+session text cut to a fixed length; … retrain it with 'transcript-label-trainer
+train --aspect …' or 'transcript-label-trainer run <job.yaml>'`.
+
 When both a sklearn and an HF artifact exist for an aspect, `infer` uses the
 newest one by training time; `info` lists every backend per aspect and marks
 the active one.
@@ -154,7 +161,7 @@ topic-v1 (aspect: topic, backend: sklearn):
 ```
 
 Per holdout session the judge gets the reconstructed session text (the same
-lake CLI path and the same 12 KB cap training uses), the model's prediction and
+lake CLI path and the same whole session training uses), the model's prediction and
 the ground-truth label, and answers `acceptable` or `unacceptable` — so a
 prediction that differs from the label can still be ruled defensible, and a
 prediction that matches it can still be rejected. The verdict, the aggregate

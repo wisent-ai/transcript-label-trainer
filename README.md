@@ -49,8 +49,8 @@ Transcript Label Trainer owns:
   default, or a fine-tuned HuggingFace transformer when `--model` is given
   (optional `hf` feature);
 - session-text reconstruction, by shelling out to the lake CLI's read-only
-  `query` command (user + assistant text per session, ordered by `ts`, capped
-  at 12 KB);
+  `query` command (user + assistant text per session, ordered by `ts`, the
+  whole session);
 - emitting suggestion records shaped exactly like label-store records, with
   `source="model"` and the confidence in `note`;
 - its own model artifacts, under the training root Stado places this trainer

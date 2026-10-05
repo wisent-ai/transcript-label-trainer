@@ -35,7 +35,7 @@ transcript-label-trainer run jobs/example-topic.yaml \
 ```
 
 The submitter resolves the job against the local Transcript Lake, exports only
-the selected labels and their capped transcript text, and uploads that
+the selected labels and their whole transcript text, and uploads that
 read-only, content-addressed bundle plus the validated YAML through Probierz's
 `inputs/transcript-label-trainer/` object boundary. Stado then clones this
 repository at one exact commit, pins the job with `--pinned-host`, injects the

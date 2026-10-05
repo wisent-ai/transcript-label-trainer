@@ -1,8 +1,5 @@
 use super::*;
 
-/// Characters of concatenated session text kept per session.
-pub(crate) const TEXT_CAP: usize = 12_000;
-
 /// The lake CLI is a Rust binary now; `cargo install --path .` puts it on
 /// PATH under this name.
 pub(crate) const LAKE_BINARY: &str = "transcript-lake";

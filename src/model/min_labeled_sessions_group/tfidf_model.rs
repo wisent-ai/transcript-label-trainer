@@ -227,6 +227,8 @@ pub(crate) fn base_metrics(
         json!(env!("CARGO_PKG_VERSION")),
     );
     metrics.insert("model".to_string(), json!(model_desc));
+    // What the classifier was trained on, so inference feeds it the same.
+    metrics.insert("session_text".to_string(), json!(SESSION_TEXT_WHOLE));
     metrics.insert("n_sessions".to_string(), json!(n_sessions));
     metrics.insert(
         "classes".to_string(),
@@ -235,6 +237,9 @@ pub(crate) fn base_metrics(
     metrics.insert("counts".to_string(), counts_json(counts));
     metrics
 }
+
+/// The `session_text` an artifact trained on whole session text records.
+pub(crate) const SESSION_TEXT_WHOLE: &str = "whole";
 
 pub(crate) fn counts_json(counts: &BTreeMap<String, usize>) -> Value {
     let mut object = Map::new();
