@@ -78,12 +78,20 @@ pub fn execute_goal_model(
     })
 }
 
+/// How the quantized lifecycle model is served while it is evaluated.
+pub struct LifecycleServing {
+    pub parallel: usize,
+    pub slot_context: usize,
+    pub gpu_layers: String,
+}
+
 /// Submit reviewed Oko lifecycle splits to one exclusive Stado GPU target.
 pub fn execute_lifecycle_model(
     train_path: &Path,
     eval_path: &Path,
     compute_target: &str,
     brama_url: &str,
+    serving: &LifecycleServing,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
@@ -118,8 +126,13 @@ pub fn execute_lifecycle_model(
          \"$stado\" storage get '{train_uri}' \"$work/reviewed-train.jsonl\"; \
          \"$stado\" storage get '{eval_uri}' \"$work/reviewed-eval.jsonl\"; \
          export BRAMA_URL={brama_url}; \
+         export LIFECYCLE_EVAL_PARALLEL={}; export LIFECYCLE_EVAL_SLOT_CONTEXT={}; \
+         export LIFECYCLE_EVAL_GPU_LAYERS={}; \
          ./training/lifecycle-model/run.sh \
-         \"$work/reviewed-train.jsonl\" \"$work/reviewed-eval.jsonl\""
+         \"$work/reviewed-train.jsonl\" \"$work/reviewed-eval.jsonl\"",
+        serving.parallel,
+        serving.slot_context,
+        shell_quote(&serving.gpu_layers),
     );
     let args = vec![
         OsString::from("submit"),

@@ -57,21 +57,22 @@ fi
 # Oko's loopback chat contract with decoding constrained to the checked-in
 # decision schema. train.py's own in-process generation is a different surface
 # and cannot stand in for it.
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORK/cargo-target}"
 if [ ! -s "$WORK/metrics-gguf.json" ]; then
-  LIFECYCLE_EVAL_WORK="$WORK" \
-  LIFECYCLE_EVAL_MODEL="$WORK/oko-lifecycle-qwen3-4b-q4_k_m.gguf" \
-  LIFECYCLE_EVAL_DATASET="$WORK/reviewed-eval.jsonl" \
-  LIFECYCLE_EVAL_PREDICTIONS="$WORK/predictions-gguf.jsonl" \
-  LIFECYCLE_EVAL_METRICS="$WORK/metrics-gguf.json" \
-  LIFECYCLE_EVAL_SERVER_LOG="$WORK/llama-server-eval.log" \
-  LIFECYCLE_EVAL_SERVER="$LLAMA_CPP/build/bin/llama-server" \
-  LIFECYCLE_EVAL_SYSTEM_PROMPT="$ROOT/training/lifecycle-model/lifecycle-system-prompt.txt" \
-  LIFECYCLE_EVAL_OUTPUT_SCHEMA="$ROOT/training/lifecycle-model/lifecycle-output-schema.json" \
-  LIFECYCLE_EVAL_PARALLEL="${LIFECYCLE_EVAL_PARALLEL:-8}" \
-    "$VENV/bin/python" "$ROOT/training/lifecycle-model/host/evaluate-gguf-host.py"
+  "$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
+    lifecycle-evaluate-gguf \
+    --model "$WORK/oko-lifecycle-qwen3-4b-q4_k_m.gguf" \
+    --dataset "$WORK/reviewed-eval.jsonl" \
+    --predictions "$WORK/predictions-gguf.jsonl" \
+    --metrics "$WORK/metrics-gguf.json" \
+    --server "$LLAMA_CPP/build/bin/llama-server" \
+    --server-log "$WORK/llama-server-eval.log" \
+    --output-schema "$ROOT/training/lifecycle-model/lifecycle-output-schema.json" \
+    --parallel "${LIFECYCLE_EVAL_PARALLEL:?lifecycle-model passes --eval-parallel as LIFECYCLE_EVAL_PARALLEL}" \
+    --slot-context "${LIFECYCLE_EVAL_SLOT_CONTEXT:?lifecycle-model passes --eval-slot-context as LIFECYCLE_EVAL_SLOT_CONTEXT}" \
+    --gpu-layers "${LIFECYCLE_EVAL_GPU_LAYERS:?lifecycle-model passes --eval-gpu-layers as LIFECYCLE_EVAL_GPU_LAYERS}"
 fi
 
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORK/cargo-target}"
 set +e
 "$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
   lifecycle-audit "$WORK/predictions-gguf.jsonl" \

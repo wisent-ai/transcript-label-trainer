@@ -6,7 +6,34 @@ pub(crate) fn release_specs() -> Vec<Spec> {
         .map(|model| model.name)
         .collect::<Vec<_>>()
         .join("|");
-    vec![Spec {
+    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
+    let evaluate_gguf = Spec {
+        name: "lifecycle-evaluate-gguf",
+        help: "measure the quantized lifecycle model the way production serves it".to_string(),
+        description: Some(
+            "Start llama-server on the quantized model on a loopback port the system assigns, wait \
+             until its health answer is ready (reading its log between probes, failing when it exits \
+             first), ask it for every evaluation row's decision with decoding constrained to the \
+             output schema narrowed to the row's candidate references, and write every prediction \
+             and the measured rates. Each request waits for its answer; a failed request fails the \
+             run naming its row. A rate with nothing to measure is null."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            path("--model", "the quantized GGUF model"),
+            path("--dataset", "JSONL of reviewed evaluation rows"),
+            path("--predictions", "JSONL every prediction is written to"),
+            path("--metrics", "JSON the measured rates are written to"),
+            path("--server", "the llama-server executable"),
+            path("--server-log", "where the server's log is written"),
+            path("--output-schema", "the checked-in decision schema"),
+            required("--parallel", "N", Kind::Int, "server slots and concurrent requests".to_string()),
+            required("--slot-context", "N", Kind::Int, "context tokens each slot holds".to_string()),
+            required("--gpu-layers", "N", Kind::Text, "layers llama-server offloads to the GPU, as llama-server takes it".to_string()),
+        ],
+    };
+    vec![evaluate_gguf, Spec {
         name: "release-publish",
         help: "publish a qualified fine-tune from its Stado job output".to_string(),
         description: Some(
@@ -60,4 +87,36 @@ pub(crate) fn cmd_release_publish(args: &Parsed) -> Result<i32> {
     let published = stado::publish_release(model, args.positional(0), args.text("--repo"))?;
     outln!("{}", dumps(&published));
     Ok(0)
+}
+
+pub(crate) fn cmd_lifecycle_evaluate_gguf(args: &Parsed) -> Result<i32> {
+    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
+    let run = crate::lifecycle::GgufEvaluation {
+        model: path("--model"),
+        dataset: path("--dataset"),
+        predictions: path("--predictions"),
+        metrics: path("--metrics"),
+        server: path("--server"),
+        server_log: path("--server-log"),
+        output_schema: path("--output-schema"),
+        parallel: stated_count(args, "--parallel")?,
+        slot_context: stated_count(args, "--slot-context")?,
+        gpu_layers: args.text("--gpu-layers").unwrap_or_default().to_string(),
+    };
+    let report = crate::lifecycle::evaluate_gguf(&run)?;
+    outln!("{}", dumps(&report));
+    Ok(0)
+}
+
+/// The serving settings the lifecycle model's quantized evaluation is stated to run with.
+pub(crate) fn lifecycle_serving(args: &Parsed) -> Result<stado::LifecycleServing> {
+    let gpu_layers = args.text("--eval-gpu-layers").unwrap_or_default().trim().to_string();
+    if gpu_layers.is_empty() {
+        return Err(Error("--eval-gpu-layers N is required on the command line; this command has no default for it".to_string()));
+    }
+    Ok(stado::LifecycleServing {
+        parallel: stated_count(args, "--eval-parallel")?,
+        slot_context: stated_count(args, "--eval-slot-context")?,
+        gpu_layers,
+    })
 }

@@ -134,8 +134,8 @@ pub(crate) fn cmd_lifecycle_model(args: &Parsed) -> Result<i32> {
     let job = stado::execute_lifecycle_model(
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.positional(1)),
-        args.text("--compute-target").unwrap_or_default(),
-        args.text("--brama-url").unwrap_or_default(),
+        args.text("--compute-target").unwrap_or_default(), args.text("--brama-url").unwrap_or_default(),
+        &lifecycle_serving(args)?,
     )?;
     outln!("Stado job: {}", job.job_id);
     outln!("model artifact: {}", job.output_uri);

@@ -220,6 +220,9 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Text,
                 "Brama endpoint reachable from the compute target".to_string(),
             ),
+            required("--eval-parallel", "N", Kind::Int, "server slots and concurrent requests of the quantized evaluation".to_string()),
+            required("--eval-slot-context", "N", Kind::Int, "context tokens each evaluation slot holds".to_string()),
+            required("--eval-gpu-layers", "N", Kind::Text, "layers llama-server offloads to the GPU in the evaluation".to_string()),
         ],
     };
 

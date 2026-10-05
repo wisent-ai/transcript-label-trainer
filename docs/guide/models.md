@@ -150,7 +150,8 @@ target:
 transcript-label-trainer lifecycle-model \
   ~/.transcript-label-trainer/lifecycle-model/reviewed-train.jsonl \
   ~/.transcript-label-trainer/lifecycle-model/reviewed-eval.jsonl \
-  --compute-target TARGET
+  --compute-target TARGET --brama-url <the Brama address the job dials> \
+  --eval-parallel N --eval-slot-context N --eval-gpu-layers N
 ```
 
 The job fine-tunes the pinned Qwen3-4B base, evaluates the untouched reviewed
@@ -158,6 +159,17 @@ split, converts and quantizes the model to Q4_K_M GGUF, and runs an independent
 Brama `--best` audit over every held-out prediction. Publication requires at
 least 99% valid JSON, 90% action accuracy, 88% joint accuracy, perfect finish
 precision, and a passing independent audit.
+
+The quantized model is measured the way production serves it, by
+`transcript-label-trainer lifecycle-evaluate-gguf`: `llama-server` on a loopback
+port the system assigns, with `--eval-parallel` slots of `--eval-slot-context`
+tokens and `--eval-gpu-layers` layers offloaded, each answer constrained to
+`lifecycle-output-schema.json` narrowed to the row's candidate references. The
+evaluation waits for the server's health answer (reading its log between probes;
+a server that exits first fails the run with its status and log path) and for
+every answer; a failed request fails the run naming its row, and nothing is
+retried. It writes `predictions-gguf.jsonl` and `metrics-gguf.json`; a rate with
+nothing to measure (finish precision when no finish was predicted) is `null`.
 
 Oko asks Brama for this model under the alias `OKO_LIFECYCLE_MODEL_ALIAS`
 declares, and Brama routes that alias to a model server on a fleet GPU host. The

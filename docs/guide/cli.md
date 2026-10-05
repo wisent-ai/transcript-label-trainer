@@ -38,7 +38,8 @@ Goal models (fine-tunes trained on a Stado GPU target, gated before publish):
 | `goal-model` | curate masked lake messages, teacher-label task goals through Brama, require an independent `best` review, train on the named exclusive Stado GPU target, and publish GGUF artifacts only after the held-out gold predictions pass a second `best` audit. `--workers N` (parallel teacher calls while curating) and `--audit-workers N` (parallel calls in the job's final audit) are required, at least 1 |
 | `goal-audit` | independently audit student goal predictions (JSONL of message, reference goal, student output) with `--workers N` parallel Brama calls (required, at least 1) and write the complete audit record |
 | `lifecycle-review` | classify masked Oko training envelopes through a named Brama route with `--workers N` parallel reviews (required, at least 1), enforce the `oko-goal-lifecycle-v1` contract, and write ordered JSONL with reviewer provenance for an immutable `--split train\|eval` |
-| `lifecycle-model` | upload immutable reviewed train and held-out datasets, fine-tune on the named Stado GPU target, audit every held-out decision through Brama `best`, and publish the candidate only when the lifecycle quality gate passes |
+| `lifecycle-model` | upload immutable reviewed train and held-out datasets, fine-tune on the named Stado GPU target, measure the quantized model with `lifecycle-evaluate-gguf` at the stated `--eval-parallel N`, `--eval-slot-context N` and `--eval-gpu-layers N` (required, no defaults), audit every held-out decision through Brama `best`, and publish the candidate only when the lifecycle quality gate passes |
+| `lifecycle-evaluate-gguf` | start `llama-server` (`--server`) on the quantized `--model` on a system-assigned loopback port with `--parallel N` slots of `--slot-context N` tokens and `--gpu-layers N` offloaded, wait for its health answer, ask every `--dataset` row with decoding constrained to `--output-schema` narrowed to the row's candidates, and write `--predictions` and `--metrics`; a failed request fails the run naming its row; the server log goes to `--server-log` |
 | `lifecycle-audit` | judge every held-out student decision independently, reject inferred completion, retain the full verdict record, and fail the gate when more than two percent are semantically wrong |
 | `humanizer-model` | require an explicit `HUMANIZER_HF_REPO`, `--workers N` and `--attempts N` (the job's parallel Brama calls and the times one question is asked; no defaults), export masked likely-authored user turns, derive inverse style-transfer inputs through Brama, train a LoRA adapter on the pinned base, and publish only a qualified private adapter revision |
 | `humanizer-prepare` | turn the exported targets into session-separated `train.jsonl`, `validation.jsonl` and `test.jsonl` plus `preparation.json`: a Brama teacher (`--teacher-model`, default `best`) rewrites each target as generic AI prose, rewrites that drop a URL, e-mail address or number or fall outside 0.65–2.5× the target's length are refused as `source_contract`, and an independent review (`--review-model`, default `best`) must call the pair usable. `--workers N` and `--attempts N` are required, at least 1. Refuses with exit 1 and writes nothing when any split has fewer than 700 / 70 / 70 accepted rows; the message names the counts and the rejection reasons. The Stado job runs it before training |
@@ -65,7 +66,8 @@ transcript-label-trainer lifecycle-review held-out.jsonl \
 
 # 3. Lifecycle model: train, audit every held-out decision, gate, publish.
 transcript-label-trainer lifecycle-model reviewed-train.jsonl reviewed-eval.jsonl \
-  --compute-target TARGET --brama-url <the Brama address the job dials>
+  --compute-target TARGET --brama-url <the Brama address the job dials> \
+  --eval-parallel N --eval-slot-context N --eval-gpu-layers N
 ```
 
 Each step refuses to continue when its gate fails: no reviewed dataset, no
