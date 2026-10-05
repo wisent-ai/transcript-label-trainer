@@ -84,13 +84,11 @@ pub(crate) fn ask<T>(
 }
 
 /// `work` applied to every row on `workers` threads, results in row order.
-/// `stage` names the progress line printed to stderr every `every` rows and
-/// at the end.
+/// `stage` names the progress line printed to stderr as each row finishes.
 pub(crate) fn fan_out<T: Sync, R: Send>(
     rows: &[T],
     workers: usize,
     stage: &str,
-    every: usize,
     work: impl Fn(&T) -> R + Sync,
 ) -> Vec<R> {
     let next = AtomicUsize::new(0);
@@ -106,9 +104,7 @@ pub(crate) fn fan_out<T: Sync, R: Send>(
                 let result = work(row);
                 results.lock().expect("humanizer result lock")[index] = Some(result);
                 let finished = done.fetch_add(1, Ordering::Relaxed) + 1;
-                if finished % every == 0 || finished == rows.len() {
-                    eprintln!("{stage} {finished}/{}", rows.len());
-                }
+                eprintln!("{stage} {finished}/{}", rows.len());
             });
         }
     });

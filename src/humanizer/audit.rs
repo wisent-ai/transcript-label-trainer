@@ -16,9 +16,6 @@ use super::{MODEL_CONTRACT, REPORT_SCHEMA_VERSION};
 use crate::brama::BramaClient;
 use crate::util::{Error, Result};
 
-/// Cases judged between two progress lines.
-const PROGRESS_EVERY: usize = 25;
-
 const CANDIDATES: [&str; 2] = ["base", "student"];
 const SCORES: [&str; 2] = ["semantic_fidelity", "voice_match"];
 const VERDICTS: [&str; 2] = ["ai_boilerplate", "passed"];
@@ -124,7 +121,7 @@ pub fn audit_outputs(
 ) -> Result<Value> {
     let rows: Vec<Prediction> = read_jsonl(predictions)?;
     let client = BramaClient::from_env()?;
-    let outcomes = fan_out(&rows, workers, "audited", PROGRESS_EVERY, |row| {
+    let outcomes = fan_out(&rows, workers, "audited", |row| {
         judge(row, &client, model, attempts)
     });
     let mut records = Vec::new();

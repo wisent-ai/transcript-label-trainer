@@ -17,9 +17,6 @@ use super::{TargetRow, REPORT_SCHEMA_VERSION};
 use crate::brama::BramaClient;
 use crate::util::{Error, Result};
 
-/// Rows prepared between two progress lines.
-const PROGRESS_EVERY: usize = 50;
-
 /// Session buckets: one of ten goes to test, one to validation, the rest to
 /// train, keyed on the session so no conversation spans two splits.
 const SPLIT_BUCKETS: u32 = 10;
@@ -117,7 +114,7 @@ pub fn prepare_dataset(
         .map_err(|error| Error(format!("cannot read {}: {error}", input.display())))?;
     let targets: Vec<TargetRow> = read_jsonl(input)?;
     let client = BramaClient::from_env()?;
-    let outcomes = fan_out(&targets, workers, "prepared", PROGRESS_EVERY, |row| {
+    let outcomes = fan_out(&targets, workers, "prepared", |row| {
         pair(row, &client, teacher, reviewer, attempts)
     });
     let mut accepted = Vec::new();
