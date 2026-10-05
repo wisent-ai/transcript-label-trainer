@@ -116,11 +116,6 @@ impl BramaClient {
     }
 }
 
-/// The first `limit` characters, the way Python's `text[:limit]` slices.
-pub fn truncate_chars(value: &str, limit: usize) -> String {
-    value.chars().take(limit).collect()
-}
-
 /// Compact single-label classification prompt.
 pub fn build_prompt(aspect: &str, values: &[String], text: &str) -> Vec<Message> {
     let allowed = values.join(", ");

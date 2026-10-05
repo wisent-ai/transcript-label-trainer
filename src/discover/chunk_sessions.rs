@@ -4,9 +4,6 @@ use super::*;
 /// small enough that every transcript excerpt stays readable.
 pub(crate) const CHUNK_SESSIONS: usize = 5;
 
-/// Per-session excerpt cap inside a teacher prompt.
-pub(crate) const SESSION_CHARS: usize = 4000;
-
 pub(crate) const REVIEW_VALUES: [&str; 2] = ["sensible", "nonsensical"];
 
 pub(crate) fn teacher_prompt(excerpts: &[(String, String)]) -> Vec<brama::Message> {

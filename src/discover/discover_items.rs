@@ -44,10 +44,7 @@ pub fn discover(
             if text.is_empty() {
                 return None;
             }
-            Some((
-                session_id.clone(),
-                brama::truncate_chars(text, SESSION_CHARS),
-            ))
+            Some((session_id.clone(), text.to_string()))
         })
         .collect();
     for chunk in excerpts.chunks(CHUNK_SESSIONS) {
