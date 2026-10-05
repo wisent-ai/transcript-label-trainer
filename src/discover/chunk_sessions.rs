@@ -1,9 +1,5 @@
 use super::*;
 
-/// Sessions shown to the teacher per call: enough contrast to see a dimension,
-/// small enough that every transcript excerpt stays readable.
-pub(crate) const CHUNK_SESSIONS: usize = 5;
-
 pub(crate) const REVIEW_VALUES: [&str; 2] = ["sensible", "nonsensical"];
 
 pub(crate) fn teacher_prompt(excerpts: &[(String, String)]) -> Vec<brama::Message> {

@@ -71,6 +71,16 @@ impl BramaClient {
     /// output budget is sent: how long an answer may be is the routed model's
     /// own limit, which Brama's route carries, not a count chosen here.
     pub fn chat(&self, model: &str, messages: &[Message]) -> Result<String> {
+        match self.answer(model, messages)? {
+            ChatAnswer::Content(content) => Ok(content),
+            ChatAnswer::DoesNotFit(detail) => bail!("Brama answered HTTP 400: {detail}"),
+        }
+    }
+
+    /// One chat completion that tells a prompt the routed model cannot take
+    /// (Brama's `context_length_exceeded`) apart from every other failure, so
+    /// a caller can ask about less instead of guessing a size up front.
+    pub(crate) fn answer(&self, model: &str, messages: &[Message]) -> Result<ChatAnswer> {
         let body = serde_json::to_string(&serde_json::json!({
             "model": model,
             "messages": messages,
@@ -93,6 +103,12 @@ impl BramaClient {
             } else {
                 detail
             };
+            let code = serde_json::from_str::<serde_json::Value>(detail)
+                .ok()
+                .and_then(|payload| payload.pointer("/error/code")?.as_str().map(str::to_string));
+            if code.as_deref() == Some("context_length_exceeded") {
+                return Ok(ChatAnswer::DoesNotFit(detail.to_string()));
+            }
             bail!("Brama answered HTTP {}: {detail}", status.as_u16())
         }
         let content = serde_json::from_str::<serde_json::Value>(&text)
@@ -107,13 +123,21 @@ impl BramaClient {
                     .map(str::to_string)
             });
         match content {
-            Some(content) => Ok(content.trim().to_string()),
+            Some(content) => Ok(ChatAnswer::Content(content.trim().to_string())),
             None => bail!(
                 "Brama response was not an OpenAI chat completion: {}",
                 text.trim()
             ),
         }
     }
+}
+
+/// What Brama answered one chat completion.
+pub(crate) enum ChatAnswer {
+    /// The model's message content.
+    Content(String),
+    /// The prompt does not fit the routed model; Brama's answer body.
+    DoesNotFit(String),
 }
 
 /// Compact single-label classification prompt.

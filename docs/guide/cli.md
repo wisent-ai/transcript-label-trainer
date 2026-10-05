@@ -29,7 +29,7 @@ Aspect classifiers (local, cheap, sklearn or HF):
 | `infer` | emit label suggestions for unlabeled sessions; never writes to the lake |
 | `info` | list trained aspects, artifacts, and metrics |
 | `autolabel` | label every unlabeled session for an aspect via a Brama teacher (zero-touch) |
-| `aspect-discover` | propose new aspect dimensions from recent sessions via a Brama teacher (writes nothing) |
+| `aspect-discover` | propose new aspect dimensions from recent sessions via a Brama teacher (writes nothing). The teacher is first asked about every session in one call; when Brama answers `context_length_exceeded`, each half is asked instead, so the routed model's own context decides the batch. A session that does not fit alone is listed under `failures` with Brama's answer |
 
 Goal models (fine-tunes trained on a Stado GPU target, gated before publish):
 

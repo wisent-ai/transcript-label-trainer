@@ -47,11 +47,14 @@ pub fn discover(
             Some((session_id.clone(), text.to_string()))
         })
         .collect();
-    for chunk in excerpts.chunks(CHUNK_SESSIONS) {
+    let mut answers = Vec::new();
+    if !excerpts.is_empty() {
+        teacher_answers(&client, &model_id, &excerpts, &mut answers);
+    }
+    for (sessions, answer) in answers {
         chunks += 1;
-        sampled += chunk.len();
-        let prompt = teacher_prompt(chunk);
-        let answer = match client.chat(&model_id, &prompt) {
+        sampled += sessions;
+        let answer = match answer {
             Ok(answer) => answer,
             Err(error) => {
                 failures.push(json!({
@@ -237,4 +240,32 @@ pub fn discover(
     summary.insert("rejected".to_string(), Value::Array(rejected));
     summary.insert("failures".to_string(), Value::Array(failures));
     Ok(Value::Object(summary))
+}
+
+/// Ask the teacher about every session of `batch` in one call. When Brama
+/// answers that the prompt does not fit the routed model, ask about each half
+/// instead, so the model's own context decides how many sessions one call
+/// shows. A single session that does not fit alone is a failure naming it.
+fn teacher_answers(
+    client: &brama::BramaClient,
+    model: &str,
+    batch: &[(String, String)],
+    answers: &mut Vec<(usize, Result<String>)>,
+) {
+    match client.answer(model, &teacher_prompt(batch)) {
+        Ok(brama::ChatAnswer::Content(answer)) => answers.push((batch.len(), Ok(answer))),
+        Ok(brama::ChatAnswer::DoesNotFit(_)) if batch.len() > 1 => {
+            let (first, second) = batch.split_at(batch.len() / 2);
+            teacher_answers(client, model, first, answers);
+            teacher_answers(client, model, second, answers);
+        }
+        Ok(brama::ChatAnswer::DoesNotFit(detail)) => answers.push((
+            1,
+            Err(crate::util::Error(format!(
+                "session {} alone does not fit {model}: {detail}",
+                batch[0].0
+            ))),
+        )),
+        Err(error) => answers.push((batch.len(), Err(error))),
+    }
 }
