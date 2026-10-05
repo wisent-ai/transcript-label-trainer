@@ -2,6 +2,7 @@
 # Stado GPU job: train, independently audit, export, and stage the Jeden goal model.
 set -euo pipefail
 
+: "${GOAL_AUDIT_WORKERS:?Set GOAL_AUDIT_WORKERS to the parallel Brama calls goal-model was given for the audit}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DATASET="${1:?usage: run.sh REVIEWED_GOALS_JSONL}"
 WORK="${GOAL_MODEL_WORK_DIR:-/tmp/jeden-goal-model}"
@@ -53,7 +54,7 @@ set +e
 "$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
   goal-audit "$WORK/predictions.jsonl" \
   --output "$WORK/final-judge.json" \
-  --best
+  --best --workers "$GOAL_AUDIT_WORKERS"
 AUDIT_EXIT=$?
 set -e
 [ -s "$WORK/final-judge.json" ]

@@ -78,10 +78,14 @@ pub(crate) fn cmd_goal_model(args: &Parsed) -> Result<i32> {
         &dataset,
         count(args.int("--limit"), 1_500),
         args.text("--teacher-model"),
+        stated_count(args, "--workers")?,
     )?;
     outln!("{}", dumps(&summary));
-    let job =
-        stado::execute_goal_model(&dataset, args.text("--compute-target").unwrap_or_default())?;
+    let job = stado::execute_goal_model(
+        &dataset,
+        args.text("--compute-target").unwrap_or_default(),
+        stated_count(args, "--audit-workers")?,
+    )?;
     outln!("Stado job: {}", job.job_id);
     outln!("model artifact: {}", job.output_uri);
     Ok(job.status)
@@ -102,6 +106,7 @@ pub(crate) fn cmd_goal_audit(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),
         review_model,
+        stated_count(args, "--workers")?,
     )?;
     outln!("{}", dumps(&result));
     Ok(i32::from(
@@ -119,6 +124,7 @@ pub(crate) fn cmd_lifecycle_review(args: &Parsed) -> Result<i32> {
         args.text("--split").unwrap_or_default(),
         model,
         args.int("--limit").map(|value| value as usize),
+        stated_count(args, "--workers")?,
     )?;
     outln!("{}", dumps(&result));
     Ok(0)

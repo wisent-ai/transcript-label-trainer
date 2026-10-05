@@ -88,6 +88,18 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Text,
                 format!("Brama-routed goal teacher (default: {teacher})"),
             ),
+            required(
+                "--workers",
+                "N",
+                Kind::Int,
+                "parallel Brama teacher calls while curating, at least 1".to_string(),
+            ),
+            required(
+                "--audit-workers",
+                "N",
+                Kind::Int,
+                "parallel Brama calls in the job's final goal-audit, at least 1".to_string(),
+            ),
         ],
     };
 
@@ -118,6 +130,12 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Text,
                 "use an explicit Brama-routed model when the best subscription is unavailable"
                     .to_string(),
+            ),
+            required(
+                "--workers",
+                "N",
+                Kind::Int,
+                "parallel Brama audit calls, at least 1".to_string(),
             ),
         ],
     };
@@ -162,6 +180,12 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 "LIMIT",
                 Kind::Int,
                 "cap reviewed rows".to_string(),
+            ),
+            required(
+                "--workers",
+                "N",
+                Kind::Int,
+                "parallel Brama reviews, at least 1".to_string(),
             ),
         ],
     };

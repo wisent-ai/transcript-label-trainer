@@ -5,7 +5,6 @@
 //! records the exact route used for provenance.
 
 use std::collections::HashSet;
-use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;

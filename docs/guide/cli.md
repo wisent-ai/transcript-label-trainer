@@ -35,9 +35,9 @@ Goal models (fine-tunes trained on a Stado GPU target, gated before publish):
 
 | command | does |
 |---|---|
-| `goal-model` | curate masked lake messages, teacher-label task goals through Brama, require an independent `best` review, train on the named exclusive Stado GPU target, and publish GGUF artifacts only after the held-out gold predictions pass a second `best` audit |
-| `goal-audit` | independently audit student goal predictions (JSONL of message, reference goal, student output) and write the complete audit record |
-| `lifecycle-review` | classify masked Oko training envelopes through a named Brama route, enforce the `oko-goal-lifecycle-v1` contract, and write ordered JSONL with reviewer provenance for an immutable `--split train\|eval` |
+| `goal-model` | curate masked lake messages, teacher-label task goals through Brama, require an independent `best` review, train on the named exclusive Stado GPU target, and publish GGUF artifacts only after the held-out gold predictions pass a second `best` audit. `--workers N` (parallel teacher calls while curating) and `--audit-workers N` (parallel calls in the job's final audit) are required, at least 1 |
+| `goal-audit` | independently audit student goal predictions (JSONL of message, reference goal, student output) with `--workers N` parallel Brama calls (required, at least 1) and write the complete audit record |
+| `lifecycle-review` | classify masked Oko training envelopes through a named Brama route with `--workers N` parallel reviews (required, at least 1), enforce the `oko-goal-lifecycle-v1` contract, and write ordered JSONL with reviewer provenance for an immutable `--split train\|eval` |
 | `lifecycle-model` | upload immutable reviewed train and held-out datasets, fine-tune on the named Stado GPU target, audit every held-out decision through Brama `best`, and publish the candidate only when the lifecycle quality gate passes |
 | `lifecycle-audit` | judge every held-out student decision independently, reject inferred completion, retain the full verdict record, and fail the gate when more than two percent are semantically wrong |
 | `humanizer-model` | require an explicit `HUMANIZER_HF_REPO`, `--workers N` and `--attempts N` (the job's parallel Brama calls and the times one question is asked; no defaults), export masked likely-authored user turns, derive inverse style-transfer inputs through Brama, train a LoRA adapter on the pinned base, and publish only a qualified private adapter revision |
@@ -55,13 +55,13 @@ The goal path in three commands. Replace `TARGET` with a registered Stado GPU ta
 
 ```sh
 # 1. Title model: curate, teacher-label, review, train, audit, publish GGUF.
-transcript-label-trainer goal-model --compute-target TARGET
+transcript-label-trainer goal-model --compute-target TARGET --workers 24 --audit-workers 4
 
 # 2. Lifecycle datasets: review masked envelopes into immutable splits.
 transcript-label-trainer lifecycle-review envelopes.jsonl \
-  --split train --output reviewed-train.jsonl
+  --split train --output reviewed-train.jsonl --workers 16
 transcript-label-trainer lifecycle-review held-out.jsonl \
-  --split eval --output reviewed-eval.jsonl
+  --split eval --output reviewed-eval.jsonl --workers 16
 
 # 3. Lifecycle model: train, audit every held-out decision, gate, publish.
 transcript-label-trainer lifecycle-model reviewed-train.jsonl reviewed-eval.jsonl \

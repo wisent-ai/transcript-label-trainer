@@ -59,7 +59,12 @@ pub(crate) fn write_audit_result(output: &Path, result: &Value) -> Result<()> {
     Ok(())
 }
 
-pub fn audit_predictions(input: &Path, output: &Path, review_model: &str) -> Result<Value> {
+pub fn audit_predictions(
+    input: &Path,
+    output: &Path,
+    review_model: &str,
+    workers: usize,
+) -> Result<Value> {
     let source = fs::read_to_string(input)?;
     let input_sha256 = hex::encode(Sha256::digest(source.as_bytes()));
     let predictions: Vec<Prediction> = source
@@ -118,7 +123,7 @@ pub fn audit_predictions(input: &Path, output: &Path, review_model: &str) -> Res
     let mut failures = Vec::new();
     let mut audited = records.len();
     if !remaining.is_empty() {
-        let chunk_size = remaining.len().div_ceil(AUDIT_WORKERS);
+        let chunk_size = remaining.len().div_ceil(workers);
         let (sender, receiver) = std::sync::mpsc::channel();
         std::thread::scope(|scope| -> Result<()> {
             let mut handles = Vec::new();

@@ -107,7 +107,12 @@ pub(crate) fn process_candidate(
     Ok(Some(candidate))
 }
 
-pub fn build_dataset(output: &Path, limit: usize, teacher_model: Option<&str>) -> Result<Value> {
+pub fn build_dataset(
+    output: &Path,
+    limit: usize,
+    teacher_model: Option<&str>,
+    workers: usize,
+) -> Result<Value> {
     let teacher_model = teacher_model
         .filter(|value| !value.is_empty())
         .unwrap_or(DEFAULT_MODEL);
@@ -141,7 +146,7 @@ pub fn build_dataset(output: &Path, limit: usize, teacher_model: Option<&str>) -
         .enumerate()
         .map(|(index, row)| Candidate { index, row })
         .collect();
-    let chunk_size = indexed.len().div_ceil(WORKERS);
+    let chunk_size = indexed.len().div_ceil(workers);
     let mut outcomes: Vec<Result<Option<Candidate>>> = Vec::with_capacity(total);
     std::thread::scope(|scope| {
         let mut handles = Vec::new();

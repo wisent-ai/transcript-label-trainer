@@ -2,8 +2,6 @@ use super::*;
 
 pub(crate) const SYSTEM_PROMPT: &str = include_str!("../../training/lifecycle-model/lifecycle-system-prompt.txt");
 
-pub(crate) const WORKERS: usize = 16;
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct ChatMessage {
     pub(crate) role: String,

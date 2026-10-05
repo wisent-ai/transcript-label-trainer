@@ -6,6 +6,7 @@ pub fn review_dataset(
     split: &str,
     model: &str,
     limit: Option<usize>,
+    workers: usize,
 ) -> Result<Value> {
     if !["train", "eval"].contains(&split) {
         return Err(Error("--split must be train or eval".to_string()));
@@ -49,12 +50,7 @@ pub fn review_dataset(
     let next = Arc::new(AtomicUsize::new(0));
     let results: Arc<Mutex<Vec<Option<Result<Value>>>>> =
         Arc::new(Mutex::new((0..rows.len()).map(|_| None).collect()));
-    let workers = env::var("LIFECYCLE_REVIEW_WORKERS")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(WORKERS)
-        .min(rows.len());
+    let workers = workers.min(rows.len());
     let mut handles = Vec::with_capacity(workers);
     for _ in 0..workers {
         let client = client.clone();

@@ -15,10 +15,6 @@ pub(crate) const AUDIT_VALUES: [&str; 4] = [
     "both-nonsensical",
 ];
 
-pub(crate) const WORKERS: usize = 24;
-
-pub(crate) const AUDIT_WORKERS: usize = 4;
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GoalRow {
     pub session_id: String,

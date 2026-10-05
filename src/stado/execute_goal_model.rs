@@ -1,7 +1,13 @@
 use super::*;
 
 /// Submit the reviewed goal dataset to one exclusive Stado GPU target.
-pub fn execute_goal_model(dataset_path: &Path, compute_target: &str) -> Result<GoalModelJob> {
+/// `audit_workers` is the caller's count of parallel Brama calls for the job's
+/// final `goal-audit`.
+pub fn execute_goal_model(
+    dataset_path: &Path,
+    compute_target: &str,
+    audit_workers: usize,
+) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
         return Err(Error("--compute-target cannot be empty".to_string()));
@@ -18,7 +24,7 @@ pub fn execute_goal_model(dataset_path: &Path, compute_target: &str) -> Result<G
         "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/jeden-goal-{key}\"; \
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{dataset_uri}' \"$work/reviewed-goals.jsonl\"; \
-         ./training/goal-model/run.sh \"$work/reviewed-goals.jsonl\""
+         GOAL_AUDIT_WORKERS={audit_workers} ./training/goal-model/run.sh \"$work/reviewed-goals.jsonl\""
     );
     let args = vec![
         OsString::from("submit"),
