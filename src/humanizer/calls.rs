@@ -65,7 +65,6 @@ pub(crate) fn ask<T>(
     model: &str,
     system: &str,
     user: String,
-    max_tokens: u32,
     accept: impl Fn(&str) -> Result<T>,
 ) -> Result<T> {
     let messages = [
@@ -74,7 +73,7 @@ pub(crate) fn ask<T>(
     ];
     let mut last = Error(format!("{model} was never asked"));
     for _ in 0..ATTEMPTS {
-        let answer = client.chat_limited(model, &messages, max_tokens);
+        let answer = client.chat(model, &messages);
         let answer = answer.and_then(|content| match content.is_empty() {
             true => Err(Error("Brama returned empty content".to_string())),
             false => Ok(content),

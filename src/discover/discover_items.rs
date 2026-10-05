@@ -54,7 +54,7 @@ pub fn discover(
         chunks += 1;
         sampled += chunk.len();
         let prompt = teacher_prompt(chunk);
-        let answer = match client.chat_limited(&model_id, &prompt, PROPOSAL_MAX_TOKENS) {
+        let answer = match client.chat(&model_id, &prompt) {
             Ok(answer) => answer,
             Err(error) => {
                 failures.push(json!({

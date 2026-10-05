@@ -12,8 +12,6 @@ pub const BEST_MODEL: &str = "best";
 /// --teacher-model, or `judge.model` in a job file.
 pub const DEFAULT_MODEL: &str = BEST_MODEL;
 
-pub(crate) const ANSWER_MAX_TOKENS: u32 = 64;
-
 /// One OpenAI chat message. Field order is `role` then `content`, matching the
 /// dicts the Python client built and hashed.
 #[derive(Debug, Clone, Serialize)]

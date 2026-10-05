@@ -7,9 +7,6 @@ pub(crate) const CHUNK_SESSIONS: usize = 5;
 /// Per-session excerpt cap inside a teacher prompt.
 pub(crate) const SESSION_CHARS: usize = 4000;
 
-/// A proposal list is a few hundred tokens of JSON, not one word.
-pub(crate) const PROPOSAL_MAX_TOKENS: u32 = 900;
-
 pub(crate) const REVIEW_VALUES: [&str; 2] = ["sensible", "nonsensical"];
 
 pub(crate) fn teacher_prompt(excerpts: &[(String, String)]) -> Vec<brama::Message> {

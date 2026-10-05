@@ -19,9 +19,6 @@ use crate::util::{Error, Result};
 /// Cases judged between two progress lines.
 const PROGRESS_EVERY: usize = 25;
 
-/// Two verdicts of four fields each.
-const JUDGE_MAX_TOKENS: u32 = 256;
-
 const CANDIDATES: [&str; 2] = ["base", "student"];
 const SCORES: [&str; 2] = ["semantic_fidelity", "voice_match"];
 const VERDICTS: [&str; 2] = ["ai_boilerplate", "passed"];
@@ -87,15 +84,8 @@ fn judge(row: &Prediction, client: &BramaClient, model: &str) -> Result<Value> {
         "student": row.student,
     })
     .to_string();
-    let verdict = ask(
-        client,
-        model,
-        JUDGE_PROMPT,
-        question,
-        JUDGE_MAX_TOKENS,
-        parse_verdict,
-    )
-    .map_err(|error| Error(format!("{}: {error}", row.id)))?;
+    let verdict = ask(client, model, JUDGE_PROMPT, question, parse_verdict)
+        .map_err(|error| Error(format!("{}: {error}", row.id)))?;
     Ok(json!({"id": row.id, "verdict": verdict}))
 }
 

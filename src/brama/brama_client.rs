@@ -67,24 +67,14 @@ impl BramaClient {
         headers
     }
 
-    /// One non-streaming chat completion; returns the message content.
+    /// One non-streaming chat completion; returns the message content. No
+    /// output budget is sent: how long an answer may be is the routed model's
+    /// own limit, which Brama's route carries, not a count chosen here.
     pub fn chat(&self, model: &str, messages: &[Message]) -> Result<String> {
-        self.chat_limited(model, messages, ANSWER_MAX_TOKENS)
-    }
-
-    /// One non-streaming chat completion with a caller-chosen output budget,
-    /// for answers that are a JSON document rather than one word.
-    pub fn chat_limited(
-        &self,
-        model: &str,
-        messages: &[Message],
-        max_tokens: u32,
-    ) -> Result<String> {
         let body = serde_json::to_string(&serde_json::json!({
             "model": model,
             "messages": messages,
             "temperature": 0,
-            "max_tokens": max_tokens,
         }))?;
         let mut request = self.http.post(format!("{}/v1/chat/completions", self.url));
         for (name, value) in self.auth_headers(&body) {

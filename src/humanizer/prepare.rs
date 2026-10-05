@@ -20,14 +20,6 @@ use crate::util::{Error, Result};
 /// Rows prepared between two progress lines.
 const PROGRESS_EVERY: usize = 50;
 
-/// Output budget for the teacher: twice the target's characters, never below
-/// what a short message needs nor above one long message.
-const TEACHER_MIN_TOKENS: usize = 192;
-const TEACHER_MAX_TOKENS: usize = 1024;
-
-/// The review answer is four booleans.
-const REVIEW_MAX_TOKENS: u32 = 96;
-
 /// Session buckets: one of ten goes to test, one to validation, the rest to
 /// train, keyed on the session so no conversation spans two splits.
 const SPLIT_BUCKETS: u32 = 10;
@@ -67,30 +59,17 @@ fn pair(
     reviewer: &str,
 ) -> Result<Value, String> {
     let target = row.target.trim();
-    let budget = (target.chars().count() * 2).clamp(TEACHER_MIN_TOKENS, TEACHER_MAX_TOKENS);
     let excerpt = |error: Error| format!("error:{}", error.0);
-    let source = ask(
-        client,
-        teacher,
-        TEACHER_PROMPT,
-        target.to_string(),
-        budget as u32,
-        |answer| Ok(answer.to_string()),
-    )
+    let source = ask(client, teacher, TEACHER_PROMPT, target.to_string(), |answer| {
+        Ok(answer.to_string())
+    })
     .map_err(excerpt)?;
     if !valid_source(target, &source) {
         return Err("source_contract".to_string());
     }
     let question = json!({"source": source, "target": target}).to_string();
-    let review = ask(
-        client,
-        reviewer,
-        REVIEW_PROMPT,
-        question,
-        REVIEW_MAX_TOKENS,
-        parse_review,
-    )
-    .map_err(excerpt)?;
+    let review =
+        ask(client, reviewer, REVIEW_PROMPT, question, parse_review).map_err(excerpt)?;
     if review.get("usable") != Some(&Value::Bool(true)) {
         return Err("review_rejected".to_string());
     }
