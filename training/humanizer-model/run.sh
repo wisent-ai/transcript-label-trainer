@@ -14,6 +14,8 @@ set -euo pipefail
 : "${HUMANIZER_MIN_TRAIN_ROWS:?Set HUMANIZER_MIN_TRAIN_ROWS to the fewest accepted rows the train split needs}"
 : "${HUMANIZER_MIN_VALIDATION_ROWS:?Set HUMANIZER_MIN_VALIDATION_ROWS to the fewest accepted rows the validation split needs}"
 : "${HUMANIZER_MIN_TEST_ROWS:?Set HUMANIZER_MIN_TEST_ROWS to the fewest accepted rows the test split needs}"
+: "${HUMANIZER_MIN_LENGTH_RATIO:?Set HUMANIZER_MIN_LENGTH_RATIO to the shortest generated source accepted, as a share of its target}"
+: "${HUMANIZER_MAX_LENGTH_RATIO:?Set HUMANIZER_MAX_LENGTH_RATIO to the longest generated source accepted, as a multiple of its target}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGETS="${1:?usage: run.sh TARGETS_JSONL}"
 JOB_ID="${WC_JOB_ID:?WC_JOB_ID is required}"
@@ -51,7 +53,8 @@ TRAINER=("$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locke
 "${TRAINER[@]}" humanizer-prepare "$HUMANIZER_TARGETS" --output-dir "$WORK" \
   --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS" \
   --min-train-rows "$HUMANIZER_MIN_TRAIN_ROWS" --min-validation-rows "$HUMANIZER_MIN_VALIDATION_ROWS" \
-  --min-test-rows "$HUMANIZER_MIN_TEST_ROWS"
+  --min-test-rows "$HUMANIZER_MIN_TEST_ROWS" \
+  --min-length-ratio "$HUMANIZER_MIN_LENGTH_RATIO" --max-length-ratio "$HUMANIZER_MAX_LENGTH_RATIO"
 "$VENV/bin/python" "$ROOT/training/humanizer-model/train.py"
 "${TRAINER[@]}" humanizer-audit "$HUMANIZER_PREDICTIONS" --output "$HUMANIZER_AUDIT_OUTPUT" \
   --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS" \

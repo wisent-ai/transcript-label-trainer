@@ -27,13 +27,13 @@ pub(crate) fn gate_options() -> Vec<Opt> {
     ]
 }
 
-/// One stated gate bound: any finite number, refused by its flag's name when
+/// One stated bound: any finite number, refused by its flag's name when
 /// missing or not finite.
 fn stated_bound(args: &Parsed, flag: &str) -> Result<f64> {
     match args.float(flag) {
         Some(value) if value.is_finite() => Ok(value),
         Some(value) => Err(Error(format!("{flag} must be a finite number, not {value}"))),
-        None => Err(Error(format!("{flag} is required: the audit's quality gate is the caller's to state"))),
+        None => Err(Error(format!("{flag} is required: this command assumes no value for it"))),
     }
 }
 
@@ -49,22 +49,30 @@ pub(crate) fn stated_gate(args: &Parsed) -> Result<crate::humanizer::AuditGate> 
     })
 }
 
-/// The fewest accepted rows each split needs before training starts: the
-/// caller's to state, for `humanizer-prepare` and the job that runs it.
+/// What preparation holds the teacher's pairs and splits to, the caller's to
+/// state for `humanizer-prepare` and the job that runs it: the fewest accepted
+/// rows each split needs and how long a generated source may be.
 pub(crate) fn minimum_options() -> Vec<Opt> {
     let minimum = |flag: &'static str, help: &str| required(flag, "N", Kind::Int, help.to_string());
+    let ratio = |flag: &'static str, help: &str| required(flag, "F", Kind::Float, help.to_string());
     vec![
         minimum("--min-train-rows", "fewest accepted rows the train split needs"),
         minimum("--min-validation-rows", "fewest accepted rows the validation split needs"),
         minimum("--min-test-rows", "fewest accepted rows the test split needs"),
+        ratio("--min-length-ratio", "shortest generated source accepted, as a share of its target's characters"),
+        ratio("--max-length-ratio", "longest generated source accepted, as a multiple of its target's characters"),
     ]
 }
 
-pub(crate) fn stated_minimums(args: &Parsed) -> Result<crate::humanizer::SplitMinimums> {
-    Ok(crate::humanizer::SplitMinimums {
+pub(crate) fn stated_minimums(args: &Parsed) -> Result<crate::humanizer::PreparationBounds> {
+    Ok(crate::humanizer::PreparationBounds {
         train: stated_count(args, "--min-train-rows")?,
         validation: stated_count(args, "--min-validation-rows")?,
         test: stated_count(args, "--min-test-rows")?,
+        length: crate::humanizer::LengthRatio {
+            min: stated_bound(args, "--min-length-ratio")?,
+            max: stated_bound(args, "--max-length-ratio")?,
+        },
     })
 }
 

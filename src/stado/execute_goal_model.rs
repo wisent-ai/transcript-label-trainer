@@ -202,8 +202,8 @@ pub fn execute_lifecycle_model(
 /// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
 /// `workers` and `attempts` are the caller's counts for the job's Brama
 /// preparation and audit, `gate` the quality gate its audit holds the
-/// adapter to, and `minimums` the fewest accepted rows each split needs; the
-/// job is refused without them.
+/// adapter to, and `minimums` the split minimums and source length bounds of
+/// its preparation; the job is refused without them.
 pub fn execute_humanizer_model(
     targets_path: &Path,
     compute_target: &str,
@@ -211,7 +211,7 @@ pub fn execute_humanizer_model(
     workers: usize,
     attempts: usize,
     gate: &crate::humanizer::AuditGate,
-    minimums: &crate::humanizer::SplitMinimums,
+    minimums: &crate::humanizer::PreparationBounds,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
@@ -247,6 +247,7 @@ pub fn execute_humanizer_model(
          HUMANIZER_MIN_PASS_RATE={} HUMANIZER_MAX_BOILERPLATE_RATE={} \
          HUMANIZER_MIN_VOICE_GAIN={} HUMANIZER_MIN_SEMANTIC_DELTA={} \
          HUMANIZER_MIN_TRAIN_ROWS={} HUMANIZER_MIN_VALIDATION_ROWS={} HUMANIZER_MIN_TEST_ROWS={} \
+         HUMANIZER_MIN_LENGTH_RATIO={} HUMANIZER_MAX_LENGTH_RATIO={} \
          ./training/humanizer-model/run.sh \"$work/targets.jsonl\"",
         gate.min_semantic_fidelity,
         gate.min_voice_match,
@@ -257,6 +258,8 @@ pub fn execute_humanizer_model(
         minimums.train,
         minimums.validation,
         minimums.test,
+        minimums.length.min,
+        minimums.length.max,
     );
     let args = vec![
         OsString::from("submit"),

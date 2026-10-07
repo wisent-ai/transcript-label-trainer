@@ -10,7 +10,7 @@ use std::path::Path;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::anchors::valid_source;
+use super::anchors::{valid_source, LengthRatio};
 use super::calls::{ask, fan_out, json_object, read_jsonl};
 use super::prompts::{REVIEW_PROMPT, SYSTEM_PROMPT, TEACHER_PROMPT};
 use super::{TargetRow, REPORT_SCHEMA_VERSION};
@@ -21,15 +21,18 @@ use crate::util::{Error, Result};
 /// train, keyed on the session so no conversation spans two splits.
 const SPLIT_BUCKETS: u32 = 10;
 
-/// The fewest accepted rows each split needs before training may start;
-/// the caller states every one.
-pub struct SplitMinimums {
+/// What preparation holds the teacher's pairs and splits to, every value the
+/// caller's to state: the fewest accepted rows each split needs before
+/// training may start, and how long a generated source may be against its
+/// target.
+pub struct PreparationBounds {
     pub train: usize,
     pub validation: usize,
     pub test: usize,
+    pub length: LengthRatio,
 }
 
-impl SplitMinimums {
+impl PreparationBounds {
     fn named(&self) -> [(&'static str, usize); 3] {
         [("train", self.train), ("validation", self.validation), ("test", self.test)]
     }
@@ -66,6 +69,7 @@ fn pair(
     teacher: &str,
     reviewer: &str,
     attempts: usize,
+    length: &LengthRatio,
 ) -> Result<Value, String> {
     let target = row.target.trim();
     let excerpt = |error: Error| format!("error:{}", error.0);
@@ -73,7 +77,7 @@ fn pair(
         Ok(answer.to_string())
     })
     .map_err(excerpt)?;
-    if !valid_source(target, &source) {
+    if !valid_source(target, &source, length) {
         return Err("source_contract".to_string());
     }
     let question = json!({"source": source, "target": target}).to_string();
@@ -120,14 +124,14 @@ pub fn prepare_dataset(
     reviewer: &str,
     workers: usize,
     attempts: usize,
-    minimums: &SplitMinimums,
+    minimums: &PreparationBounds,
 ) -> Result<Value> {
     let bytes = fs::read(input)
         .map_err(|error| Error(format!("cannot read {}: {error}", input.display())))?;
     let targets: Vec<TargetRow> = read_jsonl(input)?;
     let client = BramaClient::from_env()?;
     let outcomes = fan_out(&targets, workers, "prepared", |row| {
-        pair(row, &client, teacher, reviewer, attempts)
+        pair(row, &client, teacher, reviewer, attempts, &minimums.length)
     });
     let mut accepted = Vec::new();
     let mut rejected: BTreeMap<String, usize> = BTreeMap::new();
@@ -168,6 +172,7 @@ pub fn prepare_dataset(
         "splits": splits,
         "rejected": rejected,
         "split_minimums": minimums.named().into_iter().map(|(name, minimum)| (name.to_string(), json!(minimum))).collect::<serde_json::Map<_, _>>(),
+        "source_length_ratio": {"min": minimums.length.min, "max": minimums.length.max},
         "teacher_model": teacher,
         "review_model": reviewer,
         "system_prompt_sha256": hex::encode(Sha256::digest(SYSTEM_PROMPT.as_bytes())),
