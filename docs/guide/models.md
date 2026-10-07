@@ -177,7 +177,7 @@ trains on and `ster decisions benchmark` measures, for example:
 
 ```sh
 transcript-label-trainer lifecycle-decisions --rows reviewed-eval.jsonl --output eval-decisions.json
-ster decisions benchmark --model Qwen/Qwen3-4B --examples eval-decisions.json
+ster decisions benchmark --model Qwen/Qwen3-4B --examples eval-decisions.json --output eval-benchmark.json
 ```
 
 A row without exactly one reviewed decision, a decision that breaks the contract, or a
