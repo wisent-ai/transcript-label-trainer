@@ -22,7 +22,7 @@ Fine-tuning has no default settings: `--epochs`, `--batch-size`, `--lr` and
 a missing one is refused by its flag's name.
 
 ```sh
-transcript-label-trainer train --aspect topic \
+transcript-label-trainer train --aspect topic --min-labeled-sessions N \
   --model distilbert-base-multilingual-cased \
   --epochs E --batch-size B --lr LR --max-length TOKENS \
   --eval-split-fraction F --eval-split-seed N
@@ -73,6 +73,7 @@ name: topic-v1
 task: classify the primary topic of the session
 evaluator: manual
 model: tfidf-logreg
+min_labeled_sessions: N            # required: fewest labeled sessions on the training side
 scope:
   aspect: topic
   runtimes: [claude, codex, kimi]  # optional; default is all runtimes
@@ -134,10 +135,10 @@ What "frozen" buys you, and what it costs:
   per class, shuffled by `seed` (and the class name, so labeling one class more
   does not reshuffle the others). No class is ever emptied into the holdout,
   and any class with two or more sessions contributes at least one.
-- **It costs training data.** The floor of 8 sessions and 2 distinct values now
-  applies to the *training* side, so about 10 labeled sessions is the practical
-  minimum. Too few and the run fails with the exact numbers and says how to
-  disable the split.
+- **It costs training data.** The floor you state (`min_labeled_sessions` in
+  the job, `--min-labeled-sessions` for `train`) and two distinct values apply
+  to the *training* side, so the holdout comes on top of it. Too few and the
+  run fails with the exact numbers and says how to disable the split.
 - **If the spec's fraction or seed later disagrees with the file, the file
   wins** and the run says so on stderr. That is what frozen means; delete the
   file by hand if you truly want a different holdout, and accept that the
@@ -198,6 +199,7 @@ Rules, mirroring `autolabel`:
   uses. There is no second credential route.
 
 `train` takes the same split as flags: `--eval-split-fraction` and
-`--eval-split-seed` are required unless `--no-eval-split` is given. `evaluate
-<aspect>` then scores it the same way.
+`--eval-split-seed` are required unless `--no-eval-split` is given, and
+`--min-labeled-sessions N` is always required. `evaluate <aspect>` then scores
+it the same way.
 

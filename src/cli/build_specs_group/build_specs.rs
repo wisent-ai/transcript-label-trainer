@@ -25,6 +25,13 @@ fn training_specs() -> Vec<Spec> {
                 Kind::Text,
                 "aspect name, e.g. reviewed".to_string(),
             ),
+            required(
+                "--min-labeled-sessions",
+                "N",
+                Kind::Int,
+                "fewest labeled sessions the training side needs before a model is fitted"
+                    .to_string(),
+            ),
             option(
                 "--model",
                 "HF_MODEL_ID",
@@ -92,7 +99,9 @@ fn training_specs() -> Vec<Spec> {
              sessions into <training root>/models/<name>/eval-split.json the first time \
              the job runs; every later run reuses that file unchanged, trains on \
              nothing in it, and reports it under 'holdout_evaluation' in metrics.json. \
-             'eval_split: false' trains on every labeled session. A HuggingFace 'model' \
+             'eval_split: false' trains on every labeled session. 'min_labeled_sessions' \
+             (required, a positive integer) is the fewest labeled sessions the training \
+             side needs before a model is fitted. A HuggingFace 'model' \
              requires 'training' with epochs, batch_size, learning_rate and max_length; \
              tfidf-logreg takes none. 'judge' (model: {teacher}) names the Brama-routed \
              teacher that 'evaluate' asks for a verdict; 'judge: false' skips it. run \

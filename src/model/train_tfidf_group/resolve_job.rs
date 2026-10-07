@@ -2,7 +2,7 @@ use super::*;
 
 /// Resolve a validated job spec to its training data, without training.
 pub fn resolve_job(job: &jobs::Job) -> Result<Resolved> {
-    let labels = select_labels(job)?;
+    let labels = select_labels(&job.evaluator, &job.scope)?;
     let counts = class_counts(labels.iter().map(|label| label.value.as_str()));
     Ok(Resolved { labels, counts })
 }
@@ -33,6 +33,7 @@ pub fn prepare_job(job: &jobs::Job, resolved: &Resolved) -> Result<Plan, TrainFa
     job_meta.insert("name".to_string(), json!(job.name));
     job_meta.insert("task".to_string(), json!(job.task));
     job_meta.insert("evaluator".to_string(), json!(job.evaluator));
+    job_meta.insert("min_labeled_sessions".to_string(), json!(job.min_labeled_sessions));
     job_meta.insert("scope".to_string(), job_scope_json(&job.scope));
     job_meta.insert(
         "eval_split".to_string(),
@@ -50,6 +51,7 @@ pub fn prepare_job(job: &jobs::Job, resolved: &Resolved) -> Result<Plan, TrainFa
         &job.name,
         job.eval_split.clone(),
         job.scope.min_text_chars,
+        job.min_labeled_sessions,
         Some(Value::Object(job_meta)),
     )
 }
@@ -170,25 +172,11 @@ pub fn labels_for_artifact(metrics: &Value) -> Result<Vec<lake::SessionLabel>> {
         .get("scope")
         .ok_or_else(|| Error("artifact metrics carry a 'job' without a 'scope'".to_string()))?;
     let scope = scope_from_json(scope_value)?;
-    let mut job = synthetic_job(
-        job_meta
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or("artifact"),
-        &scope.aspect,
-        jobs::EvalSplit {
-            enabled: false,
-            fraction: None,
-            seed: None,
-        },
-    );
-    job.evaluator = job_meta
+    let evaluator = job_meta
         .get("evaluator")
         .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    job.scope = scope;
-    select_labels(&job)
+        .unwrap_or_default();
+    select_labels(evaluator, &scope)
 }
 
 pub(crate) fn infer_tfidf(artifact: &Artifact, texts: &[String]) -> Result<Vec<(String, f64)>> {

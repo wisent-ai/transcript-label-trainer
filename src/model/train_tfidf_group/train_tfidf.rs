@@ -152,12 +152,15 @@ pub(crate) fn train_hf(
 // ---------------------------------------------------------------------------
 
 /// Train one aspect from the command line. `training` carries the HuggingFace
-/// settings the caller stated and is required exactly when `model_id` is set.
+/// settings the caller stated and is required exactly when `model_id` is set;
+/// `min_sessions` is the caller's floor of labeled sessions on the training
+/// side.
 pub fn train(
     aspect: &str,
     model_id: Option<&str>,
     training: Option<&jobs::HfTraining>,
     eval_split: &Value,
+    min_sessions: usize,
 ) -> Result<Value, TrainFailure> {
     let eval_split: jobs::EvalSplit =
         serde_json::from_value(eval_split.clone()).map_err(Error::from)?;
@@ -169,6 +172,7 @@ pub fn train(
         aspect,
         eval_split,
         None,
+        min_sessions,
         None,
     )?;
     match (model_id, training) {
@@ -209,14 +213,14 @@ pub(crate) fn label_instant(ts: &str) -> (i64, u32) {
     (i64::MIN, 0)
 }
 
-/// Label records matching a job's evaluator and scope filters.
-pub fn select_labels(job: &jobs::Job) -> Result<Vec<lake::SessionLabel>> {
-    let labels = lake::load_labels(&job.scope.aspect)?;
-    let since = job.scope.since.as_deref().map(label_instant);
+/// Label records matching an evaluator and scope filters.
+pub fn select_labels(evaluator: &str, scope: &jobs::Scope) -> Result<Vec<lake::SessionLabel>> {
+    let labels = lake::load_labels(&scope.aspect)?;
+    let since = scope.since.as_deref().map(label_instant);
     Ok(labels
         .into_iter()
-        .filter(|record| record.source.trim() == job.evaluator)
-        .filter(|record| match &job.scope.runtimes {
+        .filter(|record| record.source.trim() == evaluator)
+        .filter(|record| match &scope.runtimes {
             Some(allowed) => record
                 .runtime
                 .as_deref()
@@ -227,7 +231,7 @@ pub fn select_labels(job: &jobs::Job) -> Result<Vec<lake::SessionLabel>> {
             Some(since) => label_instant(&record.ts) >= since,
             None => true,
         })
-        .filter(|record| match &job.scope.values {
+        .filter(|record| match &scope.values {
             Some(allowed) => allowed.iter().any(|value| value == &record.value),
             None => true,
         })

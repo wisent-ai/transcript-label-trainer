@@ -85,12 +85,12 @@ pub fn resolve_split(
         .iter()
         .map(|index| values[*index].as_str())
         .collect();
-    if train_index.len() < model::MIN_LABELED_SESSIONS || train_values.len() < 2 {
+    if train_index.len() < job.min_labeled_sessions || !model::at_least_two(train_values.iter()) {
         return Err(TrainFailure::NotEnoughData(format!(
             "{subject} has {total} usable labeled session(s), of which {} are held \
              out by the frozen evaluation split (fraction={}, seed={}), leaving {} \
              session(s) across {} distinct value(s) to train on; at least {} \
-             sessions and 2 distinct values are required. Add labels with \
+             sessions and two distinct values are required. Add labels with \
              'transcript-lake label add', or set 'eval_split: false' in the job \
              spec to train on every labeled session.",
             holdout_index.len(),
@@ -98,7 +98,7 @@ pub fn resolve_split(
             opt_int(seed),
             train_index.len(),
             train_values.len(),
-            model::MIN_LABELED_SESSIONS,
+            job.min_labeled_sessions,
         )));
     }
 

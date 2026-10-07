@@ -210,7 +210,7 @@ pub fn discover(
                 ),
                 format!(
                     "transcript-label-trainer train --aspect {aspect} \
-                     --eval-split-fraction F --eval-split-seed N"
+                     --min-labeled-sessions N --eval-split-fraction F --eval-split-seed N"
                 ),
             ]),
         );

@@ -78,14 +78,14 @@ yours to state: `--eval-split-fraction` (a share between 0 and 1) and
 `--eval-split-seed`, or `--no-eval-split` to train on every labeled session.
 
 ```sh
-transcript-label-trainer train --aspect reviewed \
+transcript-label-trainer train --aspect reviewed --min-labeled-sessions N \
   --eval-split-fraction F --eval-split-seed N
 ```
 
 With too few labeled sessions this fails cleanly, stating the minimum and the
-actual count — that is correct behavior, not a crash. The minimum is 8 labeled
-sessions across at least 2 distinct values *on the training side*, so the
-holdout you state comes on top of that.
+actual count — that is correct behavior, not a crash. The minimum is the
+`--min-labeled-sessions` you state, across at least two distinct values *on the
+training side*, so the holdout you state comes on top of that.
 
 Emit suggestions for sessions that have no label on that aspect yet:
 

@@ -188,6 +188,7 @@ pub(crate) fn cmd_train(args: &Parsed) -> Result<i32> {
         model_id,
         training.as_ref(),
         &eval_split,
+        stated_count(args, "--min-labeled-sessions")?,
     ) {
         Ok(metrics) => metrics,
         Err(failure) => return Ok(report("train", failure)),

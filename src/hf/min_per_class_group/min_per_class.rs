@@ -1,9 +1,9 @@
 use super::*;
 
-/// HF fine-tuning needs 2 sessions per class on the training side so the
+/// HF fine-tuning needs two sessions per class on the training side so the
 /// stratified in-training split keeps every class on both sides. The floor of
-/// 8 labeled sessions overall lives in `model.rs`, where both backends share
-/// it; this one is the HF path's own.
+/// labeled sessions overall is the caller's (`--min-labeled-sessions` or the
+/// job's `min_labeled_sessions`); this one is the HF path's own.
 pub(crate) const MIN_PER_CLASS: usize = 2;
 
 /// The `TrainingArguments` defaults the Python path inherited by passing none

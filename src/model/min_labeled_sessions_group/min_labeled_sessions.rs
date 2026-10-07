@@ -1,9 +1,10 @@
 use super::*;
 
-/// Below this many labeled sessions a classifier is not meaningful, so train
-/// refuses with an explicit message instead of fitting noise. This is a
-/// product floor, not a library requirement.
-pub const MIN_LABELED_SESSIONS: usize = 8;
+/// Whether `items` yields at least two entries: a classifier needs two
+/// distinct values to separate, a library requirement and not a choice.
+pub(crate) fn at_least_two<T>(mut items: impl Iterator<Item = T>) -> bool {
+    items.next().is_some() && items.next().is_some()
+}
 
 /// The fitted tfidf-logreg artifact. Replaces the Python `model.joblib`.
 pub(crate) const MODEL_FILE: &str = "model.json";
@@ -72,19 +73,21 @@ pub struct Resolved {
 /// Preselected label records joined with their lake text.
 ///
 /// `subject` names the selection in error messages ("aspect 'topic'" for
-/// train, "job 'topic-v1' (…)" for run). Returns the rows that survived, in
+/// train, "job 'topic-v1' (…)" for run), and `min_sessions` is the caller's
+/// stated floor of labeled sessions. Returns the rows that survived, in
 /// selection order, plus the per-value counts. Fails with the exact numbers
 /// when the selection cannot be trained.
 pub(crate) fn frame_from_labels(
     labels: &[lake::SessionLabel],
     subject: &str,
     min_text_chars: Option<u64>,
+    min_sessions: usize,
 ) -> Result<(Vec<lake::SessionLabel>, BTreeMap<String, usize>), TrainFailure> {
     let n_labeled = labels.len();
-    if n_labeled < MIN_LABELED_SESSIONS {
+    if n_labeled < min_sessions {
         return Err(not_enough(format!(
             "{subject} has {n_labeled} labeled session(s); at least \
-             {MIN_LABELED_SESSIONS} are required to train. Add labels with \
+             {min_sessions} are required to train. Add labels with \
              'transcript-lake label add' and retry."
         )));
     }
@@ -126,10 +129,10 @@ pub(crate) fn frame_from_labels(
     }
 
     let counts = class_counts(rows.iter().map(|r| r.value.as_str()));
-    if rows.len() < MIN_LABELED_SESSIONS || counts.len() < 2 {
+    if rows.len() < min_sessions || !at_least_two(counts.keys()) {
         return Err(not_enough(format!(
             "{subject} has {} usable labeled session(s) across {} distinct \
-             value(s); at least {MIN_LABELED_SESSIONS} sessions and 2 distinct \
+             value(s); at least {min_sessions} sessions and two distinct \
              values are required to train. Add labels with 'transcript-lake \
              label add' and retry.",
             rows.len(),
@@ -148,15 +151,20 @@ pub(crate) fn class_counts<'a>(values: impl Iterator<Item = &'a str>) -> BTreeMa
 }
 
 /// A job spec good enough to resolve a split with. `train --aspect` has no
-/// job file, and `labels_for_artifact` reconstructs only the selection half
-/// of one, so both build their `Job` here rather than inventing a second
-/// shape for the same thing.
-pub(crate) fn synthetic_job(name: &str, aspect: &str, eval_split: jobs::EvalSplit) -> jobs::Job {
+/// job file, so it builds its `Job` here rather than inventing a second shape
+/// for the same thing.
+pub(crate) fn synthetic_job(
+    name: &str,
+    aspect: &str,
+    eval_split: jobs::EvalSplit,
+    min_labeled_sessions: usize,
+) -> jobs::Job {
     jobs::Job {
         name: name.to_string(),
         task: String::new(),
         evaluator: String::new(),
         model: jobs::SKLEARN_MODEL.to_string(),
+        min_labeled_sessions,
         scope: jobs::Scope {
             aspect: aspect.to_string(),
             runtimes: None,
@@ -183,10 +191,11 @@ pub(crate) fn build_plan(
     out_name: &str,
     eval_split: jobs::EvalSplit,
     min_text_chars: Option<u64>,
+    min_sessions: usize,
     job_meta: Option<Value>,
 ) -> Result<Plan, TrainFailure> {
-    let (rows, _counts) = frame_from_labels(labels, subject, min_text_chars)?;
-    let job = synthetic_job(out_name, aspect, eval_split);
+    let (rows, _counts) = frame_from_labels(labels, subject, min_text_chars, min_sessions)?;
+    let job = synthetic_job(out_name, aspect, eval_split, min_sessions);
     let split = evaluate::resolve_split(&job, &rows, subject)?;
     Ok(Plan {
         aspect: aspect.to_string(),

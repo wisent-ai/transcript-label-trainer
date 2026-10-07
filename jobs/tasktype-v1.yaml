@@ -12,6 +12,9 @@ name: tasktype-v1
 task: classify what kind of work the session did
 evaluator: brama:codex/gpt-5.6-sol
 model: tfidf-logreg
+# The fewest labeled sessions the training side needs is the operator's to
+# state; `run` refuses this job until it is filled in.
+min_labeled_sessions:
 scope:
   aspect: tasktype
 # The holdout share (between 0 and 1) and seed are the operator's to state;

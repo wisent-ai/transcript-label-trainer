@@ -217,6 +217,24 @@ pub fn load(path: &str) -> Result<Job> {
 
     let model = require_string(&raw, "model")?;
 
+    let positive = |number: &serde_yaml::Number| {
+        number
+            .as_u64()
+            .and_then(|value| usize::try_from(value).ok())
+            .and_then(std::num::NonZeroUsize::new)
+    };
+    let min_labeled_sessions = match get(&raw, "min_labeled_sessions") {
+        Some(Yaml::Number(number)) => match positive(number) {
+            Some(value) => value.get(),
+            None => bail!("'min_labeled_sessions' must be a positive integer, got {number}"),
+        },
+        Some(other) => bail!("'min_labeled_sessions' must be a positive integer, got {}", py_repr(other)),
+        None => bail!(
+            "'min_labeled_sessions' is required: the fewest labeled sessions the training \
+             side needs is the job's to state, transcript-label-trainer assumes none"
+        ),
+    };
+
     let Some(Yaml::Mapping(scope)) = get(&raw, "scope") else {
         bail!("'scope' must be a mapping with at least 'aspect'")
     };
@@ -264,6 +282,7 @@ pub fn load(path: &str) -> Result<Job> {
         task,
         evaluator,
         model,
+        min_labeled_sessions,
         scope: Scope {
             aspect,
             runtimes: string_list(scope, "runtimes")?,
