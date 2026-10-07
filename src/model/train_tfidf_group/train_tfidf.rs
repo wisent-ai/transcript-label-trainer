@@ -95,6 +95,10 @@ pub(crate) fn train_hf(
         batch_size: training.batch_size,
         lr: training.learning_rate,
         max_length,
+        seed: training.seed,
+        weight_decay: training.weight_decay,
+        max_grad_norm: training.max_grad_norm,
+        in_training_eval_share: training.in_training_eval_share,
     };
     let trained = crate::hf::train(&out_dir, &texts, &values, &config)?;
 
@@ -179,7 +183,8 @@ pub fn train(
         (None, _) => train_tfidf(&plan),
         (Some(model_id), Some(training)) => train_hf(&plan, model_id, training),
         (Some(model_id), None) => Err(format!(
-            "fine-tuning {model_id} needs --epochs, --batch-size, --lr and --max-length"
+            "fine-tuning {model_id} needs --epochs, --batch-size, --lr, --max-length, --seed, \
+             --weight-decay, --max-grad-norm and --in-training-eval-share"
         )
         .into()),
     }

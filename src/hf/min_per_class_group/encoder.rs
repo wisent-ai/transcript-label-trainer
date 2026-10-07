@@ -65,7 +65,13 @@ impl Classifier {
             let std = config
                 .get("initializer_range")
                 .and_then(Value::as_f64)
-                .unwrap_or(0.02);
+                .ok_or_else(|| {
+                    Error(
+                        "the model's config.json has no numeric 'initializer_range', so the new \
+                         classifier head has no stated initialisation"
+                            .into(),
+                    )
+                })?;
             // A classifier head sized for someone else's labels is useless
             // here, so it is re-initialised rather than reshaped.
             let mismatched = tensors
@@ -110,7 +116,7 @@ impl Classifier {
                 encoder,
                 pooler,
                 dropout: HeadDropout {
-                    probability: arch.head_dropout(config) as f64,
+                    probability: arch.head_dropout(config)? as f64,
                     rng: std::cell::RefCell::new(ChaCha8Rng::seed_from_u64(rng.next_u64())),
                 },
                 head,

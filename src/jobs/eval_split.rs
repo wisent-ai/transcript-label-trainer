@@ -71,7 +71,7 @@ pub(crate) fn eval_split(raw: &serde_yaml::Mapping) -> Result<EvalSplit> {
     })
 }
 
-/// Validate the training section: required with all four settings for a
+/// Validate the training section: required with every setting for a
 /// HuggingFace model, refused for the TF-IDF backend, which takes none.
 pub(crate) fn training(raw: &serde_yaml::Mapping, model: &str) -> Result<Option<HfTraining>> {
     let section = get(raw, "training");
@@ -105,12 +105,36 @@ pub(crate) fn training(raw: &serde_yaml::Mapping, model: &str) -> Result<Option<
             _ => bail!("training.{key} is required and must be a whole number of at least 1"),
         }
     };
+    let seed = match get(mapping, "seed").and_then(Yaml::as_u64) {
+        Some(value) => value,
+        None => bail!("training.seed is required and must be a non-negative whole number"),
+    };
+    let weight_decay = match get(mapping, "weight_decay").and_then(Yaml::as_f64) {
+        Some(value) if value.is_finite() && !value.is_sign_negative() => value,
+        Some(value) => bail!("training.weight_decay must be zero or more, got {value}"),
+        None => bail!("training.weight_decay is required and must be a number"),
+    };
+    let share = match get(mapping, "in_training_eval_share").and_then(Yaml::as_f64) {
+        Some(value) if strict_share(value) => value,
+        Some(value) => bail!("training.in_training_eval_share must be a share above none and below all, got {value}"),
+        None => bail!("training.in_training_eval_share is required and must be a number"),
+    };
     Ok(Some(HfTraining {
         epochs: positive("epochs")?,
         batch_size: whole("batch_size")?,
         learning_rate: positive("learning_rate")?,
         max_length: whole("max_length")?,
+        seed,
+        weight_decay,
+        max_grad_norm: positive("max_grad_norm")?,
+        in_training_eval_share: share,
     }))
+}
+
+/// A share strictly between none and all: its sign is positive (zero has
+/// none), and it lies below that sign, which is one.
+pub(crate) fn strict_share(value: f64) -> bool {
+    value.is_normal() && value.is_sign_positive() && value < value.signum()
 }
 
 /// Validate the judge section. Absent means the default teacher, on.

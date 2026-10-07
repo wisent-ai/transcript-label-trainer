@@ -6,6 +6,7 @@ pub(crate) fn build_specs() -> Vec<Spec> {
     specs.extend(model_specs());
     specs.extend(humanizer_specs());
     specs.extend(release_specs());
+    specs.extend(goal_served_specs());
     specs
 }
 
@@ -67,6 +68,34 @@ fn training_specs() -> Vec<Spec> {
                 "HF tokenizer max tokens per session; required with --model".to_string(),
             ),
             option(
+                "--seed",
+                "N",
+                Kind::Int,
+                "HF seed for the head initialisation, in-training slice and shuffle; required \
+                 with --model"
+                    .to_string(),
+            ),
+            option(
+                "--weight-decay",
+                "F",
+                Kind::Float,
+                "HF AdamW weight decay, zero or more; required with --model".to_string(),
+            ),
+            option(
+                "--max-grad-norm",
+                "F",
+                Kind::Float,
+                "HF global gradient norm clip, above zero; required with --model".to_string(),
+            ),
+            option(
+                "--in-training-eval-share",
+                "F",
+                Kind::Float,
+                "HF share of the training side sliced off to watch the loss, resplit every \
+                 run; required with --model"
+                    .to_string(),
+            ),
+            option(
                 "--eval-split-fraction",
                 "F",
                 Kind::Float,
@@ -102,7 +131,8 @@ fn training_specs() -> Vec<Spec> {
              'eval_split: false' trains on every labeled session. 'min_labeled_sessions' \
              (required, a positive integer) is the fewest labeled sessions the training \
              side needs before a model is fitted. A HuggingFace 'model' \
-             requires 'training' with epochs, batch_size, learning_rate and max_length; \
+             requires 'training' with epochs, batch_size, learning_rate, max_length, seed, \
+             weight_decay, max_grad_norm and in_training_eval_share; \
              tfidf-logreg takes none. 'judge' (model: {teacher}) names the Brama-routed \
              teacher that 'evaluate' asks for a verdict; 'judge: false' skips it. run \
              prints the resolved job, then the resolved split, then the metrics."

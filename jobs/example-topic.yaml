@@ -15,7 +15,8 @@
 # sessions the training side needs. judge is on unless the spec says
 # `judge: false`.
 # A HuggingFace model also needs a `training` section (epochs, batch_size,
-# learning_rate, max_length); tfidf-logreg takes none.
+# learning_rate, max_length, seed, weight_decay, max_grad_norm and
+# in_training_eval_share); tfidf-logreg takes none.
 #
 # Run it with:  transcript-label-trainer run jobs/example-topic.yaml
 # Run it on a Stado target with:

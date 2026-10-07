@@ -203,9 +203,10 @@ pub(crate) fn infer_tfidf(artifact: &Artifact, texts: &[String]) -> Result<Vec<(
     Ok(TfidfModel::from_file(file)?.predict(texts))
 }
 
-/// Predicts with the sequence length and batch size the artifact was trained
-/// at, read from its own metrics; an artifact that does not record them was
-/// trained before they were stated, and is refused rather than guessed at.
+/// Predicts with the sequence length, batch size and seed the artifact was
+/// trained at, read from its own metrics; an artifact that does not record
+/// them was trained before they were stated, and is refused rather than
+/// guessed at.
 #[cfg(feature = "hf")]
 pub(crate) fn infer_hf(artifact: &Artifact, texts: &[String]) -> Result<Vec<(String, f64)>> {
     let hyperparameters = artifact.metrics.get("hyperparameters");
@@ -213,7 +214,6 @@ pub(crate) fn infer_hf(artifact: &Artifact, texts: &[String]) -> Result<Vec<(Str
         hyperparameters
             .and_then(|hyperparameters| hyperparameters.get(key))
             .and_then(Value::as_u64)
-            .map(|value| value as usize)
             .ok_or_else(|| {
                 Error(format!(
                     "the artifact in {} records no hyperparameters.{key}; retrain it with \
@@ -222,7 +222,13 @@ pub(crate) fn infer_hf(artifact: &Artifact, texts: &[String]) -> Result<Vec<(Str
                 ))
             })
     };
-    crate::hf::predict(&artifact.dir, texts, stated("max_length")?, stated("batch_size")?)
+    crate::hf::predict(
+        &artifact.dir,
+        texts,
+        stated("max_length")? as usize,
+        stated("batch_size")? as usize,
+        stated("seed")?,
+    )
 }
 
 #[cfg(not(feature = "hf"))]

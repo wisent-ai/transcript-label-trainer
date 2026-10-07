@@ -159,8 +159,9 @@ impl Architecture {
 
     /// The dropout transformers applies between the pooled state and the
     /// classifier: `seq_classif_dropout` for distilbert, `classifier_dropout`
-    /// falling back to `hidden_dropout_prob` for bert.
-    pub(crate) fn head_dropout(self, config: &Value) -> f32 {
+    /// falling back to `hidden_dropout_prob` for bert. A config stating
+    /// neither is refused rather than given a dropout nobody chose.
+    pub(crate) fn head_dropout(self, config: &Value) -> Result<f32> {
         let configured = match self {
             Self::DistilBert => config.get("seq_classif_dropout").and_then(Value::as_f64),
             Self::Bert => config
@@ -168,7 +169,9 @@ impl Architecture {
                 .and_then(Value::as_f64)
                 .or_else(|| config.get("hidden_dropout_prob").and_then(Value::as_f64)),
         };
-        configured.unwrap_or(0.1) as f32
+        configured.map(|value| value as f32).ok_or_else(|| {
+            Error("the model's config.json states no classifier dropout".into())
+        })
     }
 }
 

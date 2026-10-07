@@ -17,14 +17,21 @@ any other `model_type` fails with a sentence naming those two rather than
 pretending to train.
 
 Transcripts are mixed Polish and English, so prefer a multilingual base model.
-Fine-tuning has no default settings: `--epochs`, `--batch-size`, `--lr` and
-`--max-length` are required with `--model` and are recorded in `metrics.json`;
-a missing one is refused by its flag's name.
+Fine-tuning has no default settings: `--epochs`, `--batch-size`, `--lr`,
+`--max-length`, `--seed` (head initialisation, in-training slice and shuffle),
+`--weight-decay` (AdamW, zero or more), `--max-grad-norm` (global gradient
+clip) and `--in-training-eval-share` (the share of the training side sliced off
+to watch the loss) are required with `--model` and are recorded in
+`metrics.json`; a missing one is refused by its flag's name. Prediction reads
+the sequence length, batch size and seed back from the artifact. A base model
+whose `config.json` states no `initializer_range` or classifier dropout is
+refused rather than given one.
 
 ```sh
 transcript-label-trainer train --aspect topic --min-labeled-sessions N \
   --model distilbert-base-multilingual-cased \
   --epochs E --batch-size B --lr LR --max-length TOKENS \
+  --seed S --weight-decay W --max-grad-norm G --in-training-eval-share F \
   --eval-split-fraction F --eval-split-seed N
 ```
 
@@ -89,7 +96,8 @@ judge:                             # optional; ON by default, shown with its def
 
 Every field is validated with a clear error — there are no silent defaults.
 A HuggingFace `model` also requires a `training` section with `epochs`,
-`batch_size`, `learning_rate` and `max_length`; `tfidf-logreg` refuses one.
+`batch_size`, `learning_rate`, `max_length`, `seed`, `weight_decay`,
+`max_grad_norm` and `in_training_eval_share`; `tfidf-logreg` refuses one.
 Note that `evaluator: manual` matches only `manual` exactly, not `human` or
 `brama:…`; to train on a teacher's labels, name it, e.g.
 `evaluator: brama:best`. Model-sourced labels are never ground

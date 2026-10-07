@@ -6,14 +6,8 @@ use super::*;
 /// job's `min_labeled_sessions`); this one is the HF path's own.
 pub(crate) const MIN_PER_CLASS: usize = 2;
 
-/// The `TrainingArguments` defaults the Python path inherited by passing none
-/// of them: seed 0, linear learning-rate decay to zero with no warmup, no
-/// weight decay, gradients clipped at a global norm of 1.
-pub(crate) const SEED: u64 = 0;
-
-pub(crate) const MAX_GRAD_NORM: f64 = 1.0;
-
-pub(crate) const WEIGHT_DECAY: f64 = 0.0;
+/// Training decays the learning rate linearly to zero with no warmup; the
+/// seed, weight decay, gradient clip and in-training slice are the caller's.
 
 /// Both architectures normalise at eps 1e-12; bert lets its config say so.
 pub(crate) const DEFAULT_LAYER_NORM_EPS: f64 = 1e-12;
@@ -30,6 +24,10 @@ pub struct TrainConfig<'a> {
     pub batch_size: usize,
     pub lr: f64,
     pub max_length: usize,
+    pub seed: u64,
+    pub weight_decay: f64,
+    pub max_grad_norm: f64,
+    pub in_training_eval_share: f64,
 }
 
 /// A finished fine-tune: where it landed, and the part of `metrics.json` this
@@ -92,6 +90,7 @@ pub fn predict(
     texts: &[String],
     max_length: usize,
     batch_size: usize,
+    seed: u64,
 ) -> Result<Vec<(String, f64)>> {
     if texts.is_empty() {
         return Ok(Vec::new());
@@ -114,7 +113,7 @@ pub fn predict(
         .collect::<Vec<_>>();
 
     let arch = Architecture::from_config(&config)?;
-    let mut rng = ChaCha8Rng::seed_from_u64(SEED);
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let (model, _) = Classifier::load(arch, &config, raw, classes.len(), &device, false, &mut rng)?;
     let mut tokenizer = load_tokenizer(&artifact_dir.join("tokenizer.json"))?;
     prepare_tokenizer(&mut tokenizer, arch.max_positions(&config)?.min(max_length))?;
@@ -150,8 +149,11 @@ pub(crate) fn fine_tune(
     // A stratified slice of the TRAINING side, resplit on every run, so the
     // fine-tune has a loss curve to watch. It is not the frozen holdout: that
     // one is the same sessions every run and no backend ever trains on it.
-    let n_test = std::cmp::max(classes.len(), (texts.len() as f64 * 0.2).round() as usize);
-    let mut rng = ChaCha8Rng::seed_from_u64(SEED);
+    let n_test = std::cmp::max(
+        classes.len(),
+        (texts.len() as f64 * config.in_training_eval_share).round() as usize,
+    );
+    let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
     let (train_index, eval_index) = stratified_split(label_ids, classes.len(), n_test, &mut rng);
 
     let train_batch = Batches::encode(&tokenizer, texts, label_ids, &train_index, &device)?;
@@ -175,7 +177,7 @@ pub(crate) fn fine_tune(
         stepped.clone(),
         ParamsAdamW {
             lr: config.lr,
-            weight_decay: WEIGHT_DECAY,
+            weight_decay: config.weight_decay,
             ..Default::default()
         },
     )
@@ -198,7 +200,7 @@ pub(crate) fn fine_tune(
             let mut grads = batch_loss
                 .backward()
                 .map_err(|err| Error(format!("backward pass failed at step {step}: {err}")))?;
-            clip_grads(&mut grads, &stepped, MAX_GRAD_NORM)?;
+            clip_grads(&mut grads, &stepped, config.max_grad_norm)?;
             optimizer
                 .step(&grads)
                 .map_err(|err| Error(format!("optimizer step {step} failed: {err}")))?;
@@ -237,6 +239,10 @@ pub(crate) fn fine_tune(
             "batch_size": config.batch_size,
             "lr": config.lr,
             "max_length": config.max_length,
+            "seed": config.seed,
+            "weight_decay": config.weight_decay,
+            "max_grad_norm": config.max_grad_norm,
+            "in_training_eval_share": config.in_training_eval_share,
         }),
     );
     metrics.insert("device".into(), json!(device_name));

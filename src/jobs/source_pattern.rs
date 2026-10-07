@@ -36,16 +36,32 @@ pub(crate) const EVAL_SPLIT_KEYS: [&str; 2] = ["fraction", "seed"];
 
 pub(crate) const JUDGE_KEYS: [&str; 1] = ["model"];
 
-pub(crate) const TRAINING_KEYS: [&str; 4] = ["epochs", "batch_size", "learning_rate", "max_length"];
+pub(crate) const TRAINING_KEYS: &[&str] = &[
+    "epochs",
+    "batch_size",
+    "learning_rate",
+    "max_length",
+    "seed",
+    "weight_decay",
+    "max_grad_norm",
+    "in_training_eval_share",
+];
 
 /// The fine-tuning settings a HuggingFace job states in its `training`
 /// section; the TF-IDF backend has none. Recorded with the job's metrics.
+/// `seed` drives the head initialisation, the in-training slice and the
+/// shuffle; `in_training_eval_share` is the share of the training side
+/// sliced off to watch the loss, resplit every run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HfTraining {
     pub epochs: f64,
     pub batch_size: usize,
     pub learning_rate: f64,
     pub max_length: usize,
+    pub seed: u64,
+    pub weight_decay: f64,
+    pub max_grad_norm: f64,
+    pub in_training_eval_share: f64,
 }
 
 /// The frozen holdout section of a validated spec. Serialized verbatim into
