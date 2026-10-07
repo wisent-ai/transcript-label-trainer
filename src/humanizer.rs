@@ -29,7 +29,7 @@ mod manifest;
 pub use audit::{audit_outputs, AuditGate};
 pub use manifest::manifest;
 pub use anchors::LengthRatio;
-pub use prepare::{prepare_dataset, PreparationBounds};
+pub use prepare::{prepare_dataset, HeldOut, PreparationBounds};
 pub use publication::{publish_adapter, Publication};
 
 /// How many targets the humanizer corpus takes: at most `limit`, at most

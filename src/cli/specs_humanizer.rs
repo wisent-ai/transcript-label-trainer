@@ -61,6 +61,8 @@ pub(crate) fn minimum_options() -> Vec<Opt> {
         minimum("--min-test-rows", "fewest accepted rows the test split needs"),
         ratio("--min-length-ratio", "shortest generated source accepted, as a share of its target's characters"),
         ratio("--max-length-ratio", "longest generated source accepted, as a multiple of its target's characters"),
+        ratio("--test-share", "share of sessions held out for the test split"),
+        ratio("--validation-share", "share of sessions held out for the validation split"),
     ]
 }
 
@@ -72,6 +74,10 @@ pub(crate) fn stated_minimums(args: &Parsed) -> Result<crate::humanizer::Prepara
         length: crate::humanizer::LengthRatio {
             min: stated_bound(args, "--min-length-ratio")?,
             max: stated_bound(args, "--max-length-ratio")?,
+        },
+        held_out: crate::humanizer::HeldOut {
+            test: stated_bound(args, "--test-share")?,
+            validation: stated_bound(args, "--validation-share")?,
         },
     })
 }

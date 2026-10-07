@@ -259,6 +259,7 @@ pub fn execute_humanizer_model(
          HUMANIZER_MIN_VOICE_GAIN={} HUMANIZER_MIN_SEMANTIC_DELTA={} \
          HUMANIZER_MIN_TRAIN_ROWS={} HUMANIZER_MIN_VALIDATION_ROWS={} HUMANIZER_MIN_TEST_ROWS={} \
          HUMANIZER_MIN_LENGTH_RATIO={} HUMANIZER_MAX_LENGTH_RATIO={} \
+         HUMANIZER_TEST_SHARE={} HUMANIZER_VALIDATION_SHARE={} \
          ./training/humanizer-model/run.sh \"$work/targets.jsonl\"",
         gate.min_semantic_fidelity,
         gate.min_voice_match,
@@ -271,6 +272,8 @@ pub fn execute_humanizer_model(
         minimums.test,
         minimums.length.min,
         minimums.length.max,
+        minimums.held_out.test,
+        minimums.held_out.validation,
     );
     let args = vec![
         OsString::from("submit"),
