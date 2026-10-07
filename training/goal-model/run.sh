@@ -54,8 +54,7 @@ if [ ! -s "$WORK/jeden-goal-qwen3-4b-f16.gguf" ]; then
 fi
 cmake -S "$LLAMA_CPP" -B "$LLAMA_CPP/build" \
   -DLLAMA_CURL=OFF -DGGML_CUDA=OFF -DCMAKE_BUILD_TYPE=Release
-cmake --build "$LLAMA_CPP/build" --target llama-quantize llama-server \
-  -j "${GOAL_LLAMA_BUILD_JOBS:-8}"
+cmake --build "$LLAMA_CPP/build" --target llama-quantize llama-server --parallel
 if [ ! -s "$WORK/jeden-goal-qwen3-4b-q4_k_m.gguf" ]; then
   "$LLAMA_CPP/build/bin/llama-quantize" \
     "$WORK/jeden-goal-qwen3-4b-f16.gguf" \
