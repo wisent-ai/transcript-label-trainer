@@ -194,7 +194,9 @@ pub(crate) fn model_specs() -> Vec<Spec> {
         description: Some(
             "Upload immutable reviewed train and held-out datasets, fine-tune on the named \
              exclusive Stado GPU target, audit every held-out decision through Brama -best, \
-             and publish the complete candidate only when the lifecycle quality gate passes."
+             and publish the complete candidate only when the lifecycle quality gate passes: \
+             at most --audit-max-wrong-share of the decisions semantically wrong, judged by \
+             --audit-workers concurrent Brama calls."
                 .to_string(),
         ),
         positionals: vec![
@@ -223,6 +225,8 @@ pub(crate) fn model_specs() -> Vec<Spec> {
             required("--eval-parallel", "N", Kind::Int, "server slots and concurrent requests of the quantized evaluation".to_string()),
             required("--eval-slot-context", "N", Kind::Int, "context tokens each evaluation slot holds".to_string()),
             required("--eval-gpu-layers", "N", Kind::Text, "layers llama-server offloads to the GPU in the evaluation".to_string()),
+            required("--audit-workers", "N", Kind::Int, "concurrent Brama calls of the final audit; the route's own concurrency allowance".to_string()),
+            required("--audit-max-wrong-share", "F", Kind::Float, "largest share of held-out decisions the audit may call wrong, between none and all".to_string()),
         ],
     };
 
@@ -277,7 +281,7 @@ pub(crate) fn model_specs() -> Vec<Spec> {
         description: Some(
             "Judge every held-out student decision independently, reject inferred completion, \
              retain the full verdict record, and fail the lifecycle quality gate when more than \
-             two percent are semantically wrong."
+             --max-wrong-share of them are semantically wrong."
                 .to_string(),
         ),
         positionals: vec![Positional {
@@ -303,6 +307,8 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Text,
                 "use an explicit Brama-routed independent judge".to_string(),
             ),
+            required("--workers", "N", Kind::Int, "concurrent Brama calls; the route's own concurrency allowance".to_string()),
+            required("--max-wrong-share", "F", Kind::Float, "largest share of decisions the audit may call wrong, between none and all".to_string()),
         ],
     };
     vec![

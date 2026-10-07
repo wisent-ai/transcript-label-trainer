@@ -85,6 +85,13 @@ pub struct LifecycleServing {
     pub gpu_layers: String,
 }
 
+/// The final audit the lifecycle job runs: its Brama concurrency and the
+/// largest share of held-out decisions it may call wrong.
+pub struct LifecycleAudit {
+    pub workers: usize,
+    pub max_wrong_share: f64,
+}
+
 /// Submit reviewed Oko lifecycle splits to one exclusive Stado GPU target.
 pub fn execute_lifecycle_model(
     train_path: &Path,
@@ -92,6 +99,7 @@ pub fn execute_lifecycle_model(
     compute_target: &str,
     brama_url: &str,
     serving: &LifecycleServing,
+    audit: &LifecycleAudit,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
@@ -128,11 +136,14 @@ pub fn execute_lifecycle_model(
          export BRAMA_URL={brama_url}; \
          export LIFECYCLE_EVAL_PARALLEL={}; export LIFECYCLE_EVAL_SLOT_CONTEXT={}; \
          export LIFECYCLE_EVAL_GPU_LAYERS={}; \
+         export LIFECYCLE_AUDIT_WORKERS={}; export LIFECYCLE_AUDIT_MAX_WRONG_SHARE={}; \
          ./training/lifecycle-model/run.sh \
          \"$work/reviewed-train.jsonl\" \"$work/reviewed-eval.jsonl\"",
         serving.parallel,
         serving.slot_context,
         shell_quote(&serving.gpu_layers),
+        audit.workers,
+        audit.max_wrong_share,
     );
     let args = vec![
         OsString::from("submit"),

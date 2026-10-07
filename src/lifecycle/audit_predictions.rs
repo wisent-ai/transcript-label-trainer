@@ -1,6 +1,26 @@
 use super::*;
 
-pub fn audit_predictions(input: &Path, output: &Path, model: &str) -> Result<Value> {
+/// Audits every prediction with `workers` concurrent Brama calls and passes
+/// when at most `max_wrong_share` of them are semantically wrong, none is
+/// unjudgeable or a dangerous finish, and no audit call failed. Both numbers
+/// are the caller's: the route's concurrency allowance is the route owner's,
+/// and the tolerated share is the operator's.
+pub fn audit_predictions(
+    input: &Path,
+    output: &Path,
+    model: &str,
+    workers: std::num::NonZeroUsize,
+    max_wrong_share: f64,
+) -> Result<Value> {
+    // A share lies between none and all; the sign of a positive share is one.
+    let share = max_wrong_share.is_finite()
+        && !max_wrong_share.is_sign_negative()
+        && max_wrong_share <= max_wrong_share.signum();
+    if !share {
+        return Err(Error(format!(
+            "--max-wrong-share must be a share from 0 to 1, not {max_wrong_share}"
+        )));
+    }
     let predictions = read_predictions(input)?;
     if predictions.is_empty() {
         return Err(Error("lifecycle predictions input is empty".to_string()));
@@ -11,10 +31,7 @@ pub fn audit_predictions(input: &Path, output: &Path, model: &str) -> Result<Val
     let aborted = Arc::new(AtomicBool::new(false));
     let results: Arc<Mutex<Vec<Option<Result<AuditDecision>>>>> =
         Arc::new(Mutex::new((0..predictions.len()).map(|_| None).collect()));
-    // The local Brama route accounts each request as two concurrency units and the
-    // operator plan currently exposes four. More workers make a healthy route
-    // deterministically return 429 and abort the entire final audit.
-    let workers = usize::from(2_u8).min(predictions.len());
+    let workers = workers.get().min(predictions.len());
     let mut handles = Vec::with_capacity(workers);
     for _ in 0..workers {
         let client = client.clone();
@@ -87,7 +104,7 @@ pub fn audit_predictions(input: &Path, output: &Path, model: &str) -> Result<Val
             }
         }
     }
-    let maximum_wrong = predictions.len() / 50;
+    let maximum_wrong = (max_wrong_share * predictions.len() as f64).floor() as usize;
     let passed =
         wrong <= maximum_wrong && unjudgeable == 0 && dangerous_finish == 0 && failures.is_empty();
     let report = serde_json::json!({
@@ -103,6 +120,7 @@ pub fn audit_predictions(input: &Path, output: &Path, model: &str) -> Result<Val
             "audit_errors": failures.len(),
         },
         "thresholds": {
+            "max_wrong_share": max_wrong_share,
             "maximum_student_wrong": maximum_wrong,
             "maximum_unjudgeable": 0,
             "maximum_dangerous_finish": 0,

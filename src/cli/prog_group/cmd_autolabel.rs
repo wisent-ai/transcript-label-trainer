@@ -136,6 +136,10 @@ pub(crate) fn cmd_lifecycle_model(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(1)),
         args.text("--compute-target").unwrap_or_default(), args.text("--brama-url").unwrap_or_default(),
         &lifecycle_serving(args)?,
+        &stado::LifecycleAudit {
+            workers: stated_count(args, "--audit-workers")?,
+            max_wrong_share: stated_share(args, "--audit-max-wrong-share")?,
+        },
     )?;
     outln!("Stado job: {}", job.job_id);
     outln!("model artifact: {}", job.output_uri);
@@ -182,6 +186,12 @@ pub(crate) fn stated_count(args: &Parsed, flag: &str) -> Result<usize> {
     }
 }
 
+/// A share the caller states, refused by its flag's name when missing.
+pub(crate) fn stated_share(args: &Parsed, flag: &str) -> Result<f64> {
+    args.float(flag)
+        .ok_or_else(|| Error(format!("{flag} F is required on the command line; this command has no default for it")))
+}
+
 pub(crate) fn cmd_lifecycle_audit(args: &Parsed) -> Result<i32> {
     let review_model = match (args.flag("--best"), args.text("--brama-model")) {
         (true, None) => crate::brama::BEST_MODEL,
@@ -197,6 +207,9 @@ pub(crate) fn cmd_lifecycle_audit(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),
         review_model,
+        std::num::NonZeroUsize::new(stated_count(args, "--workers")?)
+            .ok_or_else(|| Error("--workers must be positive".to_string()))?,
+        stated_share(args, "--max-wrong-share")?,
     )?;
     outln!("{}", dumps(&result));
     Ok(i32::from(
