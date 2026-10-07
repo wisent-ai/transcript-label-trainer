@@ -9,7 +9,7 @@
 //! the spec states the holdout's fraction and seed (or `false`), and that
 //! holdout is frozen out of training; `judge` has a Brama-routed teacher rule
 //! on whether the trained model's holdout predictions are acceptable, on
-//! unless the spec says `judge: false`. A HuggingFace model also states its
+//! unless the spec says `judge: false`. Every job also states its backend's
 //! `training` settings.
 //!
 //! Every field is validated here; invalid specs fail with clear errors and no
@@ -26,6 +26,8 @@ use crate::util::{float_repr, Result};
 
 mod source_pattern;
 mod eval_split;
+mod training;
 
 pub use source_pattern::*;
 pub use eval_split::*;
+pub use training::*;

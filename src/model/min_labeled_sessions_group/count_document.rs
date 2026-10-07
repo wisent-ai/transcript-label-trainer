@@ -35,10 +35,10 @@ pub(crate) struct Vectorizer {
 impl Vectorizer {
     /// Fit on a corpus and return the fitted rows in the same pass, the way
     /// `Pipeline.fit` does — the documents are counted exactly once.
-    pub(crate) fn fit_transform(docs: &[String]) -> (Self, Vec<SparseRow>) {
+    pub(crate) fn fit_transform(docs: &[String], settings: &jobs::TfidfTraining) -> (Self, Vec<SparseRow>) {
         let counts: Vec<HashMap<String, usize>> = docs
             .iter()
-            .map(|doc| count_document(doc, true, NGRAM_MAX))
+            .map(|doc| count_document(doc, settings.lowercase, settings.ngram_max))
             .collect();
 
         let n_docs = docs.len() as f64;
@@ -49,10 +49,10 @@ impl Vectorizer {
             }
         }
 
-        let high = MAX_DF * n_docs;
+        let high = settings.max_df * n_docs;
         let mut vocabulary: Vec<String> = df
             .iter()
-            .filter(|(_, &count)| count as f64 >= MIN_DF && count as f64 <= high)
+            .filter(|(_, &count)| count as f64 >= settings.min_df && count as f64 <= high)
             .map(|(term, _)| (*term).to_string())
             .collect();
         vocabulary.sort_unstable();
@@ -62,7 +62,7 @@ impl Vectorizer {
         for (column, term) in vocabulary.iter().enumerate() {
             index.insert(term.clone(), column as u32);
             let document_frequency = *df.get(term.as_str()).unwrap_or(&0) as f64;
-            idf.push(if SMOOTH_IDF {
+            idf.push(if settings.smooth_idf {
                 ((1.0 + n_docs) / (1.0 + document_frequency)).ln() + 1.0
             } else {
                 (n_docs / document_frequency).ln() + 1.0
@@ -70,9 +70,9 @@ impl Vectorizer {
         }
 
         let vectorizer = Vectorizer {
-            lowercase: true,
-            ngram_max: NGRAM_MAX,
-            sublinear_tf: SUBLINEAR_TF,
+            lowercase: settings.lowercase,
+            ngram_max: settings.ngram_max,
+            sublinear_tf: settings.sublinear_tf,
             vocabulary,
             index,
             idf,
@@ -122,47 +122,28 @@ impl Vectorizer {
 // ---------------------------------------------------------------------------
 // Multinomial logistic regression
 //
-// The objective sklearn's LogisticRegression(max_iter=1000) minimises with its
-// defaults: softmax cross-entropy plus an L2 penalty of 1/C = 1 on the
-// coefficients (never on the intercepts), solved with L-BFGS. There is no
-// randomness anywhere in the fit — the starting point is zero, the sample
-// order is the plan's order, and every sum runs over sorted columns — so two
-// runs on identical input produce bit-identical weights. That is a product
-// property, not an implementation detail: the frozen eval split exists to
-// compare models over time, and it can only do that if a model is a function
-// of its inputs alone.
+// Softmax cross-entropy plus an L2 penalty of 1/c on the coefficients (never
+// on the intercepts), solved with L-BFGS under the run's stated settings.
+// There is no randomness anywhere in the fit — the starting point is zero,
+// the sample order is the plan's order, and every sum runs over sorted
+// columns — so two runs on identical input and settings produce
+// bit-identical weights. That is a product property, not an implementation
+// detail: the frozen eval split exists to compare models over time, and it
+// can only do that if a model is a function of its inputs alone.
 // ---------------------------------------------------------------------------
-
-/// 1 / C for sklearn's default C = 1.0.
-pub(crate) const L2_ALPHA: f64 = 1.0;
-
-pub(crate) const MAX_ITER: usize = 1000;
-
-/// Stop when the largest gradient component falls below this — the same
-/// criterion, and the same value, as the lbfgs solver's default `tol`.
-pub(crate) const TOL: f64 = 1e-4;
-
-pub(crate) const LBFGS_MEMORY: usize = 8;
-
-/// Armijo sufficient-decrease constant, the backtracking factor, and the cap
-/// on halvings before the step is abandoned.
-pub(crate) const ARMIJO_C1: f64 = 1e-4;
-
-pub(crate) const BACKTRACK: f64 = 0.5;
-
-pub(crate) const MAX_BACKTRACKS: usize = 40;
 
 pub(crate) fn dot(a: &[f64], b: &[f64]) -> f64 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
 
 /// Parameters are one flat vector: `k * f` coefficients, class-major, then
-/// `k` intercepts.
+/// `k` intercepts. `l2` is the penalty strength, the inverse of the stated c.
 pub(crate) struct Problem<'a> {
     pub(crate) rows: &'a [SparseRow],
     pub(crate) y: &'a [usize],
     pub(crate) n_classes: usize,
     pub(crate) n_features: usize,
+    pub(crate) l2: f64,
 }
 
 impl Problem<'_> {
@@ -205,10 +186,10 @@ impl Problem<'_> {
             for j in 0..f {
                 let at = c * f + j;
                 squared += x[at] * x[at];
-                grad[at] += L2_ALPHA * x[at];
+                grad[at] += self.l2 * x[at];
             }
         }
-        (loss + 0.5 * L2_ALPHA * squared, grad)
+        (loss + self.l2 * squared / (self.l2.signum() + self.l2.signum()), grad)
     }
 }
 

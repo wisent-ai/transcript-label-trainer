@@ -22,7 +22,11 @@ pub(crate) const METRICS_FILE: &str = "metrics.json";
 /// operator-facing output, neither of which the rewrite is allowed to do.
 pub(crate) const TFIDF_BACKEND: &str = "sklearn";
 
-pub(crate) const TFIDF_MODEL_DESC: &str = "tfidf(1-2gram, sublinear) + logistic-regression";
+/// How `info` names a tfidf-logreg model trained with `settings`.
+pub(crate) fn tfidf_model_desc(settings: &jobs::TfidfTraining) -> String {
+    let tf = if settings.sublinear_tf { "sublinear" } else { "raw" };
+    format!("tfidf(word n-grams up to {}, {tf} tf) + logistic-regression", settings.ngram_max)
+}
 
 pub fn models_dir() -> PathBuf {
     placement::resolve_placement().training_root.join("models")
@@ -150,37 +154,6 @@ pub(crate) fn class_counts<'a>(values: impl Iterator<Item = &'a str>) -> BTreeMa
     counts
 }
 
-/// A job spec good enough to resolve a split with. `train --aspect` has no
-/// job file, so it builds its `Job` here rather than inventing a second shape
-/// for the same thing.
-pub(crate) fn synthetic_job(
-    name: &str,
-    aspect: &str,
-    eval_split: jobs::EvalSplit,
-    min_labeled_sessions: usize,
-) -> jobs::Job {
-    jobs::Job {
-        name: name.to_string(),
-        task: String::new(),
-        evaluator: String::new(),
-        model: jobs::SKLEARN_MODEL.to_string(),
-        min_labeled_sessions,
-        scope: jobs::Scope {
-            aspect: aspect.to_string(),
-            runtimes: None,
-            since: None,
-            values: None,
-            min_text_chars: None,
-        },
-        eval_split,
-        judge: jobs::Judge {
-            enabled: false,
-            model: None,
-        },
-        training: None,
-    }
-}
-
 /// Resolving the split here — before any backend runs — is what lets `run`
 /// print the train/holdout counts ahead of training, and what keeps both
 /// backends of one job scored on the same untouched sessions.
@@ -195,8 +168,12 @@ pub(crate) fn build_plan(
     job_meta: Option<Value>,
 ) -> Result<Plan, TrainFailure> {
     let (rows, _counts) = frame_from_labels(labels, subject, min_text_chars, min_sessions)?;
-    let job = synthetic_job(out_name, aspect, eval_split, min_sessions);
-    let split = evaluate::resolve_split(&job, &rows, subject)?;
+    let request = evaluate::SplitRequest {
+        name: out_name,
+        eval_split: &eval_split,
+        min_labeled_sessions: min_sessions,
+    };
+    let split = evaluate::resolve_split(&request, &rows, subject)?;
     Ok(Plan {
         aspect: aspect.to_string(),
         out_name: out_name.to_string(),
@@ -222,27 +199,13 @@ pub fn split_summary(plan: &Plan) -> Value {
 // ---------------------------------------------------------------------------
 // TF-IDF vectorizer
 //
-// sklearn's TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True) with every
-// other setting left at its default, reimplemented so the crate carries no ML
-// dependency. The defaults that matter, and that the artifact records:
-//   lowercase=True, analyzer='word', token_pattern=r'(?u)\b\w\w+\b',
-//   min_df=1, max_df=1.0 (neither prunes anything), smooth_idf=True,
-//   use_idf=True, norm='l2', binary=False.
+// sklearn's TfidfVectorizer reimplemented so the crate carries no ML
+// dependency: word analyzer, the token pattern below, L2 row norm, idf on.
+// The n-gram length, lowercasing, sublinear tf, idf smoothing and document
+// frequency cuts are the run's stated settings, recorded in the artifact.
 // ---------------------------------------------------------------------------
 
 pub(crate) const TOKEN_PATTERN: &str = r"(?u)\b\w\w+\b";
-
-pub(crate) const NGRAM_MAX: usize = 2;
-
-pub(crate) const SUBLINEAR_TF: bool = true;
-
-pub(crate) const SMOOTH_IDF: bool = true;
-
-/// Terms in fewer than this many documents are dropped. 1 drops nothing.
-pub(crate) const MIN_DF: f64 = 1.0;
-
-/// Terms in more than this share of documents are dropped. 1.0 drops nothing.
-pub(crate) const MAX_DF: f64 = 1.0;
 
 /// One document as (column, weight) pairs, ascending by column. Sorted so
 /// that every floating-point accumulation over a row happens in one fixed

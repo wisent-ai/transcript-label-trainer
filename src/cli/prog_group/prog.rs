@@ -176,23 +176,11 @@ pub(crate) fn cmd_train(args: &Parsed) -> Result<i32> {
         serde_json::json!({"enabled": true, "fraction": fraction, "seed": seed})
     };
     let model_id = args.text("--model");
-    let training = match model_id {
-        None => None,
-        Some(_) => Some(jobs::HfTraining {
-            epochs: stated_positive(args, "--epochs")?,
-            batch_size: stated_count(args, "--batch-size")?,
-            learning_rate: stated_positive(args, "--lr")?,
-            max_length: stated_count(args, "--max-length")?,
-            seed: stated_seed(args, "--seed")?,
-            weight_decay: stated_non_negative(args, "--weight-decay")?,
-            max_grad_norm: stated_positive(args, "--max-grad-norm")?,
-            in_training_eval_share: stated_strict_share(args, "--in-training-eval-share")?,
-        }),
-    };
+    let training = jobs::training_from_flags(model_id.unwrap_or(jobs::SKLEARN_MODEL), |flag| args.text(flag))?;
     let metrics = match model::train(
         args.text("--aspect").unwrap_or_default(),
         model_id,
-        training.as_ref(),
+        &training,
         &eval_split,
         stated_count(args, "--min-labeled-sessions")?,
     ) {
@@ -201,51 +189,6 @@ pub(crate) fn cmd_train(args: &Parsed) -> Result<i32> {
     };
     outln!("{}", dumps(&metrics));
     Ok(0)
-}
-
-/// A positive number the caller states for a HuggingFace fine-tune; there is
-/// no default, so a missing one is refused by its flag's name.
-fn stated_positive(args: &Parsed, flag: &str) -> Result<f64> {
-    match args.float(flag) {
-        Some(value) if value > 0.0 && value.is_finite() => Ok(value),
-        Some(value) => Err(Error(format!("{flag} must be greater than 0, not {value}"))),
-        None => Err(Error(format!(
-            "{flag} is required with --model; fine-tuning has no default for it"
-        ))),
-    }
-}
-
-/// A non-negative whole seed the caller states for a HuggingFace fine-tune.
-fn stated_seed(args: &Parsed, flag: &str) -> Result<u64> {
-    match args.int(flag) {
-        Some(value) => u64::try_from(value)
-            .map_err(|_| Error(format!("{flag} must be a non-negative whole number, not {value}"))),
-        None => Err(Error(format!(
-            "{flag} is required with --model; fine-tuning has no default for it"
-        ))),
-    }
-}
-
-/// A number of zero or more the caller states for a HuggingFace fine-tune.
-fn stated_non_negative(args: &Parsed, flag: &str) -> Result<f64> {
-    match args.float(flag) {
-        Some(value) if value.is_finite() && !value.is_sign_negative() => Ok(value),
-        Some(value) => Err(Error(format!("{flag} must be zero or more, not {value}"))),
-        None => Err(Error(format!(
-            "{flag} is required with --model; fine-tuning has no default for it"
-        ))),
-    }
-}
-
-/// A share above none and below all the caller states for a fine-tune.
-fn stated_strict_share(args: &Parsed, flag: &str) -> Result<f64> {
-    match args.float(flag) {
-        Some(value) if jobs::strict_share(value) => Ok(value),
-        Some(value) => Err(Error(format!("{flag} must be a share above none and below all, not {value}"))),
-        None => Err(Error(format!(
-            "{flag} is required with --model; fine-tuning has no default for it"
-        ))),
-    }
 }
 
 pub(crate) fn cmd_run(args: &Parsed) -> Result<i32> {

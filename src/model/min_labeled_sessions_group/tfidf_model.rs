@@ -1,7 +1,7 @@
 use super::*;
 
 impl TfidfModel {
-    pub(crate) fn fit(texts: &[String], values: &[String]) -> TfidfModel {
+    pub(crate) fn fit(texts: &[String], values: &[String], settings: &jobs::TfidfTraining) -> TfidfModel {
         let classes: Vec<String> = {
             let mut distinct: Vec<String> = values.to_vec();
             distinct.sort_unstable();
@@ -15,8 +15,8 @@ impl TfidfModel {
             .collect();
         let y: Vec<usize> = values.iter().map(|v| class_index[v.as_str()]).collect();
 
-        let (vectorizer, rows) = Vectorizer::fit_transform(texts);
-        let fit = fit_logistic(&rows, &y, classes.len(), vectorizer.n_features());
+        let (vectorizer, rows) = Vectorizer::fit_transform(texts, settings);
+        let fit = fit_logistic(&rows, &y, classes.len(), vectorizer.n_features(), settings);
         TfidfModel {
             vectorizer,
             classes,
@@ -39,7 +39,8 @@ impl TfidfModel {
             .collect()
     }
 
-    pub(crate) fn to_file(&self) -> ModelFile {
+    /// The artifact file, recording the settings this model was fitted with.
+    pub(crate) fn to_file(&self, settings: &jobs::TfidfTraining) -> ModelFile {
         ModelFile {
             backend: TFIDF_BACKEND.to_string(),
             format: 1,
@@ -49,19 +50,19 @@ impl TfidfModel {
                 token_pattern: TOKEN_PATTERN.to_string(),
                 ngram_range: [1, self.vectorizer.ngram_max],
                 sublinear_tf: self.vectorizer.sublinear_tf,
-                smooth_idf: SMOOTH_IDF,
+                smooth_idf: settings.smooth_idf,
                 norm: "l2".to_string(),
-                min_df: MIN_DF,
-                max_df: MAX_DF,
+                min_df: settings.min_df,
+                max_df: settings.max_df,
                 vocabulary: self.vectorizer.vocabulary.clone(),
                 idf: self.vectorizer.idf.clone(),
             },
             classifier: ClassifierFile {
                 kind: "logistic-regression".to_string(),
                 multi_class: "multinomial".to_string(),
-                c: 1.0 / L2_ALPHA,
-                max_iter: MAX_ITER,
-                tol: TOL,
+                c: settings.c,
+                max_iter: settings.max_iter,
+                tol: settings.tol,
                 iterations: self.iterations,
                 converged: self.converged,
                 classes: self.classes.clone(),
@@ -149,20 +150,24 @@ impl Splitmix {
     }
 }
 
-pub(crate) const CV_SEED: u64 = 0;
-
 /// Mean accuracy over stratified folds, each fold refitting the whole
-/// pipeline — vectorizer included — on the other folds, the way
-/// `cross_val_score` over a `Pipeline` does. Shuffling is keyed per class so
-/// a class that gains members does not reshuffle the others.
-pub(crate) fn cross_val_accuracy(texts: &[String], values: &[String], folds: usize) -> f64 {
+/// pipeline under the run's settings — vectorizer included — on the other
+/// folds, the way `cross_val_score` over a `Pipeline` does. Shuffling is
+/// keyed per class, from the stated seed, so a class that gains members does
+/// not reshuffle the others.
+pub(crate) fn cross_val_accuracy(
+    texts: &[String],
+    values: &[String],
+    folds: usize,
+    settings: &jobs::TfidfTraining,
+) -> f64 {
     let mut by_class: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (i, value) in values.iter().enumerate() {
         by_class.entry(value.as_str()).or_default().push(i);
     }
     let mut assignment = vec![0usize; texts.len()];
     for (class_number, (_, members)) in by_class.iter_mut().enumerate() {
-        let mut rng = Splitmix(CV_SEED.wrapping_add(class_number as u64));
+        let mut rng = Splitmix(settings.cv_seed.wrapping_add(class_number as u64));
         rng.shuffle(members);
         for (position, &row) in members.iter().enumerate() {
             assignment[row] = position % folds;
@@ -188,7 +193,7 @@ pub(crate) fn cross_val_accuracy(texts: &[String], values: &[String], folds: usi
         if test_texts.is_empty() || distinct.len() < 2 {
             continue;
         }
-        let model = TfidfModel::fit(&train_texts, &train_values);
+        let model = TfidfModel::fit(&train_texts, &train_values, settings);
         let correct = model
             .predict(&test_texts)
             .iter()

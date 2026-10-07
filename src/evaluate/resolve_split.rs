@@ -1,5 +1,13 @@
 use super::*;
 
+/// What a split is resolved for: the artifact directory's name, the stated
+/// holdout, and the stated floor of labeled sessions on the training side.
+pub struct SplitRequest<'a> {
+    pub name: &'a str,
+    pub eval_split: &'a jobs::EvalSplit,
+    pub min_labeled_sessions: usize,
+}
+
 /// Load or create the frozen holdout for this artifact directory.
 ///
 /// Returns which rows of `sessions` train, which are held out, and the
@@ -7,7 +15,7 @@ use super::*;
 /// after the training side is known to clear the minimums, so a run that fails
 /// cannot leave a split behind that a later run would inherit.
 pub fn resolve_split(
-    job: &jobs::Job,
+    job: &SplitRequest<'_>,
     sessions: &[lake::SessionLabel],
     subject: &str,
 ) -> Result<Split, TrainFailure> {

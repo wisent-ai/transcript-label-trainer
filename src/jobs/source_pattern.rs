@@ -36,34 +36,6 @@ pub(crate) const EVAL_SPLIT_KEYS: [&str; 2] = ["fraction", "seed"];
 
 pub(crate) const JUDGE_KEYS: [&str; 1] = ["model"];
 
-pub(crate) const TRAINING_KEYS: &[&str] = &[
-    "epochs",
-    "batch_size",
-    "learning_rate",
-    "max_length",
-    "seed",
-    "weight_decay",
-    "max_grad_norm",
-    "in_training_eval_share",
-];
-
-/// The fine-tuning settings a HuggingFace job states in its `training`
-/// section; the TF-IDF backend has none. Recorded with the job's metrics.
-/// `seed` drives the head initialisation, the in-training slice and the
-/// shuffle; `in_training_eval_share` is the share of the training side
-/// sliced off to watch the loss, resplit every run.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HfTraining {
-    pub epochs: f64,
-    pub batch_size: usize,
-    pub learning_rate: f64,
-    pub max_length: usize,
-    pub seed: u64,
-    pub weight_decay: f64,
-    pub max_grad_norm: f64,
-    pub in_training_eval_share: f64,
-}
-
 /// The frozen holdout section of a validated spec. Serialized verbatim into
 /// `metrics.json["job"]["eval_split"]` and `job.yaml`, so the field order and
 /// the nulls-when-disabled shape are part of the on-disk format.
@@ -106,8 +78,8 @@ pub struct Job {
     pub scope: Scope,
     pub eval_split: EvalSplit,
     pub judge: Judge,
-    /// Present exactly when `model` is a HuggingFace model id.
-    pub training: Option<HfTraining>,
+    /// The backend's stated settings: tfidf-logreg or a HuggingFace model.
+    pub training: Training,
 }
 
 /// The Brama teacher verdict every run gets unless the spec says `false`.

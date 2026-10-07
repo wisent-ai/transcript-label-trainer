@@ -13,13 +13,16 @@ pub(crate) fn build_specs() -> Vec<Spec> {
 #[allow(unused_variables)]
 fn training_specs() -> Vec<Spec> {
     let teacher = brama::DEFAULT_MODEL;
+    // Each training key, as the flag `train` reads it; the value is read as a
+    // YAML scalar and validated exactly as a job's `training` section is.
+    let tfidf = |flag: &'static str, help: &str| {
+        option(flag, "VALUE", Kind::Text, format!("tfidf-logreg: {help}; required without --model"))
+    };
+    let hf = |flag: &'static str, help: &str| {
+        option(flag, "VALUE", Kind::Text, format!("HuggingFace: {help}; required with --model"))
+    };
 
-    let train = Spec {
-        name: "train",
-        help: "train a classifier for one aspect".to_string(),
-        description: None,
-        positionals: Vec::new(),
-        opts: vec![
+    let train_opts = vec![
             required(
                 "--aspect",
                 "ASPECT",
@@ -43,58 +46,28 @@ fn training_specs() -> Vec<Spec> {
                  Polish/English transcripts"
                     .to_string(),
             ),
-            option(
-                "--epochs",
-                "EPOCHS",
-                Kind::Float,
-                "HF training epochs; required with --model".to_string(),
-            ),
-            option(
-                "--batch-size",
-                "BATCH_SIZE",
-                Kind::Int,
-                "HF batch size; required with --model".to_string(),
-            ),
-            option(
-                "--lr",
-                "LR",
-                Kind::Float,
-                "HF learning rate; required with --model".to_string(),
-            ),
-            option(
-                "--max-length",
-                "MAX_LENGTH",
-                Kind::Int,
-                "HF tokenizer max tokens per session; required with --model".to_string(),
-            ),
-            option(
-                "--seed",
-                "N",
-                Kind::Int,
-                "HF seed for the head initialisation, in-training slice and shuffle; required \
-                 with --model"
-                    .to_string(),
-            ),
-            option(
-                "--weight-decay",
-                "F",
-                Kind::Float,
-                "HF AdamW weight decay, zero or more; required with --model".to_string(),
-            ),
-            option(
-                "--max-grad-norm",
-                "F",
-                Kind::Float,
-                "HF global gradient norm clip, above zero; required with --model".to_string(),
-            ),
-            option(
-                "--in-training-eval-share",
-                "F",
-                Kind::Float,
-                "HF share of the training side sliced off to watch the loss, resplit every \
-                 run; required with --model"
-                    .to_string(),
-            ),
+        hf("--epochs", "training epochs"),
+        hf("--batch-size", "batch size"),
+        hf("--learning-rate", "learning rate"),
+        hf("--max-length", "tokenizer max tokens per session"),
+        hf("--seed", "seed of the head initialisation, in-training slice and shuffle"),
+        hf("--weight-decay", "AdamW weight decay, zero or more"),
+        hf("--max-grad-norm", "global gradient norm clip, above zero"),
+        hf("--in-training-eval-share", "share of the training side sliced off to watch the loss"),
+        tfidf("--ngram-max", "longest word n-gram counted"),
+        tfidf("--lowercase", "true or false: lowercase text before counting"),
+        tfidf("--sublinear-tf", "true or false: term frequency as one plus its logarithm"),
+        tfidf("--smooth-idf", "true or false: idf as if one more document held every term"),
+        tfidf("--min-df", "terms in fewer documents are dropped"),
+        tfidf("--max-df", "terms in more than this share of documents are dropped"),
+        tfidf("--c", "inverse strength of the L2 penalty"),
+        tfidf("--max-iter", "most L-BFGS iterations"),
+        tfidf("--tol", "the solver stops once no gradient component exceeds this"),
+        tfidf("--lbfgs-memory", "correction pairs the solver keeps"),
+        tfidf("--armijo-c1", "share of the predicted decrease a step must achieve"),
+        tfidf("--backtrack", "share a rejected step is shrunk to"),
+        tfidf("--max-backtracks", "shrinks tried before a step is abandoned"),
+        tfidf("--cv-seed", "seed of each class's cross-validation shuffle"),
             option(
                 "--eval-split-fraction",
                 "F",
@@ -115,8 +88,14 @@ fn training_specs() -> Vec<Spec> {
                 "",
                 Kind::Flag,
                 "train on every labeled session, with no frozen holdout to evaluate on".to_string(),
-            ),
-        ],
+        ),
+    ];
+    let train = Spec {
+        name: "train",
+        help: "train a classifier for one aspect".to_string(),
+        description: None,
+        positionals: Vec::new(),
+        opts: train_opts,
     };
 
     let run = Spec {
@@ -130,10 +109,12 @@ fn training_specs() -> Vec<Spec> {
              nothing in it, and reports it under 'holdout_evaluation' in metrics.json. \
              'eval_split: false' trains on every labeled session. 'min_labeled_sessions' \
              (required, a positive integer) is the fewest labeled sessions the training \
-             side needs before a model is fitted. A HuggingFace 'model' \
-             requires 'training' with epochs, batch_size, learning_rate, max_length, seed, \
-             weight_decay, max_grad_norm and in_training_eval_share; \
-             tfidf-logreg takes none. 'judge' (model: {teacher}) names the Brama-routed \
+             side needs before a model is fitted. 'training' is required: for \
+             tfidf-logreg ngram_max, lowercase, sublinear_tf, smooth_idf, min_df, max_df, \
+             c, max_iter, tol, lbfgs_memory, armijo_c1, backtrack, max_backtracks and \
+             cv_seed; for a HuggingFace 'model' epochs, batch_size, learning_rate, \
+             max_length, seed, weight_decay, max_grad_norm and in_training_eval_share. \
+             'judge' (model: {teacher}) names the Brama-routed \
              teacher that 'evaluate' asks for a verdict; 'judge: false' skips it. run \
              prints the resolved job, then the resolved split, then the metrics."
         )),

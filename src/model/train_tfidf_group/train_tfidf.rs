@@ -4,7 +4,7 @@ use super::*;
 // tfidf-logreg backend
 // ---------------------------------------------------------------------------
 
-pub(crate) fn train_tfidf(plan: &Plan) -> Result<Value, TrainFailure> {
+pub(crate) fn train_tfidf(plan: &Plan, settings: &jobs::TfidfTraining) -> Result<Value, TrainFailure> {
     let (texts, values) = side(plan, &plan.split.train_index);
     let counts = class_counts(values.iter().map(String::as_str));
 
@@ -12,10 +12,10 @@ pub(crate) fn train_tfidf(plan: &Plan) -> Result<Value, TrainFailure> {
     // decides how many folds there can be; a class of one member cannot be
     // both trained on and tested, and then no cross-validated accuracy exists.
     let folds = counts.values().copied().min().filter(|members| *members > members.signum());
-    let cv_accuracy = folds.map(|folds| round4(cross_val_accuracy(&texts, &values, folds)));
+    let cv_accuracy = folds.map(|folds| round4(cross_val_accuracy(&texts, &values, folds, settings)));
     let cv_folds = folds.unwrap_or_default();
 
-    let model = TfidfModel::fit(&texts, &values);
+    let model = TfidfModel::fit(&texts, &values, settings);
 
     let out_dir = aspect_dir(&plan.out_name)?;
     std::fs::create_dir_all(&out_dir).map_err(Error::from)?;
@@ -24,7 +24,7 @@ pub(crate) fn train_tfidf(plan: &Plan) -> Result<Value, TrainFailure> {
     let mut metrics = base_metrics(
         &plan.aspect,
         TFIDF_BACKEND,
-        TFIDF_MODEL_DESC,
+        &tfidf_model_desc(settings),
         texts.len(),
         &counts,
     );
@@ -36,6 +36,7 @@ pub(crate) fn train_tfidf(plan: &Plan) -> Result<Value, TrainFailure> {
         },
     );
     metrics.insert("cv_folds".to_string(), json!(cv_folds));
+    metrics.insert("hyperparameters".to_string(), json!(settings));
     metrics.insert("eval_split".to_string(), plan.split.frozen.clone());
     metrics.insert(
         "model_path".to_string(),
@@ -57,7 +58,7 @@ pub(crate) fn train_tfidf(plan: &Plan) -> Result<Value, TrainFailure> {
     // The artifact first, then the metrics that describe it — the order the
     // Python build wrote them in, so an interrupted run leaves a model without
     // metrics rather than metrics pointing at a model that was never written.
-    let serialized = serde_json::to_string(&model.to_file()).map_err(Error::from)?;
+    let serialized = serde_json::to_string(&model.to_file(settings)).map_err(Error::from)?;
     std::fs::write(&model_path, serialized + "\n").map_err(Error::from)?;
     let metrics = Value::Object(metrics);
     write_pretty(&out_dir.join(METRICS_FILE), &metrics)?;
@@ -155,14 +156,14 @@ pub(crate) fn train_hf(
 // train
 // ---------------------------------------------------------------------------
 
-/// Train one aspect from the command line. `training` carries the HuggingFace
-/// settings the caller stated and is required exactly when `model_id` is set;
-/// `min_sessions` is the caller's floor of labeled sessions on the training
-/// side.
+/// Train one aspect from the command line with the backend settings the
+/// caller stated (`model_id` names the HuggingFace model a fine-tune starts
+/// from); `min_sessions` is the caller's floor of labeled sessions on the
+/// training side.
 pub fn train(
     aspect: &str,
     model_id: Option<&str>,
-    training: Option<&jobs::HfTraining>,
+    training: &jobs::Training,
     eval_split: &Value,
     min_sessions: usize,
 ) -> Result<Value, TrainFailure> {
@@ -180,13 +181,12 @@ pub fn train(
         None,
     )?;
     match (model_id, training) {
-        (None, _) => train_tfidf(&plan),
-        (Some(model_id), Some(training)) => train_hf(&plan, model_id, training),
-        (Some(model_id), None) => Err(format!(
-            "fine-tuning {model_id} needs --epochs, --batch-size, --lr, --max-length, --seed, \
-             --weight-decay, --max-grad-norm and --in-training-eval-share"
-        )
-        .into()),
+        (None, jobs::Training::Tfidf(settings)) => train_tfidf(&plan, settings),
+        (Some(model_id), jobs::Training::Hf(settings)) => train_hf(&plan, model_id, settings),
+        (None, jobs::Training::Hf(_)) => Err("fine-tuning settings need --model".into()),
+        (Some(model_id), jobs::Training::Tfidf(_)) => {
+            Err(format!("{model_id} is fine-tuned with HuggingFace settings, not tfidf-logreg settings").into())
+        }
     }
 }
 

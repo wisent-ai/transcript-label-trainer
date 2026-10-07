@@ -17,26 +17,50 @@ any other `model_type` fails with a sentence naming those two rather than
 pretending to train.
 
 Transcripts are mixed Polish and English, so prefer a multilingual base model.
-Fine-tuning has no default settings: `--epochs`, `--batch-size`, `--lr`,
+Every run states its backend's settings; none has a default. A job states
+them in its `training` section and `train` takes the same keys as flags spelled
+with dashes, read as YAML scalars and validated by the same code. A missing one
+is refused as `training.<key> (--<flag>) is required: <model> assumes no value
+for it`, an invalid one as `training.<key> (--<flag>) must be <what>, got
+<value>`, and a flag of the other backend as `--<flag> does not apply to model
+'<model>'`. Every value is recorded under `hyperparameters` in `metrics.json`.
+
+A fine-tune (`--model`) states `--epochs`, `--batch-size`, `--learning-rate`,
 `--max-length`, `--seed` (head initialisation, in-training slice and shuffle),
 `--weight-decay` (AdamW, zero or more), `--max-grad-norm` (global gradient
 clip) and `--in-training-eval-share` (the share of the training side sliced off
-to watch the loss) are required with `--model` and are recorded in
-`metrics.json`; a missing one is refused by its flag's name. Prediction reads
-the sequence length, batch size and seed back from the artifact. A base model
-whose `config.json` states no `initializer_range` or classifier dropout is
-refused rather than given one.
+to watch the loss). Prediction reads the sequence length, batch size and seed
+back from the artifact. A base model whose `config.json` states no
+`initializer_range` or classifier dropout is refused rather than given one.
 
 ```sh
 transcript-label-trainer train --aspect topic --min-labeled-sessions N \
   --model distilbert-base-multilingual-cased \
-  --epochs E --batch-size B --lr LR --max-length TOKENS \
+  --epochs E --batch-size B --learning-rate LR --max-length TOKENS \
   --seed S --weight-decay W --max-grad-norm G --in-training-eval-share F \
   --eval-split-fraction F --eval-split-seed N
 ```
 
+TF-IDF + logistic regression (no `--model`) states `--ngram-max` (longest word
+n-gram), `--lowercase`, `--sublinear-tf` and `--smooth-idf` (each `true` or
+`false`), `--min-df` (terms in fewer documents are dropped), `--max-df` (terms
+in more than this share of documents are dropped), `--c` (inverse L2 strength),
+`--max-iter`, `--tol` (the solver stops once no gradient component exceeds it),
+`--lbfgs-memory` (correction pairs kept), `--armijo-c1` and `--backtrack`
+(line-search shares), `--max-backtracks` and `--cv-seed` (cross-validation
+shuffle).
+
+```sh
+transcript-label-trainer train --aspect topic --min-labeled-sessions N \
+  --ngram-max N --lowercase B --sublinear-tf B --smooth-idf B \
+  --min-df F --max-df F --c F --max-iter N --tol F --lbfgs-memory N \
+  --armijo-c1 F --backtrack F --max-backtracks N --cv-seed N \
+  --eval-split-fraction F --eval-split-seed N
+```
+
 The data path is identical: labels from the lake label store, session text via
-applies, and the HF path additionally requires at least 2 sessions per class so
+Transcript Lake, and the same session floor and frozen evaluation split all
+apply, and the HF path additionally requires at least two sessions per class so
 its in-training split keeps every class on both sides; that split is a
 stratified slice of the *training* side and provides `in_training_eval` in the
 metrics. It is not the frozen evaluation split described below, which no
@@ -92,12 +116,27 @@ eval_split:                        # required: fraction and seed, or false
   seed: N                          # makes the first run's pick reproducible
 judge:                             # optional; ON by default, shown with its default
   model: best                      # the Brama alias `evaluate` asks
+training:                          # required: every tfidf-logreg setting
+  ngram_max: N
+  lowercase: B
+  sublinear_tf: B
+  smooth_idf: B
+  min_df: F
+  max_df: F
+  c: F
+  max_iter: N
+  tol: F
+  lbfgs_memory: N
+  armijo_c1: F
+  backtrack: F
+  max_backtracks: N
+  cv_seed: N
 ```
 
 Every field is validated with a clear error — there are no silent defaults.
-A HuggingFace `model` also requires a `training` section with `epochs`,
-`batch_size`, `learning_rate`, `max_length`, `seed`, `weight_decay`,
-`max_grad_norm` and `in_training_eval_share`; `tfidf-logreg` refuses one.
+A HuggingFace `model` states `epochs`, `batch_size`, `learning_rate`,
+`max_length`, `seed`, `weight_decay`, `max_grad_norm` and
+`in_training_eval_share` in its `training` section instead.
 Note that `evaluator: manual` matches only `manual` exactly, not `human` or
 `brama:…`; to train on a teacher's labels, name it, e.g.
 `evaluator: brama:best`. Model-sourced labels are never ground

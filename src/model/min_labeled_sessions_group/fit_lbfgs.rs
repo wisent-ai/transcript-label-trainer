@@ -1,10 +1,10 @@
 use super::*;
 
-/// L-BFGS with a two-loop recursion, `LBFGS_MEMORY` correction pairs and an
-/// Armijo backtracking line search. Curvature pairs whose `s·y` is not
+/// L-BFGS with a two-loop recursion, the stated number of correction pairs
+/// and an Armijo backtracking line search. Curvature pairs whose `s·y` is not
 /// positive are skipped rather than stored, which keeps the implicit inverse
 /// Hessian positive definite without needing a full Wolfe search.
-pub(crate) fn fit_lbfgs(problem: &Problem<'_>) -> (Vec<f64>, usize, bool) {
+pub(crate) fn fit_lbfgs(problem: &Problem<'_>, settings: &jobs::TfidfTraining) -> (Vec<f64>, usize, bool) {
     let dim = problem.dim();
     let mut x = vec![0.0f64; dim];
     let (mut fx, mut g) = problem.loss_grad(&x);
@@ -13,9 +13,9 @@ pub(crate) fn fit_lbfgs(problem: &Problem<'_>) -> (Vec<f64>, usize, bool) {
     let mut rho: Vec<f64> = Vec::new();
     let mut iterations = 0usize;
 
-    while iterations < MAX_ITER {
+    while iterations < settings.max_iter {
         let gradient_max = g.iter().fold(0.0f64, |acc, v| acc.max(v.abs()));
-        if gradient_max <= TOL {
+        if gradient_max <= settings.tol {
             return (x, iterations, true);
         }
 
@@ -56,14 +56,14 @@ pub(crate) fn fit_lbfgs(problem: &Problem<'_>) -> (Vec<f64>, usize, bool) {
 
         let mut step = 1.0f64;
         let mut accepted = None;
-        for _ in 0..MAX_BACKTRACKS {
+        for _ in 0..settings.max_backtracks {
             let candidate: Vec<f64> = (0..dim).map(|i| x[i] + step * direction[i]).collect();
             let (candidate_f, candidate_g) = problem.loss_grad(&candidate);
-            if candidate_f.is_finite() && candidate_f <= fx + ARMIJO_C1 * step * slope {
+            if candidate_f.is_finite() && candidate_f <= fx + settings.armijo_c1 * step * slope {
                 accepted = Some((candidate, candidate_f, candidate_g));
                 break;
             }
-            step *= BACKTRACK;
+            step *= settings.backtrack;
         }
         let Some((new_x, new_f, new_g)) = accepted else {
             // No step along a descent direction lowers the objective: the
@@ -76,7 +76,7 @@ pub(crate) fn fit_lbfgs(problem: &Problem<'_>) -> (Vec<f64>, usize, bool) {
         let y: Vec<f64> = (0..dim).map(|i| new_g[i] - g[i]).collect();
         let sy = dot(&s, &y);
         if sy > 1e-12 {
-            if s_history.len() == LBFGS_MEMORY {
+            if s_history.len() == settings.lbfgs_memory {
                 s_history.remove(0);
                 y_history.remove(0);
                 rho.remove(0);
@@ -93,14 +93,21 @@ pub(crate) fn fit_lbfgs(problem: &Problem<'_>) -> (Vec<f64>, usize, bool) {
     (x, iterations, false)
 }
 
-pub(crate) fn fit_logistic(rows: &[SparseRow], y: &[usize], n_classes: usize, n_features: usize) -> Fit {
+pub(crate) fn fit_logistic(
+    rows: &[SparseRow],
+    y: &[usize],
+    n_classes: usize,
+    n_features: usize,
+    settings: &jobs::TfidfTraining,
+) -> Fit {
     let problem = Problem {
         rows,
         y,
         n_classes,
         n_features,
+        l2: settings.c.recip(),
     };
-    let (x, iterations, converged) = fit_lbfgs(&problem);
+    let (x, iterations, converged) = fit_lbfgs(&problem, settings);
     let coef = (0..n_classes)
         .map(|c| x[c * n_features..(c + 1) * n_features].to_vec())
         .collect();

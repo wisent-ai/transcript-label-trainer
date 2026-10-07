@@ -93,7 +93,7 @@ pub(crate) fn clip_grads(
     let norm = (scalar(&total)? as f64).sqrt();
     if !norm.is_finite() {
         return Err(Error(
-            "the gradient norm is not finite; the fine-tune diverged, lower --lr and retry".into(),
+            "the gradient norm is not finite; the fine-tune diverged, lower --learning-rate and retry".into(),
         ));
     }
     if norm <= max_norm {
