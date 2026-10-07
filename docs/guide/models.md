@@ -316,6 +316,36 @@ The controller forwards that repository into the Stado job. A missing or empty
 destination is refused before submission; the worker and publisher also require
 it. No account is selected from source code.
 
+The job trains with Ster on the GPU host (`stado product install ster --surface cli`;
+without it the job stops at `ster: command not found`). `transcript-label-trainer
+humanizer-examples --rows train.jsonl --output examples.json` writes each prepared row as
+one `ster tune sft` example (the row's system prompt, the generic source as the prompt,
+the user's own target as the completion; a row without exactly one non-empty system,
+user and assistant turn is refused by id). `ster tune sft` fits the adapter to the pinned
+`TheDrummer/Cydonia-24B-v4.3` base with exactly the `--ster-options` given to
+`humanizer-model` (an empty value is refused before the corpus is exported), and its
+report is kept as `training.json`. `ster tune export --format peft` writes the adapter
+as the vLLM/PEFT directory `humanizer-publish` publishes (`adapter_config.json`,
+`adapter_model.safetensors`, the base's `tokenizer.json`), and `ster tune merge` folds
+it into the student checkpoint the evaluation asks.
+
+`transcript-label-trainer humanizer-evaluate-gguf` asks the base and the merged
+student, both converted to full-precision GGUF so the student answers exactly as the base
+with the published adapter attached, for every test row through `llama-server`, one model
+after the other, with `--eval-parallel`, `--eval-slot-context`, `--eval-gpu-layers` and at
+most `--eval-max-tokens` tokens per answer, all stated on `humanizer-model`. Each answer
+is scored by chrF over character n-grams of order `--chrf-order` against the target and the
+source and by its length against the target's; `predictions.jsonl` carries both answers
+for `humanizer-audit`, and `metrics.json` the means and the target chrF gain the manifest
+records. A model file that does not exist is refused before a server starts, and a failed
+request fails the run naming its row. To see an example set before any job:
+
+```sh
+transcript-label-trainer humanizer-examples --rows train.jsonl --output humanizer-examples.json
+ster tune evaluate --model TheDrummer/Cydonia-24B-v4.3 --examples humanizer-examples.json \
+  --max-sequence 1024 --batch-size 1 --device cuda --precision f16
+```
+
 Publication requires the existing model contract and a passed audit. The native
 publisher can also publish a retained qualified job output directly:
 

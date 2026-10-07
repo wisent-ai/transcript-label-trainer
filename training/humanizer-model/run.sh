@@ -18,6 +18,12 @@ set -euo pipefail
 : "${HUMANIZER_MAX_LENGTH_RATIO:?Set HUMANIZER_MAX_LENGTH_RATIO to the longest generated source accepted, as a multiple of its target}"
 : "${HUMANIZER_TEST_SHARE:?Set HUMANIZER_TEST_SHARE to the share of sessions held out for test}"
 : "${HUMANIZER_VALIDATION_SHARE:?Set HUMANIZER_VALIDATION_SHARE to the share of sessions held out for validation}"
+: "${HUMANIZER_STER_OPTIONS:?humanizer-model passes --ster-options as HUMANIZER_STER_OPTIONS}"
+: "${HUMANIZER_EVAL_PARALLEL:?humanizer-model passes --eval-parallel as HUMANIZER_EVAL_PARALLEL}"
+: "${HUMANIZER_EVAL_SLOT_CONTEXT:?humanizer-model passes --eval-slot-context as HUMANIZER_EVAL_SLOT_CONTEXT}"
+: "${HUMANIZER_EVAL_GPU_LAYERS:?humanizer-model passes --eval-gpu-layers as HUMANIZER_EVAL_GPU_LAYERS}"
+: "${HUMANIZER_EVAL_MAX_TOKENS:?humanizer-model passes --eval-max-tokens as HUMANIZER_EVAL_MAX_TOKENS}"
+: "${HUMANIZER_CHRF_ORDER:?humanizer-model passes --chrf-order as HUMANIZER_CHRF_ORDER}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGETS="${1:?usage: run.sh TARGETS_JSONL}"
 JOB_ID="${WC_JOB_ID:?WC_JOB_ID is required}"
@@ -30,12 +36,11 @@ if [[ ! "$TARGETS" -ef "$WORK/targets.jsonl" ]]; then
 fi
 cd "$WORK"
 
+# The vendor tools that stay Python run from their own declared requirements:
+# the Hugging Face CLI humanizer-publish uploads with, and (below) llama.cpp's
+# converter. Training is Ster's.
 python3 -m venv "$VENV"
-"$VENV/bin/python" -m pip install --quiet --upgrade pip
-"$VENV/bin/python" -m pip install --quiet \
-  'torch>=2.6,<3' 'transformers>=4.51,<5' 'datasets>=3.5,<5' \
-  'accelerate>=1.6,<2' 'sentencepiece>=0.2,<1' 'safetensors>=0.5,<1' \
-  'peft>=0.17,<1' 'bitsandbytes>=0.46,<1' 'huggingface-hub>=0.36,<1'
+"$VENV/bin/python" -m pip install --quiet 'huggingface-hub>=0.36,<1'
 
 export HUMANIZER_TARGETS="$WORK/targets.jsonl"
 export HUMANIZER_TRAIN_DATASET="$WORK/train.jsonl"
@@ -58,7 +63,53 @@ TRAINER=("$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locke
   --min-test-rows "$HUMANIZER_MIN_TEST_ROWS" \
   --min-length-ratio "$HUMANIZER_MIN_LENGTH_RATIO" --max-length-ratio "$HUMANIZER_MAX_LENGTH_RATIO" \
   --test-share "$HUMANIZER_TEST_SHARE" --validation-share "$HUMANIZER_VALIDATION_SHARE"
-"$VENV/bin/python" "$ROOT/training/humanizer-model/train.py"
+# Ster trains the adapter on the prepared train split, exports it in the
+# vLLM/PEFT layout humanizer-publish publishes, and merges it into a
+# checkpoint so the evaluation asks the student exactly as served. A host
+# without Ster stops at the shell's 'ster: command not found'
+# (stado product install ster --surface cli).
+read -r -a STER_OPTIONS <<<"$HUMANIZER_STER_OPTIONS"
+ster --version
+BASE=(--model "$HUMANIZER_BASE_MODEL" --revision "$HUMANIZER_BASE_REVISION" --device cuda)
+if [ ! -s "$WORK/adapter.safetensors" ]; then
+  "${TRAINER[@]}" humanizer-examples --rows "$HUMANIZER_TRAIN_DATASET" --output "$WORK/examples.json"
+  ster tune sft "${BASE[@]}" --examples "$WORK/examples.json" --output "$WORK/adapter.safetensors" \
+    "${STER_OPTIONS[@]}" > "$WORK/training.json"
+fi
+ster tune export --model "$HUMANIZER_BASE_MODEL" --revision "$HUMANIZER_BASE_REVISION" \
+  --adapter "$WORK/adapter.safetensors" --format peft --output "$HUMANIZER_MODEL_DIR"
+if [ ! -s "$WORK/merged/model.safetensors" ] && [ ! -s "$WORK/merged/consolidated.safetensors" ]; then
+  ster tune merge --model "$HUMANIZER_BASE_MODEL" --revision "$HUMANIZER_BASE_REVISION" \
+    --adapter "$WORK/adapter.safetensors" --output "$WORK/merged"
+fi
+
+# Both models are evaluated at full precision, so the student's answers are
+# the base's with the published adapter attached and nothing a quantizer did.
+LLAMA_CPP="$WORK/llama.cpp"
+if [ ! -d "$LLAMA_CPP/.git" ]; then
+  git clone --filter=blob:none https://github.com/ggml-org/llama.cpp "$LLAMA_CPP"
+fi
+"$VENV/bin/python" -m pip install --quiet -r "$LLAMA_CPP/requirements/requirements-convert_hf_to_gguf.txt"
+if [ ! -s "$WORK/base-f16.gguf" ]; then
+  # hf download answers the local directory of the pinned revision.
+  BASE_DIR="$("$VENV/bin/hf" download "$HUMANIZER_BASE_MODEL" --revision "$HUMANIZER_BASE_REVISION")"
+  "$VENV/bin/python" "$LLAMA_CPP/convert_hf_to_gguf.py" "$BASE_DIR" --outfile "$WORK/base-f16.gguf" --outtype f16
+fi
+if [ ! -s "$WORK/student-f16.gguf" ]; then
+  "$VENV/bin/python" "$LLAMA_CPP/convert_hf_to_gguf.py" "$WORK/merged" --outfile "$WORK/student-f16.gguf" --outtype f16
+fi
+cmake -S "$LLAMA_CPP" -B "$LLAMA_CPP/build" -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build "$LLAMA_CPP/build" --target llama-server
+if [ ! -s "$HUMANIZER_PREDICTIONS" ]; then
+  "${TRAINER[@]}" humanizer-evaluate-gguf \
+    --base "$WORK/base-f16.gguf" --student "$WORK/student-f16.gguf" \
+    --dataset "$HUMANIZER_TEST_DATASET" --predictions "$HUMANIZER_PREDICTIONS" --metrics "$HUMANIZER_METRICS" \
+    --server "$LLAMA_CPP/build/bin/llama-server" --server-log "$WORK/llama-server-eval.log" \
+    --base-model "$HUMANIZER_BASE_MODEL" --base-revision "$HUMANIZER_BASE_REVISION" \
+    --parallel "$HUMANIZER_EVAL_PARALLEL" --slot-context "$HUMANIZER_EVAL_SLOT_CONTEXT" \
+    --gpu-layers "$HUMANIZER_EVAL_GPU_LAYERS" --max-tokens "$HUMANIZER_EVAL_MAX_TOKENS" \
+    --chrf-order "$HUMANIZER_CHRF_ORDER"
+fi
 "${TRAINER[@]}" humanizer-audit "$HUMANIZER_PREDICTIONS" --output "$HUMANIZER_AUDIT_OUTPUT" \
   --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS" \
   --min-semantic-fidelity "$HUMANIZER_MIN_SEMANTIC_FIDELITY" --min-voice-match "$HUMANIZER_MIN_VOICE_MATCH" \
@@ -70,7 +121,7 @@ HF_BIN="$VENV/bin/hf" "${TRAINER[@]}" humanizer-publish "$HUMANIZER_MODEL_DIR" \
   --output "$WORK/publication.json"
 "$VENV/bin/python" -m pip freeze > "$WORK/python-requirements.lock"
 
-cp "$WORK/preparation.json" "$WORK/metrics.json" "$WORK/audit.json" \
+cp "$WORK/preparation.json" "$WORK/metrics.json" "$WORK/training.json" "$WORK/audit.json" \
    "$WORK/predictions.jsonl" "$WORK/publication.json" \
    "$WORK/python-requirements.lock" "$OUT/"
 cp -R "$WORK/student" "$OUT/adapter"

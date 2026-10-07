@@ -25,12 +25,14 @@ mod prepare;
 mod prompts;
 mod publication;
 mod manifest;
+mod served;
 
 pub use audit::{audit_outputs, AuditGate};
 pub use manifest::manifest;
 pub use anchors::LengthRatio;
 pub use prepare::{prepare_dataset, HeldOut, PreparationBounds};
 pub use publication::{publish_adapter, Publication};
+pub(crate) use served::{evaluate_gguf, export_examples, HumanizerEvaluation};
 
 /// What the humanizer corpus takes, every value the caller's to state: at
 /// most `limit` targets and at most `max_per_session` from one session, the

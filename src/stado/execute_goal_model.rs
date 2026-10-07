@@ -228,11 +228,23 @@ pub fn execute_lifecycle_model(
     })
 }
 
+/// How the humanizer job trains and measures its adapter: the `ster tune
+/// sft` settings, how the base and student GGUFs are served, the most tokens
+/// one answer may hold and the chrF n-gram order its scores count.
+pub struct HumanizerTraining {
+    pub ster_options: String,
+    pub serving: EvaluationServing,
+    pub max_tokens: usize,
+    pub chrf_order: usize,
+}
+
 /// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
 /// `workers` and `attempts` are the caller's counts for the job's Brama
 /// preparation and audit, `gate` the quality gate its audit holds the
-/// adapter to, and `minimums` the split minimums and source length bounds of
-/// its preparation; the job is refused without them.
+/// adapter to, `minimums` the split minimums and source length bounds of
+/// its preparation and `training` how it trains and measures the adapter;
+/// the job is refused without them.
+#[allow(clippy::too_many_arguments)]
 pub fn execute_humanizer_model(
     targets_path: &Path,
     compute_target: &str,
@@ -241,6 +253,7 @@ pub fn execute_humanizer_model(
     attempts: usize,
     gate: &crate::humanizer::AuditGate,
     minimums: &crate::humanizer::PreparationBounds,
+    training: &HumanizerTraining,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
@@ -255,8 +268,10 @@ pub fn execute_humanizer_model(
     let targets_uri = format!(
         "stado://probierz/inputs/transcript-label-trainer/humanizer-model/{key}/targets.jsonl"
     );
+    let ster_options = stated_ster_options(&training.ster_options)?;
+    let run_key = digest(format!("{key}\nster={ster_options}\n").as_bytes());
     let output_uri =
-        format!("stado://probierz/artifacts/models/echo/lukasz-humanizer-cydonia-24b-lora/{key}");
+        format!("stado://probierz/artifacts/models/echo/lukasz-humanizer-cydonia-24b-lora/{run_key}");
     let stado = stado_bin();
     upload(&stado, &targets_uri, targets_path, "application/x-ndjson")?;
     let source_ref = repo_ref()?;
@@ -267,7 +282,7 @@ pub fn execute_humanizer_model(
     let work_root = shell_quote(&work_root.to_string_lossy());
     let hf_repo = shell_quote(hf_repo);
     let command = format!(
-        "set -euo pipefail; work={work_root}/echo-humanizer-{key}; \
+        "set -euo pipefail; work={work_root}/echo-humanizer-{run_key}; \
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{targets_uri}' \"$work/targets.jsonl\"; \
          HUMANIZER_HF_REPO={hf_repo} HUMANIZER_WORK_DIR=\"$work\" \
@@ -278,6 +293,8 @@ pub fn execute_humanizer_model(
          HUMANIZER_MIN_TRAIN_ROWS={} HUMANIZER_MIN_VALIDATION_ROWS={} HUMANIZER_MIN_TEST_ROWS={} \
          HUMANIZER_MIN_LENGTH_RATIO={} HUMANIZER_MAX_LENGTH_RATIO={} \
          HUMANIZER_TEST_SHARE={} HUMANIZER_VALIDATION_SHARE={} \
+         HUMANIZER_STER_OPTIONS={} HUMANIZER_EVAL_PARALLEL={} HUMANIZER_EVAL_SLOT_CONTEXT={} \
+         HUMANIZER_EVAL_GPU_LAYERS={} HUMANIZER_EVAL_MAX_TOKENS={} HUMANIZER_CHRF_ORDER={} \
          ./training/humanizer-model/run.sh \"$work/targets.jsonl\"",
         gate.min_semantic_fidelity,
         gate.min_voice_match,
@@ -292,6 +309,12 @@ pub fn execute_humanizer_model(
         minimums.length.max,
         minimums.held_out.test,
         minimums.held_out.validation,
+        shell_quote(ster_options),
+        training.serving.parallel,
+        training.serving.slot_context,
+        shell_quote(&training.serving.gpu_layers),
+        training.max_tokens,
+        training.chrf_order,
     );
     let args = vec![
         OsString::from("submit"),
