@@ -36,8 +36,8 @@ use serde_json::{json, Map, Value};
 use crate::util::{Error, Result, TrainFailure};
 use crate::{evaluate, jobs, lake, placement};
 
-mod min_labeled_sessions_group;
+mod tfidf_group;
 mod train_tfidf_group;
 
-pub use min_labeled_sessions_group::*;
+pub use tfidf_group::*;
 pub use train_tfidf_group::*;
