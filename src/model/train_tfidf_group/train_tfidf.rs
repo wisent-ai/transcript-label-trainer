@@ -128,7 +128,8 @@ pub(crate) fn train_hf(
 
     let (holdout_texts, holdout_values) = side(plan, &plan.split.holdout_index);
     if !holdout_texts.is_empty() {
-        let predictions = crate::hf::predict(&trained.dir, &holdout_texts, max_length, training.batch_size)?;
+        let predictions =
+            crate::hf::predict(&trained.dir, &holdout_texts, max_length, training.batch_size, training.seed)?;
         metrics.insert(
             "holdout_evaluation".to_string(),
             evaluate::holdout_report(&holdout_values, &predictions),

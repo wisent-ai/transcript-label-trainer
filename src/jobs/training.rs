@@ -128,13 +128,13 @@ pub(crate) fn training(raw: &serde_yaml::Mapping, model: &str) -> Result<Trainin
 /// refused.
 pub fn training_from_flags<'a>(model: &str, text: impl Fn(&str) -> Option<&'a str>) -> Result<Training> {
     let (keys, other) = backend_keys(model);
-    if let Some(stray) = other.iter().map(|key| flag_name(key)).find(|flag| text(flag).is_some()) {
+    if let Some(stray) = other.iter().map(|key| flag_name(key)).find(|flag| text(flag.as_str()).is_some()) {
         bail!("{stray} does not apply to model {}", py_repr_str(model))
     }
     let mut mapping = serde_yaml::Mapping::new();
     for key in keys {
         let flag = flag_name(key);
-        if let Some(value) = text(&flag) {
+        if let Some(value) = text(flag.as_str()) {
             let parsed: Yaml = serde_yaml::from_str(value)
                 .map_err(|error| crate::util::Error(format!("{flag} {value:?} is not a value: {error}")))?;
             mapping.insert(Yaml::String((*key).to_string()), parsed);
