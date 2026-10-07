@@ -74,11 +74,11 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Text,
                 "canonical Stado GPU target that trains and exports the model".to_string(),
             ),
-            option(
+            required(
                 "--limit",
                 "LIMIT",
                 Kind::Int,
-                "maximum teacher-labeled candidates (default: 1500)".to_string(),
+                "most teacher-labeled candidates".to_string(),
             ),
             option(
                 "--teacher-model",

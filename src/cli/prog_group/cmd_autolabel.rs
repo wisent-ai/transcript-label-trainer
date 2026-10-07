@@ -76,7 +76,7 @@ pub(crate) fn cmd_goal_model(args: &Parsed) -> Result<i32> {
     let dataset = root.join(format!("reviewed-goals-{stamp}.jsonl"));
     let summary = goal::build_dataset(
         &dataset,
-        count(args.int("--limit"), 1_500),
+        stated_count(args, "--limit")?,
         args.text("--teacher-model"),
         stated_count(args, "--workers")?,
     )?;

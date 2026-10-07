@@ -1,13 +1,5 @@
 use super::*;
 
-pub(crate) fn count(value: Option<i64>, fallback: usize) -> usize {
-    match value {
-        Some(value) if value >= 0 => value as usize,
-        Some(_) => 0,
-        None => fallback,
-    }
-}
-
 // ---------------------------------------------------------------- printers
 
 pub(crate) static NULL: Value = Value::Null;

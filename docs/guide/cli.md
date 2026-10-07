@@ -35,10 +35,11 @@ Goal models (fine-tunes trained on a Stado GPU target, gated before publish):
 
 | command | does |
 |---|---|
-| `goal-model` | curate masked lake messages, teacher-label task goals through Brama, require an independent `best` review, train on the named exclusive Stado GPU target, and publish GGUF artifacts only after the held-out gold predictions pass a second `best` audit. `--workers N` (parallel teacher calls while curating) and `--audit-workers N` (parallel calls in the job's final audit) are required, at least 1 |
+| `goal-model` | curate masked lake messages, teacher-label task goals through Brama, require an independent `best` review, train on the named exclusive Stado GPU target, and publish GGUF artifacts only after the held-out gold predictions pass a second `best` audit. `--limit N` (most teacher-labeled candidates), `--workers N` (parallel teacher calls while curating) and `--audit-workers N` (parallel calls in the job's final audit) are required, at least 1 |
 | `goal-audit` | independently audit student goal predictions (JSONL of message, reference goal, student output) with `--workers N` parallel Brama calls (required, at least 1) and write the complete audit record |
 | `lifecycle-review` | classify masked Oko training envelopes through a named Brama route with `--workers N` parallel reviews (required, at least 1), enforce the `oko-goal-lifecycle-v1` contract, and write ordered JSONL with reviewer provenance for an immutable `--split train\|eval` |
-| `lifecycle-model` | upload immutable reviewed train and held-out datasets, fine-tune on the named Stado GPU target, measure the quantized model with `lifecycle-evaluate-gguf` at the stated `--eval-parallel N`, `--eval-slot-context N` and `--eval-gpu-layers N` (required, no defaults), audit every held-out decision through Brama `best` with `--audit-workers N` concurrent calls, and publish the candidate only when at most `--audit-max-wrong-share F` of the decisions are wrong (both required) |
+| `lifecycle-model` | upload immutable reviewed train and held-out datasets, train the served model with `ster tune sft` on the named Stado GPU target with exactly the `--ster-options` given (required; an empty value is refused as `--ster-options cannot be empty`), measure the quantized model with `lifecycle-evaluate-gguf` at the stated `--eval-parallel N`, `--eval-slot-context N` and `--eval-gpu-layers N` (required, no defaults), audit every held-out decision through Brama `best` with `--audit-workers N` concurrent calls, and publish the candidate only when at most `--audit-max-wrong-share F` of the decisions are wrong (both required) |
+| `lifecycle-examples` | write `--rows` (reviewed lifecycle JSONL) to `--output` as the Ster example set `ster tune sft` trains on: the lifecycle system prompt as each example's `system`, the user envelope as its `prompt`, the reviewed decision with its title blanked as its `completion`; a row without one reviewed decision or with a decision outside the contract is refused by id |
 | `lifecycle-evaluate-gguf` | start `llama-server` (`--server`) on the quantized `--model` on a system-assigned loopback port with `--parallel N` slots of `--slot-context N` tokens and `--gpu-layers N` offloaded, wait for its health answer, ask every `--dataset` row with decoding constrained to `--output-schema` narrowed to the row's candidates, and write `--predictions` and `--metrics`; a failed request fails the run naming its row; the server log goes to `--server-log` |
 | `lifecycle-audit` | judge every held-out student decision independently with `--workers N` concurrent Brama calls (the route's own concurrency allowance), reject inferred completion, retain the full verdict record with its `thresholds`, and fail the gate when more than `--max-wrong-share F` of the decisions (a share between none and all) are semantically wrong, any is unjudgeable or a dangerous finish, or any audit call failed. Both are required; a share outside that range is refused as `--max-wrong-share must be a share from 0 to 1, not <F>` |
 | `humanizer-model` | require an explicit `HUMANIZER_HF_REPO`, the corpus bounds `--limit N` (most targets taken), `--min-targets N` (fewer refuses the export as `humanizer corpus produced only <n> clean targets; --min-targets asks for <N>`) and `--max-per-session N`, `--workers N` and `--attempts N` (the job's parallel Brama calls and the times one question is asked; no defaults), the six quality-gate bounds `humanizer-audit` takes (`--min-semantic-fidelity`, `--min-voice-match`, `--min-pass-rate`, `--max-boilerplate-rate`, `--min-voice-gain`, `--min-semantic-delta`) and the preparation bounds `humanizer-prepare` takes (`--min-train-rows`, `--min-validation-rows`, `--min-test-rows`, `--min-length-ratio`, `--max-length-ratio`), export masked likely-authored user turns, derive inverse style-transfer inputs through Brama, train a LoRA adapter on the pinned base, audit it against that gate, and publish only a qualified private adapter revision |
@@ -56,7 +57,7 @@ The goal path in three commands. Replace `TARGET` with a registered Stado GPU ta
 
 ```sh
 # 1. Title model: curate, teacher-label, review, train, audit, publish GGUF.
-transcript-label-trainer goal-model --compute-target TARGET --workers N --audit-workers N
+transcript-label-trainer goal-model --compute-target TARGET --limit N --workers N --audit-workers N
 
 # 2. Lifecycle datasets: review masked envelopes into immutable splits.
 transcript-label-trainer lifecycle-review envelopes.jsonl \
@@ -67,6 +68,7 @@ transcript-label-trainer lifecycle-review held-out.jsonl \
 # 3. Lifecycle model: train, audit every held-out decision, gate, publish.
 transcript-label-trainer lifecycle-model reviewed-train.jsonl reviewed-eval.jsonl \
   --compute-target TARGET --brama-url <the Brama address the job dials> \
+  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S' \
   --eval-parallel N --eval-slot-context N --eval-gpu-layers N \
   --audit-workers N --audit-max-wrong-share F
 ```
