@@ -110,9 +110,7 @@ pub fn label_add(
     } else {
         stderr.into_owned()
     };
-    let detail = detail.trim();
-    let detail: String = detail.chars().take(200).collect();
-    bail!("lake label add failed: {detail}");
+    bail!("lake label add failed: {}", detail.trim());
 }
 
 /// One operator-facing warning line on stderr, prefixed with the product name.
