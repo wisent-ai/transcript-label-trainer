@@ -66,7 +66,59 @@ pub(crate) fn release_specs() -> Vec<Spec> {
                 "private Hugging Face repository of a model served from a GPU host (lifecycle); refused for a model that ships through the release channel (goal)".to_string(),
             ),
         ],
-    }]
+    }, assemble_curriculum_spec()]
+}
+
+fn assemble_curriculum_spec() -> Spec {
+    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
+    Spec {
+        name: "lifecycle-assemble-curriculum",
+        help: "assemble the lifecycle splits from reviewed rows and the agreed curriculum".to_string(),
+        description: Some(
+            "Read the reviewed training and evaluation rows and the reviewed generated curriculum, \
+             check every row's one decision against the decision contract and clear its title, keep \
+             a curriculum row only when its review chose the action the curriculum intended (each \
+             disagreement counted as intended->reviewed), require the stated number of accepted \
+             evaluation rows for every action the output schema declares, refuse duplicate ids in a \
+             split and any id shared between the splits, write both splits whole and print the \
+             counts."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            path("--base-train", "JSONL of reviewed real training rows"),
+            path("--base-eval", "JSONL of reviewed real evaluation rows"),
+            path("--curriculum-train", "JSONL of the reviewed training curriculum"),
+            path("--curriculum-eval", "JSONL of the reviewed evaluation curriculum"),
+            path("--output-train", "JSONL the assembled training split is written to"),
+            path("--output-eval", "JSONL the assembled evaluation split is written to"),
+            required(
+                "--minimum-eval-per-action",
+                "N",
+                Kind::Int,
+                "accepted evaluation curriculum rows every action needs".to_string(),
+            ),
+        ],
+    }
+}
+
+pub(crate) fn cmd_lifecycle_assemble_curriculum(args: &Parsed) -> Result<i32> {
+    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
+    let (base_train, base_eval) = (path("--base-train"), path("--base-eval"));
+    let (reviewed_train, reviewed_eval) = (path("--curriculum-train"), path("--curriculum-eval"));
+    let (output_train, output_eval) = (path("--output-train"), path("--output-eval"));
+    let run = crate::lifecycle::CurriculumAssembly {
+        base_train: &base_train,
+        base_eval: &base_eval,
+        reviewed_train: &reviewed_train,
+        reviewed_eval: &reviewed_eval,
+        output_train: &output_train,
+        output_eval: &output_eval,
+        minimum_eval_per_action: stated_count(args, "--minimum-eval-per-action")?,
+    };
+    let report = crate::lifecycle::assemble_curriculum(&run)?;
+    outln!("{}", dumps(&report));
+    Ok(0)
 }
 
 pub(crate) fn cmd_release_publish(args: &Parsed) -> Result<i32> {

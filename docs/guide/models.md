@@ -137,11 +137,25 @@ transcript-label-trainer lifecycle-review path/to/eval.jsonl \
 When the decision semantics change, prior source rows are reviewed again rather
 than retaining labels produced under the old prompt. A contract-only ownership
 change, such as moving title generation out of this model, is normalized by
-`assemble-curriculum-splits.py` without changing the reviewed action. Deterministic
-hard-case curricula from `training/lifecycle-model/curriculum/generate-curriculum.py` are
-also sent through Brama; the assembler keeps only examples whose independent
-review agrees with the intended action and keeps evaluation curriculum disjoint
-from training.
+`transcript-label-trainer lifecycle-assemble-curriculum` without changing the reviewed
+action. Deterministic hard-case curricula from
+`training/lifecycle-model/curriculum/generate-curriculum.py` are also sent through Brama;
+the assembler keeps only examples whose independent review agrees with the intended
+action and keeps evaluation curriculum disjoint from training:
+
+```sh
+transcript-label-trainer lifecycle-assemble-curriculum \
+  --base-train reviewed-train.jsonl --base-eval reviewed-eval.jsonl \
+  --curriculum-train reviewed-curriculum-train.jsonl \
+  --curriculum-eval reviewed-curriculum-eval.jsonl \
+  --output-train assembled-train.jsonl --output-eval assembled-eval.jsonl \
+  --minimum-eval-per-action N
+```
+
+Every row's one decision is checked against the decision contract, the actions the
+evaluation minimum covers are the ones `lifecycle-output-schema.json` declares, and it
+refuses an underrepresented evaluation curriculum, a duplicate id within a split, and an
+id shared between the splits; it prints the kept, refused and per-action counts.
 
 The reviewed files are then submitted together to one exclusive Stado GPU
 target:

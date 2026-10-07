@@ -22,8 +22,10 @@ mod system_prompt;
 mod review_dataset;
 mod audit_predictions;
 mod evaluate_gguf;
+mod curriculum;
 
 pub use system_prompt::*;
 pub use review_dataset::*;
 pub use audit_predictions::*;
 pub use evaluate_gguf::{evaluate_gguf, GgufEvaluation};
+pub use curriculum::{assemble_curriculum, CurriculumAssembly};
