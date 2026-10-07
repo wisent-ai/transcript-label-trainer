@@ -166,7 +166,16 @@ repository's.
   judge's opinions through Brama's `best` route. Both are quality gates with
   machine-readable records and nonzero status for nonsensical results.
 - `humanizer-prepare`, `humanizer-audit` and `humanizer-publish` run in the native
-  binary. The Stado job calls these commands around its Torch training worker.
+  binary. The Stado job trains the adapter with Ster (`ster tune sft`, exported
+  with `ster tune export --format peft`) between them.
+- The goal, lifecycle and humanizer models train with Ster instead of the three
+  torch `train.py` programs, which are gone with `lifecycle_training_rows.py`:
+  `goal-examples`, `lifecycle-examples` and `humanizer-examples` write the chat
+  each model is served as Ster examples, the jobs take `--ster-options`, and
+  `goal-evaluate-gguf` and `humanizer-evaluate-gguf` (beside
+  `lifecycle-evaluate-gguf`, all through one llama-server harness) measure the
+  served model the audit judges. `model-manifest` writes each job's manifest in
+  place of the run scripts' inline Python. The repository tracks no Python.
   Publication requires an explicit `HUMANIZER_HF_REPO`, preserves the model's
   qualification gates, refuses public destinations without changing visibility,
   and uses the supported `hf` CLI only for repository creation and file transfer.
