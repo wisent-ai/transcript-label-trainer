@@ -205,8 +205,13 @@ pub fn execute(job_path: &str, job: &Job, compute_target: &str) -> Result<i32> {
 
     let source_ref = repo_ref()?;
     let command = remote_command(job, &dataset_uri, &spec_uri, &key[..16]);
+    // The same dataset, spec and source revision is the same run: Stado
+    // answers a repeated submission with the job it already holds.
+    let run_id = format!("tlt-run-{key}-{source_ref}");
     let mut args = vec![
         OsString::from("submit"),
+        OsString::from("--run-id"),
+        OsString::from(run_id),
         OsString::from("--pinned-host"),
         OsString::from(compute_target),
         OsString::from("--repo"),

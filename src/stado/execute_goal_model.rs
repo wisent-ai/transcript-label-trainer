@@ -37,16 +37,15 @@ pub fn execute_goal_model(
         serving.slot_context,
         shell_quote(&serving.gpu_layers),
     );
+    // The same data, settings and source revision is the same run: Stado
+    // answers a repeated submission with the job it already holds.
+    let run_id = format!("jeden-goal-{run_key}-{source_ref}");
     let args = vec![
         OsString::from("submit"),
+        OsString::from("--run-id"),
+        OsString::from(run_id),
         OsString::from("--pinned-host"),
         OsString::from(compute_target),
-        OsString::from("--priority"),
-        OsString::from("20"),
-        OsString::from("--gpu-type"),
-        OsString::from("nvidia-rtx-pro-6000"),
-        OsString::from("--vram-gb"),
-        OsString::from("48"),
         OsString::from("--exclusive"),
         OsString::from("--repo"),
         OsString::from(REPOSITORY),
@@ -174,16 +173,13 @@ pub fn execute_lifecycle_model(
         audit.workers,
         audit.max_wrong_share,
     );
+    let run_id = format!("oko-lifecycle-{run_key}-{source_ref}");
     let args = vec![
         OsString::from("submit"),
+        OsString::from("--run-id"),
+        OsString::from(run_id),
         OsString::from("--pinned-host"),
         OsString::from(compute_target),
-        OsString::from("--priority"),
-        OsString::from("20"),
-        OsString::from("--gpu-type"),
-        OsString::from("nvidia-rtx-pro-6000"),
-        OsString::from("--vram-gb"),
-        OsString::from("48"),
         OsString::from("--exclusive"),
         OsString::from("--repo"),
         OsString::from(REPOSITORY),
@@ -316,16 +312,13 @@ pub fn execute_humanizer_model(
         training.max_tokens,
         training.chrf_order,
     );
+    let run_id = format!("echo-humanizer-{run_key}-{source_ref}");
     let args = vec![
         OsString::from("submit"),
+        OsString::from("--run-id"),
+        OsString::from(run_id),
         OsString::from("--pinned-host"),
         OsString::from(compute_target),
-        OsString::from("--priority"),
-        OsString::from("20"),
-        OsString::from("--gpu-type"),
-        OsString::from("nvidia-rtx-pro-6000"),
-        OsString::from("--vram-gb"),
-        OsString::from("80"),
         OsString::from("--exclusive"),
         OsString::from("--repo"),
         OsString::from(REPOSITORY),
