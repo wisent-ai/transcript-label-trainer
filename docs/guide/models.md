@@ -167,6 +167,22 @@ new-train.jsonl --output-eval new-eval.jsonl` merges the reviewed rows by id (re
 id with two different rows), puts the rows of that `split_day` into evaluation and the rest
 into training, and refuses a split that lacks an action the output schema declares.
 
+The same reviewed rows are Ster labelled decisions with `transcript-label-trainer
+lifecycle-decisions --rows reviewed-train.jsonl --output lifecycle-decisions.json`: each
+row's decision is checked against the contract, the masked input envelope is the state,
+the questions are the ones `training/lifecycle-model/decision/questions.json` declares
+(goal_ref offers the row's own candidates by their titles), and the reviewed action,
+goal_ref and lifecycle_evidence are the answers. That document is what `ster tune decide`
+trains on and `ster decisions benchmark` measures, for example:
+
+```sh
+transcript-label-trainer lifecycle-decisions --rows reviewed-eval.jsonl --output eval-decisions.json
+ster decisions benchmark --model Qwen/Qwen3-4B --examples eval-decisions.json
+```
+
+A row without exactly one reviewed decision, a decision that breaks the contract, or a
+candidate without a reference or a title is refused by row id.
+
 The reviewed files are then submitted together to one exclusive Stado GPU
 target:
 

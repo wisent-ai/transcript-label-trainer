@@ -66,7 +66,36 @@ pub(crate) fn release_specs() -> Vec<Spec> {
                 "private Hugging Face repository of a model served from a GPU host (lifecycle); refused for a model that ships through the release channel (goal)".to_string(),
             ),
         ],
-    }, assemble_curriculum_spec(), generate_curriculum_spec(), split_by_day_spec()]
+    }, assemble_curriculum_spec(), generate_curriculum_spec(), split_by_day_spec(), decisions_spec()]
+}
+
+fn decisions_spec() -> Spec {
+    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
+    Spec {
+        name: "lifecycle-decisions",
+        help: "write reviewed lifecycle rows as Ster labelled decisions".to_string(),
+        description: Some(
+            "Check every reviewed row's decision against the decision contract and write the rows as \
+             the labelled-decision document ster tune decide trains on: the masked input envelope as \
+             the state, the questions training/lifecycle-model/decision/questions.json declares (goal_ref \
+             offers the row's own candidates by title), the reviewed action, goal_ref and \
+             lifecycle_evidence as the answers."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            path("--rows", "JSONL of reviewed lifecycle rows"),
+            path("--output", "JSON the labelled decisions are written to"),
+        ],
+    }
+}
+
+pub(crate) fn cmd_lifecycle_decisions(args: &Parsed) -> Result<i32> {
+    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
+    let (rows, output) = (path("--rows"), path("--output"));
+    let report = crate::lifecycle::export_decisions(&crate::lifecycle::DecisionExport { rows: &rows, output: &output })?;
+    outln!("{}", dumps(&report));
+    Ok(0)
 }
 
 fn split_by_day_spec() -> Spec {

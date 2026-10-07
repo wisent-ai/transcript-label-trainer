@@ -136,6 +136,7 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "lifecycle-assemble-curriculum" => cmd_lifecycle_assemble_curriculum(&parsed),
         "lifecycle-generate-curriculum" => cmd_lifecycle_generate_curriculum(&parsed),
         "lifecycle-split-by-day" => cmd_lifecycle_split_by_day(&parsed),
+        "lifecycle-decisions" => cmd_lifecycle_decisions(&parsed),
         "goal-audit" => cmd_goal_audit(&parsed),
         "release-publish" => cmd_release_publish(&parsed),
         other => Err(Error(format!("unknown command '{other}'"))),

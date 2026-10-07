@@ -1,0 +1,23 @@
+{
+  "why": "The lifecycle decision as Ster typed questions (ster tune decide, ster decide): the state is the masked input envelope Oko sends, and each question carries the rule lifecycle-system-prompt.txt states for it. goal_ref has no fixed options: its options are the row's own candidate references, each described by its candidate's title. The title key is not a question, because the decision contract keeps it empty.",
+  "action": {
+    "instructions": "What does this user message do to the user's goals? Candidate references are opaque identifiers; product names are names.",
+    "criteria": {
+      "startGoal": "The message starts a genuinely new durable objective, even when another goal is active in the same session.",
+      "continueCurrent": "The message advances, corrects, supplies context for, or reports a failure in an existing objective, or explicitly reopens a done one.",
+      "finishGoal": "The user explicitly confirms successful completion of an existing objective itself. Assistant or subagent completion reports, a completed prerequisite or a test result are not user confirmation.",
+      "ignore": "A status question, explanation, complaint, acknowledgement, meta or no-op text, or anything that does not change goal work; a question about how, why, where, what happened or whether something works, unless the same message also requests new work."
+    }
+  },
+  "goal_ref": {
+    "instructions": "Which goal does the message concern? A new objective is the new-goal option; otherwise the candidate the message advances, finishes or clearly references, else the best candidate."
+  },
+  "lifecycle_evidence": {
+    "instructions": "What does the user explicitly say about whether the goal's work is finished? Never infer completion from positive sentiment, an assistant or subagent claim, tool or status output, elapsed time, or the absence of further messages.",
+    "criteria": {
+      "none": "The user says neither that the work remains open nor that it is successfully complete.",
+      "explicit_open": "The user explicitly says the work remains open, unfinished, pending or not completed.",
+      "explicit_completion": "The user explicitly confirms successful completion of the goal."
+    }
+  }
+}
