@@ -138,10 +138,14 @@ When the decision semantics change, prior source rows are reviewed again rather
 than retaining labels produced under the old prompt. A contract-only ownership
 change, such as moving title generation out of this model, is normalized by
 `transcript-label-trainer lifecycle-assemble-curriculum` without changing the reviewed
-action. Deterministic hard-case curricula from
-`training/lifecycle-model/curriculum/generate-curriculum.py` are also sent through Brama;
-the assembler keeps only examples whose independent review agrees with the intended
-action and keeps evaluation curriculum disjoint from training:
+action. Deterministic hard-case curricula are written by
+`transcript-label-trainer lifecycle-generate-curriculum --source reviewed-train.jsonl
+--output curriculum.jsonl --per-family N --seed N` from the families and sentences in
+`training/lifecycle-model/curriculum/templates.json`; each row copies a real envelope
+with an active candidate, keeps only the fields Oko sends, and records its family and
+intended action. The curriculum is also sent through Brama; the assembler keeps only
+examples whose independent review agrees with the intended action and keeps
+evaluation curriculum disjoint from training:
 
 ```sh
 transcript-label-trainer lifecycle-assemble-curriculum \

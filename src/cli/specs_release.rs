@@ -66,7 +66,48 @@ pub(crate) fn release_specs() -> Vec<Spec> {
                 "private Hugging Face repository of a model served from a GPU host (lifecycle); refused for a model that ships through the release channel (goal)".to_string(),
             ),
         ],
-    }, assemble_curriculum_spec()]
+    }, assemble_curriculum_spec(), generate_curriculum_spec()]
+}
+
+fn generate_curriculum_spec() -> Spec {
+    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
+    Spec {
+        name: "lifecycle-generate-curriculum",
+        help: "write deterministic hard-case lifecycle turns for Brama review".to_string(),
+        description: Some(
+            "For every family in training/lifecycle-model/curriculum/templates.json, write the stated \
+             number of rows built from real reviewed envelopes with an active candidate: one of the \
+             family's sentences filled with that candidate's title (a switch also names a candidate \
+             the envelope does not hold), the family and its intended action recorded for the \
+             assembler, and turn indexes after every source turn. The envelope keeps only what Oko \
+             sends. The same seed gives the same rows."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            path("--source", "JSONL of reviewed lifecycle rows the turns are built from"),
+            path("--output", "JSONL the generated rows are written to"),
+            required("--per-family", "N", Kind::Int, "rows written for each family".to_string()),
+            required("--seed", "N", Kind::Int, "the seed every choice is drawn from".to_string()),
+        ],
+    }
+}
+
+pub(crate) fn cmd_lifecycle_generate_curriculum(args: &Parsed) -> Result<i32> {
+    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
+    let (source, output) = (path("--source"), path("--output"));
+    let seed = args
+        .int("--seed")
+        .ok_or_else(|| Error("--seed N is required; this command has no default for it".to_string()))?;
+    let run = crate::lifecycle::CurriculumGeneration {
+        source: &source,
+        output: &output,
+        per_family: stated_count(args, "--per-family")?,
+        seed: seed as u64,
+    };
+    let report = crate::lifecycle::generate_curriculum(&run)?;
+    outln!("{}", dumps(&report));
+    Ok(0)
 }
 
 fn assemble_curriculum_spec() -> Spec {

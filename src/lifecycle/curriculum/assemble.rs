@@ -14,12 +14,12 @@
 
 use std::collections::BTreeMap;
 
-use super::*;
+use super::super::*;
 
 /// The decision schema every lifecycle answer is held to; its `oneOf`
 /// branches declare the actions.
 const OUTPUT_SCHEMA: &str =
-    include_str!("../../training/lifecycle-model/lifecycle-output-schema.json");
+    include_str!("../../../training/lifecycle-model/lifecycle-output-schema.json");
 
 /// What one run assembles from and writes to.
 pub struct CurriculumAssembly<'a> {

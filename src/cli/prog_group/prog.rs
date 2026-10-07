@@ -134,6 +134,7 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "lifecycle-audit" => cmd_lifecycle_audit(&parsed),
         "lifecycle-evaluate-gguf" => cmd_lifecycle_evaluate_gguf(&parsed),
         "lifecycle-assemble-curriculum" => cmd_lifecycle_assemble_curriculum(&parsed),
+        "lifecycle-generate-curriculum" => cmd_lifecycle_generate_curriculum(&parsed),
         "goal-audit" => cmd_goal_audit(&parsed),
         "release-publish" => cmd_release_publish(&parsed),
         other => Err(Error(format!("unknown command '{other}'"))),
