@@ -280,6 +280,37 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 "most targets one session may contribute".to_string(),
             ),
             required(
+                "--min-target-chars",
+                "N",
+                Kind::Int,
+                "fewest characters an authored target may have".to_string(),
+            ),
+            required(
+                "--max-target-chars",
+                "N",
+                Kind::Int,
+                "most characters an authored target may have".to_string(),
+            ),
+            required(
+                "--max-target-lines",
+                "N",
+                Kind::Int,
+                "most lines an authored target may have".to_string(),
+            ),
+            required(
+                "--min-target-words",
+                "N",
+                Kind::Int,
+                "fewest words holding a letter an authored target needs".to_string(),
+            ),
+            required(
+                "--min-meaningful-share",
+                "F",
+                Kind::Float,
+                "smallest share of an authored target's characters that are letters, digits or spaces"
+                    .to_string(),
+            ),
+            required(
                 "--workers",
                 "N",
                 Kind::Int,

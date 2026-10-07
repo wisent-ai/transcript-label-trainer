@@ -37,6 +37,16 @@ fn stated_bound(args: &Parsed, flag: &str) -> Result<f64> {
     }
 }
 
+/// One stated share between none and all, refused by its flag's name when
+/// missing or outside that range; the sign of a positive share is one.
+pub(crate) fn stated_share(args: &Parsed, flag: &str) -> Result<f64> {
+    let value = stated_bound(args, flag)?;
+    match !value.is_sign_negative() && value <= value.signum() {
+        true => Ok(value),
+        false => Err(Error(format!("{flag} must be a share from none to all of the text, not {value}"))),
+    }
+}
+
 /// The six stated bounds, each refused by its flag's name when missing.
 pub(crate) fn stated_gate(args: &Parsed) -> Result<crate::humanizer::AuditGate> {
     Ok(crate::humanizer::AuditGate {

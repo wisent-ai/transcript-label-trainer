@@ -32,13 +32,21 @@ pub use anchors::LengthRatio;
 pub use prepare::{prepare_dataset, HeldOut, PreparationBounds};
 pub use publication::{publish_adapter, Publication};
 
-/// How many targets the humanizer corpus takes: at most `limit`, at most
-/// `max_per_session` from one session, and the export is refused below
-/// `minimum`. Every one is the caller's to state.
+/// What the humanizer corpus takes, every value the caller's to state: at
+/// most `limit` targets and at most `max_per_session` from one session, the
+/// export refused below `minimum`; a target counts as authored when its
+/// trimmed text has `min_chars` to `max_chars` characters, at most
+/// `max_lines` lines, at least `min_words` words holding a letter, and at
+/// least `min_meaningful_share` of its characters letters, digits or spaces.
 pub struct CorpusBounds {
     pub limit: usize,
     pub minimum: usize,
     pub max_per_session: usize,
+    pub min_chars: usize,
+    pub max_chars: usize,
+    pub max_lines: usize,
+    pub min_words: usize,
+    pub min_meaningful_share: f64,
 }
 
 /// Version of the `preparation.json`, `audit.json` and job-output
@@ -74,10 +82,13 @@ fn digest(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
 
-fn likely_authored(value: &str) -> bool {
+fn likely_authored(value: &str, bounds: &CorpusBounds) -> bool {
     let text = value.trim();
     let chars = text.chars().count();
-    if !(20..=2_000).contains(&chars) || text.lines().count() > 8 || text.starts_with('/') {
+    if !(bounds.min_chars..=bounds.max_chars).contains(&chars)
+        || text.lines().count() > bounds.max_lines
+        || text.starts_with('/')
+    {
         return false;
     }
     let lower = text.to_lowercase();
@@ -115,17 +126,23 @@ fn likely_authored(value: &str) -> bool {
         .split_whitespace()
         .filter(|word| word.chars().any(char::is_alphabetic))
         .count();
-    if words < 4 {
+    if words < bounds.min_words {
         return false;
     }
     let meaningful = text
         .chars()
         .filter(|character| character.is_alphanumeric() || character.is_whitespace())
         .count();
-    meaningful * 100 / chars.max(1) >= 65
+    meaningful as f64 / chars as f64 >= bounds.min_meaningful_share
 }
 
 pub fn export_targets(path: &Path, bounds: &CorpusBounds) -> Result<Value> {
+    if bounds.min_chars > bounds.max_chars {
+        return Err(Error(format!(
+            "--min-target-chars {} exceeds --max-target-chars {}: no target could qualify",
+            bounds.min_chars, bounds.max_chars
+        )));
+    }
     if bounds.minimum > bounds.limit {
         return Err(Error(format!(
             "--min-targets {} exceeds --limit {}: the corpus could never be large enough",
@@ -140,7 +157,6 @@ FROM events
 WHERE event_type = 'user'
   AND text IS NOT NULL
   AND runtime IN ('omp', 'claude', 'codex', 'droid', 'kimi')
-  AND length(text) BETWEEN 20 AND 2000
 ORDER BY hash(session_id || ':' || text)
 "#;
     let mut rows = Vec::new();
@@ -150,7 +166,7 @@ ORDER BY hash(session_id || ':' || text)
         let session_id = field(&value, "session_id");
         let runtime = field(&value, "runtime");
         let target = field(&value, "target");
-        if session_id.is_empty() || runtime.is_empty() || !likely_authored(&target) {
+        if session_id.is_empty() || runtime.is_empty() || !likely_authored(&target, bounds) {
             continue;
         }
         let identity = normalized(&target);
@@ -197,5 +213,12 @@ ORDER BY hash(session_id || ':' || text)
         "max_per_session": bounds.max_per_session,
         "limit": bounds.limit,
         "minimum": bounds.minimum,
+        "authored": {
+            "min_chars": bounds.min_chars,
+            "max_chars": bounds.max_chars,
+            "max_lines": bounds.max_lines,
+            "min_words": bounds.min_words,
+            "min_meaningful_share": bounds.min_meaningful_share,
+        },
     }))
 }
