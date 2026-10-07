@@ -201,11 +201,15 @@ transcript-label-trainer lifecycle-model \
   --eval-parallel N --eval-slot-context N --eval-gpu-layers N
 ```
 
-The job fine-tunes the pinned Qwen3-4B base, evaluates the untouched reviewed
-split, converts and quantizes the model to Q4_K_M GGUF, and runs an independent
-Brama `--best` audit over every held-out prediction. Publication requires at
-least 99% valid JSON, 90% action accuracy, 88% joint accuracy, perfect finish
-precision, and a passing independent audit.
+The job trains with Ster on the GPU host, which must have `ster` installed (`stado
+product install ster --surface cli`; without it the job stops at `ster: command not
+found`): the reviewed training rows become labelled decisions (`lifecycle-decisions`),
+`ster tune decide` fits an adapter to the pinned Qwen3-4B base, and `ster tune merge`
+folds it into a checkpoint, whose report is kept as `metrics.json`. llama.cpp's own
+converter then exports and quantizes it to Q4_K_M GGUF, the untouched reviewed split
+is evaluated on that GGUF, and an independent Brama `--best` audit judges every held-out
+prediction. Publication requires the passing audit; the served rates are recorded in the
+manifest beside it.
 
 The quantized model is measured the way production serves it, by
 `transcript-label-trainer lifecycle-evaluate-gguf`: `llama-server` on a loopback

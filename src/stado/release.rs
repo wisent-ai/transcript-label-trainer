@@ -50,7 +50,8 @@ pub(crate) const RELEASE_MODELS: [ReleaseModel; 2] = [
         metadata: &[
             "final-judge.json",
             "metrics.json",
-            "predictions.jsonl",
+            "predictions-gguf.jsonl",
+            "metrics-gguf.json",
             "lifecycle-system-prompt.txt",
             "lifecycle-output-schema.json",
             "python-requirements.lock",
