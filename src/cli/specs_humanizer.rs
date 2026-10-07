@@ -12,9 +12,10 @@ fn count_options() -> [Opt; 2] {
     ]
 }
 
-/// The quality gate `humanizer-audit` holds the adapter to: every bound is
-/// required, because what counts as good enough is the operator's call.
-fn gate_options() -> Vec<Opt> {
+/// The quality gate the humanizer adapter is held to, by `humanizer-audit`
+/// and by the `humanizer-model` job that runs it: every bound is required,
+/// because what counts as good enough is the operator's call.
+pub(crate) fn gate_options() -> Vec<Opt> {
     let bound = |flag: &'static str, help: &str| required(flag, "F", Kind::Float, help.to_string());
     vec![
         bound("--min-semantic-fidelity", "lowest mean semantic fidelity the adapter may score"),
@@ -34,6 +35,18 @@ fn stated_bound(args: &Parsed, flag: &str) -> Result<f64> {
         Some(value) => Err(Error(format!("{flag} must be a finite number, not {value}"))),
         None => Err(Error(format!("{flag} is required: the audit's quality gate is the caller's to state"))),
     }
+}
+
+/// The six stated bounds, each refused by its flag's name when missing.
+pub(crate) fn stated_gate(args: &Parsed) -> Result<crate::humanizer::AuditGate> {
+    Ok(crate::humanizer::AuditGate {
+        min_semantic_fidelity: stated_bound(args, "--min-semantic-fidelity")?,
+        min_voice_match: stated_bound(args, "--min-voice-match")?,
+        min_pass_rate: stated_bound(args, "--min-pass-rate")?,
+        max_boilerplate_rate: stated_bound(args, "--max-boilerplate-rate")?,
+        min_voice_gain: stated_bound(args, "--min-voice-gain")?,
+        min_semantic_delta: stated_bound(args, "--min-semantic-delta")?,
+    })
 }
 
 pub(crate) fn humanizer_specs() -> Vec<Spec> {
@@ -153,14 +166,7 @@ pub(crate) fn cmd_humanizer_prepare(args: &Parsed) -> Result<i32> {
 
 pub(crate) fn cmd_humanizer_audit(args: &Parsed) -> Result<i32> {
     let judge = args.text("--brama-model").unwrap_or(brama::BEST_MODEL);
-    let gate = crate::humanizer::AuditGate {
-        min_semantic_fidelity: stated_bound(args, "--min-semantic-fidelity")?,
-        min_voice_match: stated_bound(args, "--min-voice-match")?,
-        min_pass_rate: stated_bound(args, "--min-pass-rate")?,
-        max_boilerplate_rate: stated_bound(args, "--max-boilerplate-rate")?,
-        min_voice_gain: stated_bound(args, "--min-voice-gain")?,
-        min_semantic_delta: stated_bound(args, "--min-semantic-delta")?,
-    };
+    let gate = stated_gate(args)?;
     let summary = crate::humanizer::audit_outputs(
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),

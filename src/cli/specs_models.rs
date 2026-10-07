@@ -265,7 +265,10 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Int,
                 "times the job asks one Brama question before its row is given up".to_string(),
             ),
-        ],
+        ]
+        .into_iter()
+        .chain(super::specs_humanizer::gate_options())
+        .collect(),
     };
 
     let lifecycle_audit = Spec {

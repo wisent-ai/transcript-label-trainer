@@ -190,13 +190,15 @@ pub fn execute_lifecycle_model(
 
 /// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
 /// `workers` and `attempts` are the caller's counts for the job's Brama
-/// preparation and audit; the job is refused without them.
+/// preparation and audit, and `gate` the quality gate its audit holds the
+/// adapter to; the job is refused without them.
 pub fn execute_humanizer_model(
     targets_path: &Path,
     compute_target: &str,
     hf_repo: &str,
     workers: usize,
     attempts: usize,
+    gate: &crate::humanizer::AuditGate,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
@@ -228,7 +230,16 @@ pub fn execute_humanizer_model(
          \"$stado\" storage get '{targets_uri}' \"$work/targets.jsonl\"; \
          HUMANIZER_HF_REPO={hf_repo} HUMANIZER_WORK_DIR=\"$work\" \
          HUMANIZER_WORKERS={workers} HUMANIZER_ATTEMPTS={attempts} \
-         ./training/humanizer-model/run.sh \"$work/targets.jsonl\""
+         HUMANIZER_MIN_SEMANTIC_FIDELITY={} HUMANIZER_MIN_VOICE_MATCH={} \
+         HUMANIZER_MIN_PASS_RATE={} HUMANIZER_MAX_BOILERPLATE_RATE={} \
+         HUMANIZER_MIN_VOICE_GAIN={} HUMANIZER_MIN_SEMANTIC_DELTA={} \
+         ./training/humanizer-model/run.sh \"$work/targets.jsonl\"",
+        gate.min_semantic_fidelity,
+        gate.min_voice_match,
+        gate.min_pass_rate,
+        gate.max_boilerplate_rate,
+        gate.min_voice_gain,
+        gate.min_semantic_delta,
     );
     let args = vec![
         OsString::from("submit"),
