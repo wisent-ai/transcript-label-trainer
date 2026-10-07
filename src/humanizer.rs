@@ -24,15 +24,18 @@ mod calls;
 mod prepare;
 mod prompts;
 mod publication;
+mod manifest;
 
 pub use audit::audit_outputs;
+pub use manifest::manifest;
 pub use prepare::prepare_dataset;
 pub use publication::{publish_adapter, Publication};
 
 const MAX_PER_SESSION: usize = 6;
 const FETCH_MULTIPLIER: usize = 12;
 
-/// Version of the `preparation.json` and `audit.json` record layouts.
+/// Version of the `preparation.json`, `audit.json` and job-output
+/// `model-manifest.json` record layouts.
 const REPORT_SCHEMA_VERSION: u32 = 1;
 const MODEL_CONTRACT: &str = "echo-lukasz-humanizer-v1";
 

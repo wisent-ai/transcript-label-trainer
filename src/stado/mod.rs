@@ -19,7 +19,9 @@ use crate::{lake, model};
 mod repository;
 mod execute_goal_model;
 mod release;
+mod manifest;
 
 pub use repository::*;
 pub use execute_goal_model::*;
 pub use release::*;
+pub(crate) use manifest::{write_manifest, ManifestModel};

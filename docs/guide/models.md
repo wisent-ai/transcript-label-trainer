@@ -90,7 +90,14 @@ content-addressed URI printed as `model artifact:
 stado://probierz/artifacts/models/jeden/goal-qwen3-4b/<dataset-sha256>`.
 Stado also retains its canonical `status/<job-id>/output/` copy. All model calls
 use `brama.rs`; the pipeline has no direct provider credentials or second auth
-implementation.
+implementation. The job's `model-manifest.json` is written by `transcript-label-trainer
+model-manifest --model goal|lifecycle|humanizer --output-dir OUT [--artifact GGUF]`: each
+evidence file's size and SHA-256, the ordered `<artifact>.part-*` parts and the artifact they
+rebuild, and `qualified` from the independent gate (`final-judge.json` passed; for the
+humanizer, `publication.json` qualified and `audit.json` passed, refused with both values when
+not). A missing input is refused by name, `--artifact` is required for goal and lifecycle and
+refused for the humanizer. The lifecycle manifest records the served and training metrics and
+gates on the judge alone.
 
 A qualified job output enters the Jeden Desktop release namespace through
 `transcript-label-trainer release-publish <job-output-uri> --model goal`, which

@@ -68,55 +68,8 @@ cp "$WORK/metrics.json" "$WORK/predictions.jsonl" \
    "$WORK/python-requirements.lock" "$WORK/final-judge.json" "$OUT/"
 cp "$ROOT/training/goal-model/goal-system-prompt.txt" "$OUT/goal-system-prompt.md"
 
-OUT="$OUT" MODEL="$MODEL" MODEL_NAME="$MODEL_NAME" "$VENV/bin/python" - <<'PY'
-import hashlib
-import json
-import os
-from pathlib import Path
-
-out = Path(os.environ["OUT"])
-model = Path(os.environ["MODEL"])
-model_name = os.environ["MODEL_NAME"]
-parts = sorted(path.name for path in out.glob(f"{model_name}.part-*"))
-
-def digest(path):
-    value = hashlib.sha256()
-    with path.open("rb") as source:
-        while chunk := source.read(8 * 1024 * 1024):
-            value.update(chunk)
-    return value.hexdigest()
-judge = json.loads((out / "final-judge.json").read_text(encoding="utf-8"))
-files = {}
-for path in sorted(out.iterdir()):
-    if path.name == "model-manifest.json" or not path.is_file():
-        continue
-    files[path.name] = {
-        "bytes": path.stat().st_size,
-        "sha256": digest(path),
-    }
-qualified = judge.get("passed") is True
-manifest = {
-    "product": "Jeden goal model",
-    "format": "GGUF",
-    "default_artifact": model_name,
-    "base_model": "Qwen/Qwen3-4B",
-    "base_revision": "1cfa9a7208912126459214e8b04321603b3df60c",
-    "required_quality_gate": "final-judge.json",
-    "qualified": qualified,
-    "review_model": judge.get("review_model"),
-    "files": files,
-    "transport": {
-        "kind": "ordered-parts",
-        "parts": parts,
-        "assembled_bytes": model.stat().st_size,
-        "assembled_sha256": digest(model),
-    },
-}
-(out / "model-manifest.json").write_text(
-    json.dumps(manifest, indent=2) + "\n",
-    encoding="utf-8",
-)
-PY
+"$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
+  model-manifest --model goal --output-dir "$OUT" --artifact "$MODEL"
 
 if [ "$AUDIT_EXIT" -ne 0 ]; then
   echo "goal model candidate staged but rejected by final audit"

@@ -93,80 +93,8 @@ cp "$WORK/metrics.json" "$WORK/predictions.jsonl" \
    "$ROOT/training/lifecycle-model/lifecycle-system-prompt.txt" \
    "$ROOT/training/lifecycle-model/lifecycle-output-schema.json" "$OUT/"
 
-OUT="$OUT" MODEL="$MODEL" MODEL_NAME="$MODEL_NAME" "$VENV/bin/python" - <<'PY'
-import hashlib
-import json
-import os
-from pathlib import Path
-
-out = Path(os.environ["OUT"])
-model = Path(os.environ["MODEL"])
-model_name = os.environ["MODEL_NAME"]
-parts = sorted(path.name for path in out.glob(f"{model_name}.part-*"))
-
-def digest(path):
-    value = hashlib.sha256()
-    with path.open("rb") as source:
-        while chunk := source.read(8 * 1024 * 1024):
-            value.update(chunk)
-    return value.hexdigest()
-
-judge = json.loads((out / "final-judge.json").read_text(encoding="utf-8"))
-# The gate reads the served surface. The trainer's in-process numbers are kept
-# beside them for comparison, never as the thing being gated.
-metrics = json.loads((out / "metrics-gguf.json").read_text(encoding="utf-8"))
-training_metrics = json.loads((out / "metrics.json").read_text(encoding="utf-8"))
-files = {}
-for path in sorted(out.iterdir()):
-    if path.name == "model-manifest.json" or not path.is_file():
-        continue
-    files[path.name] = {"bytes": path.stat().st_size, "sha256": digest(path)}
-qualified = (
-    judge.get("passed") is True
-    and metrics.get("valid_json", 0) >= 0.99
-    and metrics.get("action_accuracy", 0) >= 0.90
-    and metrics.get("joint_accuracy", 0) >= 0.88
-    and metrics.get("finish_precision", 0) == 1.0
-)
-manifest = {
-    "product": "Oko goal lifecycle model",
-    "contract": "oko-goal-lifecycle-v1",
-    "format": "GGUF",
-    "default_artifact": model_name,
-    "base_model": "Qwen/Qwen3-4B",
-    "base_revision": "1cfa9a7208912126459214e8b04321603b3df60c",
-    "required_quality_gate": "final-judge.json",
-    "evaluation_surface": "served Q4_K_M GGUF through Oko's loopback chat contract, decoding constrained to lifecycle-output-schema.json",
-    "qualified": qualified,
-    "review_model": judge.get("review_model"),
-    "metrics": {
-        "valid_json": metrics.get("valid_json"),
-        "action_accuracy": metrics.get("action_accuracy"),
-        "goal_ref_accuracy": metrics.get("goal_ref_accuracy"),
-        "evidence_accuracy": metrics.get("evidence_accuracy"),
-        "joint_accuracy": metrics.get("joint_accuracy"),
-        "finish_precision": metrics.get("finish_precision"),
-    },
-    "training_metrics": {
-        "valid_json": training_metrics.get("valid_json"),
-        "action_accuracy": training_metrics.get("action_accuracy"),
-        "joint_accuracy": training_metrics.get("joint_accuracy"),
-        "finish_precision": training_metrics.get("finish_precision"),
-    },
-    "files": files,
-    "transport": {
-        "kind": "ordered-parts",
-        "parts": parts,
-        "assembled_bytes": model.stat().st_size,
-        "assembled_sha256": digest(model),
-    },
-}
-(out / "model-manifest.json").write_text(
-    json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-)
-if not qualified:
-    raise SystemExit("lifecycle model did not satisfy the manifest quality thresholds")
-PY
+"$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
+  model-manifest --model lifecycle --output-dir "$OUT" --artifact "$MODEL"
 
 if [ "$AUDIT_EXIT" -ne 0 ]; then
   echo "lifecycle model candidate staged but rejected by final audit"

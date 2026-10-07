@@ -66,7 +66,46 @@ pub(crate) fn release_specs() -> Vec<Spec> {
                 "private Hugging Face repository of a model served from a GPU host (lifecycle); refused for a model that ships through the release channel (goal)".to_string(),
             ),
         ],
-    }, assemble_curriculum_spec(), generate_curriculum_spec(), split_by_day_spec(), decisions_spec()]
+    }, assemble_curriculum_spec(), generate_curriculum_spec(), split_by_day_spec(), decisions_spec(), manifest_spec()]
+}
+
+fn manifest_spec() -> Spec {
+    Spec {
+        name: "model-manifest",
+        help: "write a training job's model-manifest.json from its output directory".to_string(),
+        description: Some(
+            "Read the output directory a training job staged, record every evidence file's size and \
+             SHA-256, the ordered <artifact>.part-* parts and the assembled artifact they rebuild, and \
+             qualified from the model's independent gate (final-judge.json passed for the GGUF models; \
+             publication.json qualified and audit.json passed for the humanizer), write \
+             model-manifest.json there and print it. release-publish reads this manifest. A missing or \
+             unreadable input file is refused by name."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            required(
+                "--model",
+                "MODEL",
+                Kind::Text,
+                format!("which fine-tune the output holds ({})", stado::ManifestModel::names()),
+            ),
+            required("--output-dir", "PATH", Kind::Text, "the job's staged output directory".to_string()),
+            option(
+                "--artifact",
+                "PATH",
+                Kind::Text,
+                "the assembled GGUF whose parts the output holds (goal, lifecycle); refused for the humanizer".to_string(),
+            ),
+        ],
+    }
+}
+
+pub(crate) fn cmd_model_manifest(args: &Parsed) -> Result<i32> {
+    let model = stado::ManifestModel::named(args.text("--model").unwrap_or_default())?;
+    let output = std::path::PathBuf::from(args.text("--output-dir").unwrap_or_default());
+    let artifact = args.text("--artifact").map(std::path::PathBuf::from);
+    printed(&stado::write_manifest(model, &output, artifact.as_deref())?)
 }
 
 fn decisions_spec() -> Spec {
@@ -94,6 +133,12 @@ pub(crate) fn cmd_lifecycle_decisions(args: &Parsed) -> Result<i32> {
     let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
     let (rows, output) = (path("--rows"), path("--output"));
     let report = crate::lifecycle::export_decisions(&crate::lifecycle::DecisionExport { rows: &rows, output: &output })?;
+    printed(&report)
+}
+
+/// Print `report` as the command's answer and end it as having done what it
+/// promised.
+pub(crate) fn printed(report: &Value) -> Result<i32> {
     outln!("{}", dumps(&report));
     Ok(0)
 }

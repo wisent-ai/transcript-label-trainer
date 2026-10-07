@@ -136,7 +136,7 @@ fn hash_files(paths: &[PathBuf]) -> Result<(String, u64)> {
     Ok((hex::encode(hasher.finalize()), bytes))
 }
 
-fn read_json(path: &Path) -> Result<Value> {
+pub(super) fn read_json(path: &Path) -> Result<Value> {
     let text = fs::read_to_string(path)
         .map_err(|error| Error(format!("cannot read {}: {error}", path.display())))?;
     serde_json::from_str(&text).map_err(|error| Error(format!("{}: {error}", path.display())))
