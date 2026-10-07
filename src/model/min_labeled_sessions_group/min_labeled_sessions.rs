@@ -5,11 +5,6 @@ use super::*;
 /// product floor, not a library requirement.
 pub const MIN_LABELED_SESSIONS: usize = 8;
 
-/// Cross-validated accuracy is reported once every class can spare members
-/// for stratified folds; below that the metric would be noise, so it is
-/// omitted.
-pub(crate) const MIN_SESSIONS_FOR_CV: usize = 10;
-
 /// The fitted tfidf-logreg artifact. Replaces the Python `model.joblib`.
 pub(crate) const MODEL_FILE: &str = "model.json";
 

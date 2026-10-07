@@ -8,13 +8,12 @@ pub(crate) fn train_tfidf(plan: &Plan) -> Result<Value, TrainFailure> {
     let (texts, values) = side(plan, &plan.split.train_index);
     let counts = class_counts(values.iter().map(String::as_str));
 
-    let min_class = counts.values().copied().min().unwrap_or(0);
-    let mut cv_accuracy: Option<f64> = None;
-    let mut cv_folds = 0usize;
-    if texts.len() >= MIN_SESSIONS_FOR_CV && min_class >= 2 {
-        cv_folds = std::cmp::min(5, min_class);
-        cv_accuracy = Some(round4(cross_val_accuracy(&texts, &values, cv_folds)));
-    }
+    // Stratified folds need every class in every fold, so the smallest class
+    // decides how many folds there can be; a class of one member cannot be
+    // both trained on and tested, and then no cross-validated accuracy exists.
+    let folds = counts.values().copied().min().filter(|members| *members > members.signum());
+    let cv_accuracy = folds.map(|folds| round4(cross_val_accuracy(&texts, &values, folds)));
+    let cv_folds = folds.unwrap_or_default();
 
     let model = TfidfModel::fit(&texts, &values);
 
