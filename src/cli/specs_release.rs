@@ -66,7 +66,46 @@ pub(crate) fn release_specs() -> Vec<Spec> {
                 "private Hugging Face repository of a model served from a GPU host (lifecycle); refused for a model that ships through the release channel (goal)".to_string(),
             ),
         ],
-    }, assemble_curriculum_spec(), generate_curriculum_spec()]
+    }, assemble_curriculum_spec(), generate_curriculum_spec(), split_by_day_spec()]
+}
+
+fn split_by_day_spec() -> Spec {
+    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
+    Spec {
+        name: "lifecycle-split-by-day",
+        help: "re-split reviewed lifecycle rows, holding one day out for evaluation".to_string(),
+        description: Some(
+            "Merge the reviewed rows of an earlier training and evaluation split by id (one id with \
+             two different rows is refused), put every row whose split_day is --eval-day into \
+             evaluation and every other row into training, ordered by id, require every action the \
+             output schema declares in both splits, write both and print the counts."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            path("--train", "JSONL of the earlier reviewed training rows"),
+            path("--eval", "JSONL of the earlier reviewed evaluation rows"),
+            required("--eval-day", "DAY", Kind::Text, "the split_day held out for evaluation".to_string()),
+            path("--output-train", "JSONL the new training split is written to"),
+            path("--output-eval", "JSONL the new evaluation split is written to"),
+        ],
+    }
+}
+
+pub(crate) fn cmd_lifecycle_split_by_day(args: &Parsed) -> Result<i32> {
+    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
+    let (train, eval) = (path("--train"), path("--eval"));
+    let (output_train, output_eval) = (path("--output-train"), path("--output-eval"));
+    let run = crate::lifecycle::DaySplit {
+        train: &train,
+        eval: &eval,
+        eval_day: args.text("--eval-day").unwrap_or_default(),
+        output_train: &output_train,
+        output_eval: &output_eval,
+    };
+    let report = crate::lifecycle::split_by_day(&run)?;
+    outln!("{}", dumps(&report));
+    Ok(0)
 }
 
 fn generate_curriculum_spec() -> Spec {

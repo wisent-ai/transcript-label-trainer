@@ -34,7 +34,7 @@ pub struct CurriculumAssembly<'a> {
 }
 
 /// The actions the decision schema declares, in its order.
-fn declared_actions() -> Result<Vec<String>> {
+pub(super) fn declared_actions() -> Result<Vec<String>> {
     let schema: Value = serde_json::from_str(OUTPUT_SCHEMA)?;
     let actions: Vec<String> = schema["oneOf"]
         .as_array()

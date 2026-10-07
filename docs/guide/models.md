@@ -161,6 +161,12 @@ evaluation minimum covers are the ones `lifecycle-output-schema.json` declares, 
 refuses an underrepresented evaluation curriculum, a duplicate id within a split, and an
 id shared between the splits; it prints the kept, refused and per-action counts.
 
+To hold a different day out for evaluation, `transcript-label-trainer lifecycle-split-by-day
+--train reviewed-train.jsonl --eval reviewed-eval.jsonl --eval-day DAY --output-train
+new-train.jsonl --output-eval new-eval.jsonl` merges the reviewed rows by id (refusing one
+id with two different rows), puts the rows of that `split_day` into evaluation and the rest
+into training, and refuses a split that lacks an action the output schema declares.
+
 The reviewed files are then submitted together to one exclusive Stado GPU
 target:
 
