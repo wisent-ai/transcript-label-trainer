@@ -17,7 +17,7 @@ First use:
 | `corpus-status [--json]` | show the selected adopted corpus and every retained corpus |
 | `corpus-select CORPUS [--json]` | make a retained corpus the input train, infer and evaluate read |
 | `corpus-remove CORPUS [--json]` | remove a retained corpus and its bundle; refused for the selected one while others remain; removing the last one removes the registry |
-| `gui [--bind IP] [--port PORT]` | serve the embedded graphical corpus importer and navigable HTML documentation on a loopback listener; prints but does not open its session-token URL |
+| `gui [--bind IP] [--port PORT]` | serve the embedded graphical corpus importer, the Train panel and navigable HTML documentation on a loopback listener; prints but does not open its session-token URL. The Train panel runs `train` (POST `/api/train` with `aspect`, `min_labeled_sessions`, `model`, `eval_split` and `training`, each setting as typed text read like `train`'s flags) and answers with the metrics or the same refusal `train` prints; `not_enough_data` marks the too-few-labels refusal |
 
 Aspect classifiers (local, cheap, sklearn or HF):
 

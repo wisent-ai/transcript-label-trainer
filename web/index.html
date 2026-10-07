@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Corpus importer · Transcript Label Trainer</title>
+  <title>Corpus and training · Transcript Label Trainer</title>
   <link rel="stylesheet" href="/web/styles.css">
   <script src="/web/app.js" defer></script>
 </head>
@@ -14,6 +14,7 @@
     <a class="brand" href="/" aria-label="Transcript Label Trainer corpus importer">Wisent <span>Transcript Label Trainer</span></a>
     <nav aria-label="Primary navigation">
       <a aria-current="page" href="/">Import corpus</a>
+      <a href="#train-title">Train</a>
       <a href="/docs/">Documentation</a>
     </nav>
   </header>
@@ -22,7 +23,7 @@
     <section class="hero" aria-labelledby="page-title">
       <p class="eyebrow">Existing-data onboarding</p>
       <h1 id="page-title">Bring a labeled corpus into the trainer.</h1>
-      <p class="lede">Choose one canonical schema-v1 dataset bundle. The same atomic adoption engine used by <code>corpus-adopt</code> validates the complete file, retains it by content identity, and selects it. This workspace never starts training, inference, evaluation, or a fleet job.</p>
+      <p class="lede">Choose one canonical schema-v1 dataset bundle. The same atomic adoption engine used by <code>corpus-adopt</code> validates the complete file, retains it by content identity, and selects it. The Train panel below runs <code>train</code> on one aspect with the settings you state; this workspace never starts inference, evaluation, or a fleet job.</p>
     </section>
 
     <section class="placement" aria-labelledby="placement-title">
@@ -89,6 +90,30 @@
         </table>
       </div>
       <p class="registry">Registry: <code id="registry-path">Loading…</code></p>
+    </section>
+
+    <section class="panel trainer" aria-labelledby="train-title">
+      <div class="step">3</div>
+      <div>
+        <h2 id="train-title">Train a classifier</h2>
+        <p>The same run as <code>train</code>: every setting is yours to state, nothing has a default, and a missing or invalid one is refused by name. Training runs in this window's server process; the window waits until it ends.</p>
+        <label>Aspect <input id="train-aspect" type="text" required></label>
+        <label>Fewest labeled sessions on the training side <input id="train-min-sessions" type="number" min="1" step="1" required></label>
+        <label>Model
+          <select id="train-backend">
+            <option value="tfidf-logreg">TF-IDF + logistic regression (tfidf-logreg)</option>
+            <option value="huggingface">HuggingFace fine-tune</option>
+          </select>
+        </label>
+        <label id="train-model-id-label" hidden>HuggingFace model id <input id="train-model-id" type="text"></label>
+        <label><input id="train-no-holdout" type="checkbox"> Train on every labeled session (no frozen holdout)</label>
+        <label>Holdout share <input id="train-fraction" type="text"></label>
+        <label>Holdout seed <input id="train-seed" type="number" min="0" step="1"></label>
+        <fieldset id="train-settings"><legend>Training settings</legend></fieldset>
+        <button id="train-button" class="primary" type="button">Train</button>
+        <p id="train-status" class="status" role="status" aria-live="polite">State the settings, then train.</p>
+        <pre id="train-metrics" hidden></pre>
+      </div>
     </section>
   </main>
 

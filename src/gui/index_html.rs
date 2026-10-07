@@ -198,6 +198,7 @@ pub(crate) fn handle(mut request: Request, authority: &str, origin: &str, token:
                 }
             }
         }
+        (&Method::Post, "/api/train") => train(request, origin, token),
         // corpus-select and corpus-remove: POST /api/corpora/<id>/select, DELETE /api/corpora/<id>.
         (&Method::Post, route) | (&Method::Delete, route) if route.starts_with("/api/corpora/") => {
             corpus_change(request, route, method == Method::Post, origin, token)
@@ -215,6 +216,10 @@ pub(crate) fn state() -> Result<Value> {
         "ok": true,
         "placement": placement::as_dict(),
         "corpus": corpus::status()?,
+        "training_keys": {
+            (crate::jobs::SKLEARN_MODEL): crate::jobs::TFIDF_KEYS,
+            "huggingface": crate::jobs::HF_KEYS,
+        },
     }))
 }
 

@@ -107,6 +107,8 @@ async function refresh() {
     const payload = await readJson(response);
     showPlacement(payload.placement);
     showRetained(payload.corpus);
+    trainingKeys = payload.training_keys;
+    showTrainingFields();
   } catch (error) {
     statusLine.dataset.kind = "error";
     statusLine.textContent = error.message;
@@ -165,4 +167,78 @@ importButton.addEventListener("click", async () => {
 });
 
 refreshButton.addEventListener("click", refresh);
+
+// train from the window: the same run as `train`, every setting stated.
+const backendSelect = document.getElementById("train-backend");
+const settingsBox = document.getElementById("train-settings");
+const trainButton = document.getElementById("train-button");
+const trainStatus = document.getElementById("train-status");
+const trainMetrics = document.getElementById("train-metrics");
+let trainingKeys = {};
+
+function showTrainingFields() {
+  const fine = backendSelect.value === "huggingface";
+  document.getElementById("train-model-id-label").hidden = !fine;
+  settingsBox.querySelectorAll("label").forEach((label) => label.remove());
+  const keys = trainingKeys[backendSelect.value];
+  if (!Array.isArray(keys)) {
+    trainStatus.dataset.kind = "error";
+    trainStatus.textContent = `The GUI state names no training settings for ${backendSelect.value}; refresh the window.`;
+    return;
+  }
+  for (const key of keys) {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "text";
+    input.dataset.key = key;
+    label.append(key, " ", input);
+    settingsBox.append(label);
+  }
+}
+
+backendSelect.addEventListener("change", showTrainingFields);
+
+trainButton.addEventListener("click", async () => {
+  const value = (id) => document.getElementById(id).value.trim();
+  const training = {};
+  settingsBox.querySelectorAll("input[data-key]").forEach((input) => {
+    if (input.value.trim() !== "") training[input.dataset.key] = input.value.trim();
+  });
+  const evalSplit = document.getElementById("train-no-holdout").checked
+    ? false
+    : { fraction: Number(value("train-fraction")), seed: Number(value("train-seed")) };
+  const body = {
+    aspect: value("train-aspect"),
+    min_labeled_sessions: Number(value("train-min-sessions")),
+    model: backendSelect.value === "huggingface" ? value("train-model-id") : backendSelect.value,
+    eval_split: evalSplit,
+    training,
+  };
+  trainButton.disabled = true;
+  trainMetrics.hidden = true;
+  trainStatus.dataset.kind = "working";
+  trainStatus.textContent = "Training…";
+  try {
+    const response = await fetch("/api/train", {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body),
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    trainStatus.dataset.kind = "success";
+    trainStatus.textContent = `Trained. Metrics written beside ${payload.metrics.model_path}.`;
+    trainMetrics.textContent = JSON.stringify(payload.metrics, null, "\t");
+    trainMetrics.hidden = false;
+  } catch (error) {
+    trainStatus.dataset.kind = "error";
+    trainStatus.textContent = error.payload?.not_enough_data
+      ? `Not enough labeled data: ${error.message}`
+      : error.message;
+  } finally {
+    trainButton.disabled = false;
+  }
+});
+
 refresh();

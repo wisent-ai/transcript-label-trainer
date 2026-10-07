@@ -1,8 +1,10 @@
-//! Loopback-only browser workspace for adopting an existing corpus.
+//! Loopback-only browser workspace for adopting an existing corpus and
+//! training a classifier from it.
 //!
 //! The frontend is compiled into the binary. Uploads stay in memory until the
 //! corpus module has validated them; that module is also the implementation
-//! behind `corpus-adopt`, so the GUI cannot drift into a second import path.
+//! behind `corpus-adopt`, and training runs through `model::train`, the
+//! implementation behind `train`, so the GUI cannot drift into a second path.
 use std::io::{Cursor, Read};
 use std::net::{IpAddr, SocketAddr};
 
@@ -14,8 +16,10 @@ use crate::{corpus, placement};
 
 mod corpus_change;
 mod index_html;
+mod train;
 mod unauthorized;
 
 pub use corpus_change::*;
 pub use index_html::*;
+pub use train::*;
 pub use unauthorized::*;
