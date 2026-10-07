@@ -5,6 +5,12 @@ set -euo pipefail
 : "${HUMANIZER_HF_REPO:?Set HUMANIZER_HF_REPO to the private Hugging Face destination}"
 : "${HUMANIZER_WORKERS:?Set HUMANIZER_WORKERS to the parallel Brama calls humanizer-model was given}"
 : "${HUMANIZER_ATTEMPTS:?Set HUMANIZER_ATTEMPTS to the Brama attempts humanizer-model was given}"
+: "${HUMANIZER_MIN_SEMANTIC_FIDELITY:?Set HUMANIZER_MIN_SEMANTIC_FIDELITY to the lowest semantic fidelity the adapter may score}"
+: "${HUMANIZER_MIN_VOICE_MATCH:?Set HUMANIZER_MIN_VOICE_MATCH to the lowest voice match the adapter may score}"
+: "${HUMANIZER_MIN_PASS_RATE:?Set HUMANIZER_MIN_PASS_RATE to the lowest share of cases the judge must pass}"
+: "${HUMANIZER_MAX_BOILERPLATE_RATE:?Set HUMANIZER_MAX_BOILERPLATE_RATE to the highest share the judge may call AI boilerplate}"
+: "${HUMANIZER_MIN_VOICE_GAIN:?Set HUMANIZER_MIN_VOICE_GAIN to how much closer to your voice than the base the adapter must be}"
+: "${HUMANIZER_MIN_SEMANTIC_DELTA:?Set HUMANIZER_MIN_SEMANTIC_DELTA to the lowest semantic fidelity change against the base}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGETS="${1:?usage: run.sh TARGETS_JSONL}"
 JOB_ID="${WC_JOB_ID:?WC_JOB_ID is required}"
@@ -43,7 +49,10 @@ TRAINER=("$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locke
   --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS"
 "$VENV/bin/python" "$ROOT/training/humanizer-model/train.py"
 "${TRAINER[@]}" humanizer-audit "$HUMANIZER_PREDICTIONS" --output "$HUMANIZER_AUDIT_OUTPUT" \
-  --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS"
+  --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS" \
+  --min-semantic-fidelity "$HUMANIZER_MIN_SEMANTIC_FIDELITY" --min-voice-match "$HUMANIZER_MIN_VOICE_MATCH" \
+  --min-pass-rate "$HUMANIZER_MIN_PASS_RATE" --max-boilerplate-rate "$HUMANIZER_MAX_BOILERPLATE_RATE" \
+  --min-voice-gain "$HUMANIZER_MIN_VOICE_GAIN" --min-semantic-delta "$HUMANIZER_MIN_SEMANTIC_DELTA"
 HF_BIN="$VENV/bin/hf" "${TRAINER[@]}" humanizer-publish "$HUMANIZER_MODEL_DIR" \
   --repo "$HUMANIZER_HF_REPO" --metrics "$HUMANIZER_METRICS" \
   --audit "$HUMANIZER_AUDIT_OUTPUT" --preparation "$HUMANIZER_PREPARATION" \

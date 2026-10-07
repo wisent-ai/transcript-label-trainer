@@ -21,14 +21,18 @@ const SCORES: [&str; 2] = ["semantic_fidelity", "voice_match"];
 const VERDICTS: [&str; 2] = ["ai_boilerplate", "passed"];
 
 /// The quality gate the trained adapter has to clear on the held-out split.
-const MIN_SEMANTIC_FIDELITY: f64 = 0.95;
-const MIN_VOICE_MATCH: f64 = 0.80;
-const MIN_PASS_RATE: f64 = 0.90;
-const MAX_BOILERPLATE_RATE: f64 = 0.08;
-/// How much closer to the author's voice the student must be than the base.
-const MIN_VOICE_GAIN: f64 = 0.15;
-/// How much meaning the student may lose against the base.
-const MIN_SEMANTIC_DELTA: f64 = -0.02;
+/// Every bound is the caller's to state; none is assumed.
+pub struct AuditGate {
+    pub min_semantic_fidelity: f64,
+    pub min_voice_match: f64,
+    pub min_pass_rate: f64,
+    pub max_boilerplate_rate: f64,
+    /// How much closer to the author's voice the student must be than the base.
+    pub min_voice_gain: f64,
+    /// How much meaning the student may gain or lose against the base;
+    /// negative allows a loss.
+    pub min_semantic_delta: f64,
+}
 
 #[derive(Deserialize)]
 struct Prediction {
@@ -118,6 +122,7 @@ pub fn audit_outputs(
     model: &str,
     workers: usize,
     attempts: usize,
+    gate: &AuditGate,
 ) -> Result<Value> {
     let rows: Vec<Prediction> = read_jsonl(predictions)?;
     let client = BramaClient::from_env()?;
@@ -145,12 +150,12 @@ pub fn audit_outputs(
     let score = |value: &Value, field: &str| value[field].as_f64().unwrap_or(f64::NAN);
     let voice_gain = score(&student, "voice_match") - score(&base, "voice_match");
     let semantic_delta = score(&student, "semantic_fidelity") - score(&base, "semantic_fidelity");
-    let passed = score(&student, "semantic_fidelity") >= MIN_SEMANTIC_FIDELITY
-        && score(&student, "voice_match") >= MIN_VOICE_MATCH
-        && score(&student, "pass_rate") >= MIN_PASS_RATE
-        && score(&student, "ai_boilerplate_rate") <= MAX_BOILERPLATE_RATE
-        && voice_gain >= MIN_VOICE_GAIN
-        && semantic_delta >= MIN_SEMANTIC_DELTA;
+    let passed = score(&student, "semantic_fidelity") >= gate.min_semantic_fidelity
+        && score(&student, "voice_match") >= gate.min_voice_match
+        && score(&student, "pass_rate") >= gate.min_pass_rate
+        && score(&student, "ai_boilerplate_rate") <= gate.max_boilerplate_rate
+        && voice_gain >= gate.min_voice_gain
+        && semantic_delta >= gate.min_semantic_delta;
     let mut report = json!({
         "schema_version": REPORT_SCHEMA_VERSION,
         "contract": MODEL_CONTRACT,
@@ -160,6 +165,14 @@ pub fn audit_outputs(
         "student": student,
         "voice_match_gain": voice_gain,
         "semantic_fidelity_delta": semantic_delta,
+        "gate": {
+            "min_semantic_fidelity": gate.min_semantic_fidelity,
+            "min_voice_match": gate.min_voice_match,
+            "min_pass_rate": gate.min_pass_rate,
+            "max_boilerplate_rate": gate.max_boilerplate_rate,
+            "min_voice_gain": gate.min_voice_gain,
+            "min_semantic_delta": gate.min_semantic_delta,
+        },
         "passed": passed,
         "records": records,
     });

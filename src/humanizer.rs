@@ -26,7 +26,7 @@ mod prompts;
 mod publication;
 mod manifest;
 
-pub use audit::audit_outputs;
+pub use audit::{audit_outputs, AuditGate};
 pub use manifest::manifest;
 pub use prepare::prepare_dataset;
 pub use publication::{publish_adapter, Publication};

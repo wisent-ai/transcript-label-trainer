@@ -12,6 +12,30 @@ fn count_options() -> [Opt; 2] {
     ]
 }
 
+/// The quality gate `humanizer-audit` holds the adapter to: every bound is
+/// required, because what counts as good enough is the operator's call.
+fn gate_options() -> Vec<Opt> {
+    let bound = |flag: &'static str, help: &str| required(flag, "F", Kind::Float, help.to_string());
+    vec![
+        bound("--min-semantic-fidelity", "lowest mean semantic fidelity the adapter may score"),
+        bound("--min-voice-match", "lowest mean voice match the adapter may score"),
+        bound("--min-pass-rate", "lowest share of cases the judge passes"),
+        bound("--max-boilerplate-rate", "highest share of cases the judge calls AI boilerplate"),
+        bound("--min-voice-gain", "how much closer to the author's voice than the base model the adapter must be"),
+        bound("--min-semantic-delta", "the adapter's semantic fidelity less the base's may not fall below this; negative allows a loss"),
+    ]
+}
+
+/// One stated gate bound: any finite number, refused by its flag's name when
+/// missing or not finite.
+fn stated_bound(args: &Parsed, flag: &str) -> Result<f64> {
+    match args.float(flag) {
+        Some(value) if value.is_finite() => Ok(value),
+        Some(value) => Err(Error(format!("{flag} must be a finite number, not {value}"))),
+        None => Err(Error(format!("{flag} is required: the audit's quality gate is the caller's to state"))),
+    }
+}
+
 pub(crate) fn humanizer_specs() -> Vec<Spec> {
     let teacher = brama::DEFAULT_MODEL;
     let best = brama::BEST_MODEL;
@@ -85,6 +109,7 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
         ]
         .into_iter()
         .chain(count_options())
+        .chain(gate_options())
         .collect(),
     };
     let publish = Spec {
@@ -128,12 +153,21 @@ pub(crate) fn cmd_humanizer_prepare(args: &Parsed) -> Result<i32> {
 
 pub(crate) fn cmd_humanizer_audit(args: &Parsed) -> Result<i32> {
     let judge = args.text("--brama-model").unwrap_or(brama::BEST_MODEL);
+    let gate = crate::humanizer::AuditGate {
+        min_semantic_fidelity: stated_bound(args, "--min-semantic-fidelity")?,
+        min_voice_match: stated_bound(args, "--min-voice-match")?,
+        min_pass_rate: stated_bound(args, "--min-pass-rate")?,
+        max_boilerplate_rate: stated_bound(args, "--max-boilerplate-rate")?,
+        min_voice_gain: stated_bound(args, "--min-voice-gain")?,
+        min_semantic_delta: stated_bound(args, "--min-semantic-delta")?,
+    };
     let summary = crate::humanizer::audit_outputs(
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),
         judge,
         stated_count(args, "--workers")?,
         stated_count(args, "--attempts")?,
+        &gate,
     )?;
     outln!("{}", dumps(&summary));
     Ok(i32::from(
