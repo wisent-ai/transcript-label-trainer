@@ -32,8 +32,14 @@ pub use anchors::LengthRatio;
 pub use prepare::{prepare_dataset, PreparationBounds};
 pub use publication::{publish_adapter, Publication};
 
-const MAX_PER_SESSION: usize = 6;
-const FETCH_MULTIPLIER: usize = 12;
+/// How many targets the humanizer corpus takes: at most `limit`, at most
+/// `max_per_session` from one session, and the export is refused below
+/// `minimum`. Every one is the caller's to state.
+pub struct CorpusBounds {
+    pub limit: usize,
+    pub minimum: usize,
+    pub max_per_session: usize,
+}
 
 /// Version of the `preparation.json`, `audit.json` and job-output
 /// `model-manifest.json` record layouts.
@@ -119,15 +125,16 @@ fn likely_authored(value: &str) -> bool {
     meaningful * 100 / chars.max(1) >= 65
 }
 
-pub fn export_targets(path: &Path, limit: usize) -> Result<Value> {
-    if limit < 1_000 {
-        return Err(Error(
-            "humanizer corpus requires at least 1000 targets".to_string(),
-        ));
+pub fn export_targets(path: &Path, bounds: &CorpusBounds) -> Result<Value> {
+    if bounds.minimum > bounds.limit {
+        return Err(Error(format!(
+            "--min-targets {} exceeds --limit {}: the corpus could never be large enough",
+            bounds.minimum, bounds.limit
+        )));
     }
-    let fetch = limit.saturating_mul(FETCH_MULTIPLIER);
-    let sql = format!(
-        r#"
+    // Every candidate is read in its stable order and the loop stops at the
+    // limit, so how many rows the filters reject never needs guessing.
+    let sql = r#"
 SELECT session_id, runtime, text AS target
 FROM events
 WHERE event_type = 'user'
@@ -135,13 +142,11 @@ WHERE event_type = 'user'
   AND runtime IN ('omp', 'claude', 'codex', 'droid', 'kimi')
   AND length(text) BETWEEN 20 AND 2000
 ORDER BY hash(session_id || ':' || text)
-LIMIT {fetch}
-"#
-    );
+"#;
     let mut rows = Vec::new();
     let mut seen = HashSet::new();
     let mut per_session: HashMap<String, usize> = HashMap::new();
-    for value in lake::query(&sql)? {
+    for value in lake::query(sql)? {
         let session_id = field(&value, "session_id");
         let runtime = field(&value, "runtime");
         let target = field(&value, "target");
@@ -153,7 +158,7 @@ LIMIT {fetch}
             continue;
         }
         let count = per_session.entry(session_id.clone()).or_default();
-        if *count >= MAX_PER_SESSION {
+        if *count >= bounds.max_per_session {
             continue;
         }
         *count += 1;
@@ -163,14 +168,15 @@ LIMIT {fetch}
             runtime,
             target,
         });
-        if rows.len() == limit {
+        if rows.len() == bounds.limit {
             break;
         }
     }
-    if rows.len() < 1_000 {
+    if rows.len() < bounds.minimum {
         return Err(Error(format!(
-            "humanizer corpus produced only {} clean targets; need at least 1000",
-            rows.len()
+            "humanizer corpus produced only {} clean targets; --min-targets asks for {}",
+            rows.len(),
+            bounds.minimum
         )));
     }
     if let Some(parent) = path.parent() {
@@ -188,6 +194,8 @@ LIMIT {fetch}
         "path": path,
         "sha256": hex::encode(Sha256::digest(std::fs::read(path)?)),
         "source": "transcript-lake:masked-user-events",
-        "max_per_session": MAX_PER_SESSION,
+        "max_per_session": bounds.max_per_session,
+        "limit": bounds.limit,
+        "minimum": bounds.minimum,
     }))
 }

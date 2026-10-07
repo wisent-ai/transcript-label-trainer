@@ -29,6 +29,6 @@ pub use review_dataset::*;
 pub use audit_predictions::*;
 pub use evaluate_gguf::{evaluate_gguf, GgufEvaluation};
 pub use curriculum::{
-    assemble_curriculum, export_decisions, generate_curriculum, split_by_day, CurriculumAssembly,
+    assemble_curriculum, export_decisions, export_examples, generate_curriculum, split_by_day, CurriculumAssembly,
     CurriculumGeneration, DaySplit, DecisionExport,
 };

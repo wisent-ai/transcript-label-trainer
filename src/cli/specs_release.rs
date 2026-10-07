@@ -66,7 +66,7 @@ pub(crate) fn release_specs() -> Vec<Spec> {
                 "private Hugging Face repository of a model served from a GPU host (lifecycle); refused for a model that ships through the release channel (goal)".to_string(),
             ),
         ],
-    }, assemble_curriculum_spec(), generate_curriculum_spec(), split_by_day_spec(), decisions_spec(), manifest_spec()]
+    }, assemble_curriculum_spec(), generate_curriculum_spec(), split_by_day_spec(), decisions_spec(), examples_spec(), manifest_spec()]
 }
 
 fn manifest_spec() -> Spec {
@@ -134,6 +134,32 @@ pub(crate) fn cmd_lifecycle_decisions(args: &Parsed) -> Result<i32> {
     let (rows, output) = (path("--rows"), path("--output"));
     let report = crate::lifecycle::export_decisions(&crate::lifecycle::DecisionExport { rows: &rows, output: &output })?;
     printed(&report)
+}
+
+fn examples_spec() -> Spec {
+    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
+    Spec {
+        name: "lifecycle-examples",
+        help: "write reviewed lifecycle rows as the Ster examples the served model trains on".to_string(),
+        description: Some(
+            "Check every reviewed row's decision against the decision contract and write the rows as \
+             the supervised example set ster tune sft trains on, each one the chat Oko serves: the \
+             lifecycle system prompt as the system turn, the row's user envelope as the prompt and \
+             the reviewed decision, its title blanked, as the JSON completion."
+                .to_string(),
+        ),
+        positionals: Vec::new(),
+        opts: vec![
+            path("--rows", "JSONL of reviewed lifecycle rows"),
+            path("--output", "JSON the supervised examples are written to"),
+        ],
+    }
+}
+
+pub(crate) fn cmd_lifecycle_examples(args: &Parsed) -> Result<i32> {
+    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
+    let (rows, output) = (path("--rows"), path("--output"));
+    printed(&crate::lifecycle::export_examples(&crate::lifecycle::DecisionExport { rows: &rows, output: &output })?)
 }
 
 /// Print `report` as the command's answer and end it as having done what it

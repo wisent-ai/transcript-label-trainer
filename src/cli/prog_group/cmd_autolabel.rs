@@ -135,6 +135,7 @@ pub(crate) fn cmd_lifecycle_model(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.positional(1)),
         args.text("--compute-target").unwrap_or_default(), args.text("--brama-url").unwrap_or_default(),
+        args.text("--ster-options").unwrap_or_default(),
         &lifecycle_serving(args)?,
         &stado::LifecycleAudit {
             workers: stated_count(args, "--audit-workers")?,
@@ -159,7 +160,12 @@ pub(crate) fn cmd_humanizer_model(args: &Parsed) -> Result<i32> {
     std::fs::create_dir_all(&root)?;
     let stamp = crate::util::now_iso().replace([':', '-'], "");
     let targets = root.join(format!("lukasz-targets-{stamp}.jsonl"));
-    let summary = crate::humanizer::export_targets(&targets, count(args.int("--limit"), 1_500))?;
+    let bounds = crate::humanizer::CorpusBounds {
+        limit: stated_count(args, "--limit")?,
+        minimum: stated_count(args, "--min-targets")?,
+        max_per_session: stated_count(args, "--max-per-session")?,
+    };
+    let summary = crate::humanizer::export_targets(&targets, &bounds)?;
     outln!("{}", dumps(&summary));
     let job = stado::execute_humanizer_model(
         &targets,

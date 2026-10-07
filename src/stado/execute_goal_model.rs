@@ -93,11 +93,13 @@ pub struct LifecycleAudit {
 }
 
 /// Submit reviewed Oko lifecycle splits to one exclusive Stado GPU target.
+/// `ster_options` are the `ster tune sft` settings the job trains with.
 pub fn execute_lifecycle_model(
     train_path: &Path,
     eval_path: &Path,
     compute_target: &str,
     brama_url: &str,
+    ster_options: &str,
     serving: &LifecycleServing,
     audit: &LifecycleAudit,
 ) -> Result<GoalModelJob> {
@@ -108,6 +110,10 @@ pub fn execute_lifecycle_model(
     let brama_url = brama_url.trim();
     if brama_url.is_empty() {
         return Err(Error("--brama-url cannot be empty".to_string()));
+    }
+    let ster_options = ster_options.trim();
+    if ster_options.is_empty() {
+        return Err(Error("--ster-options cannot be empty: the job trains with ster tune sft, which states every setting it trains with".to_string()));
     }
     let brama_url = shell_quote(brama_url);
     let train_bytes = std::fs::read(train_path)?;
@@ -123,17 +129,22 @@ pub fn execute_lifecycle_model(
     let base = format!("stado://probierz/inputs/transcript-label-trainer/lifecycle-model/{key}");
     let train_uri = format!("{base}/reviewed-train.jsonl");
     let eval_uri = format!("{base}/reviewed-eval.jsonl");
-    let output_uri = format!("stado://probierz/artifacts/models/oko/lifecycle-qwen3-4b/{key}");
+    // One model is the data and the settings it was trained with: the work
+    // directory a rerun resumes from and the output it publishes to are keyed
+    // by both, so other settings never resume or overwrite this model.
+    let run_key = digest(format!("{key}\nster={ster_options}\n").as_bytes());
+    let ster_options = shell_quote(ster_options);
+    let output_uri = format!("stado://probierz/artifacts/models/oko/lifecycle-qwen3-4b/{run_key}");
     let stado = stado_bin();
     upload(&stado, &train_uri, train_path, "application/x-ndjson")?;
     upload(&stado, &eval_uri, eval_path, "application/x-ndjson")?;
     let source_ref = repo_ref()?;
     let command = format!(
-        "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/oko-lifecycle-{key}\"; \
+        "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/oko-lifecycle-{run_key}\"; \
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{train_uri}' \"$work/reviewed-train.jsonl\"; \
          \"$stado\" storage get '{eval_uri}' \"$work/reviewed-eval.jsonl\"; \
-         export BRAMA_URL={brama_url}; \
+         export BRAMA_URL={brama_url}; export LIFECYCLE_STER_OPTIONS={ster_options}; \
          export LIFECYCLE_EVAL_PARALLEL={}; export LIFECYCLE_EVAL_SLOT_CONTEXT={}; \
          export LIFECYCLE_EVAL_GPU_LAYERS={}; \
          export LIFECYCLE_AUDIT_WORKERS={}; export LIFECYCLE_AUDIT_MAX_WRONG_SHARE={}; \

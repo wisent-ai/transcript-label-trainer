@@ -1,6 +1,8 @@
-//! `lifecycle-decisions`: reviewed lifecycle rows as Ster labelled decisions,
-//! the document `ster tune decide` trains on and `ster decisions benchmark`
-//! measures.
+//! `lifecycle-decisions` and `lifecycle-examples`: reviewed lifecycle rows as
+//! the two documents Ster reads. Labelled decisions are what `ster decisions
+//! benchmark` measures; supervised examples are what `ster tune sft` trains
+//! the served model on, each one the chat Oko sends — the lifecycle system
+//! prompt, the row's user envelope — answered by the reviewed decision.
 //!
 //! Each row's one reviewed decision is checked against the decision contract
 //! (`validate_decision`). Its state is the masked input envelope Oko sends;
@@ -81,35 +83,64 @@ fn example(row: &TrainingRow, declared: &Value) -> Result<Value> {
     }))
 }
 
+/// One reviewed row as one Ster supervised example: the conversation Oko
+/// serves (`classify` in `evaluate_gguf` sends the same system prompt and user
+/// envelope) answered by the reviewed decision, its title blanked, as the JSON
+/// object the output schema constrains the served answer to.
+fn served_example(row: &TrainingRow) -> Result<Value> {
+    let decision = validate_decision(row, parse_json_object(reviewed_answer(row)?)?)?;
+    let user = &row
+        .messages
+        .iter()
+        .find(|message| message.role == "user")
+        .ok_or_else(|| Error(format!("{} has no user message", row.id)))?
+        .content;
+    Ok(json!({
+        "system": SYSTEM_PROMPT.trim(),
+        "prompt": user,
+        "completion": serde_json::to_string(&decision)?,
+    }))
+}
+
+/// Read every reviewed row, refusing a file without one.
+fn reviewed_rows(rows: &Path) -> Result<Vec<TrainingRow>> {
+    let read = read_rows(rows).map_err(|error| Error(format!("{}: {error}", rows.display())))?;
+    if read.is_empty() {
+        return Err(Error(format!("{} holds no reviewed row", rows.display())));
+    }
+    Ok(read)
+}
+
+/// Write `{"examples": examples}` to `output` whole, through a sibling file
+/// renamed into place, and answer the count.
+fn write_examples(output: &Path, examples: Vec<Value>) -> Result<Value> {
+    if let Some(parent) = output.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+    let mut temporary = output.as_os_str().to_owned();
+    temporary.push(".tmp");
+    let temporary = std::path::PathBuf::from(temporary);
+    let count = examples.len();
+    fs::write(&temporary, serde_json::to_vec_pretty(&json!({ "examples": examples }))?)?;
+    fs::rename(&temporary, output)?;
+    Ok(json!({ "examples": count, "output": output.display().to_string() }))
+}
+
 /// Convert every reviewed row, write the labelled set and answer the count.
 pub fn export_decisions(run: &DecisionExport) -> Result<Value> {
     let declared: Value = serde_json::from_str(QUESTIONS)?;
-    let rows =
-        read_rows(run.rows).map_err(|error| Error(format!("{}: {error}", run.rows.display())))?;
-    if rows.is_empty() {
-        return Err(Error(format!(
-            "{} holds no reviewed row",
-            run.rows.display()
-        )));
-    }
-    let examples = rows
+    let examples = reviewed_rows(run.rows)?
         .iter()
         .map(|row| example(row, &declared))
         .collect::<Result<Vec<_>>>()?;
-    if let Some(parent) = run
-        .output
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent)?;
-    }
-    let mut temporary = run.output.as_os_str().to_owned();
-    temporary.push(".tmp");
-    let temporary = std::path::PathBuf::from(temporary);
-    fs::write(
-        &temporary,
-        serde_json::to_vec_pretty(&json!({ "examples": examples }))?,
-    )?;
-    fs::rename(&temporary, run.output)?;
-    Ok(json!({ "examples": examples.len(), "output": run.output.display().to_string() }))
+    write_examples(run.output, examples)
+}
+
+/// Convert every reviewed row, write the supervised set and answer the count.
+pub fn export_examples(run: &DecisionExport) -> Result<Value> {
+    let examples = reviewed_rows(run.rows)?
+        .iter()
+        .map(served_example)
+        .collect::<Result<Vec<_>>>()?;
+    write_examples(run.output, examples)
 }

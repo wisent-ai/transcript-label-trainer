@@ -137,6 +137,7 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         "lifecycle-generate-curriculum" => cmd_lifecycle_generate_curriculum(&parsed),
         "lifecycle-split-by-day" => cmd_lifecycle_split_by_day(&parsed),
         "lifecycle-decisions" => cmd_lifecycle_decisions(&parsed),
+        "lifecycle-examples" => cmd_lifecycle_examples(&parsed),
         "goal-audit" => cmd_goal_audit(&parsed),
         "release-publish" => cmd_release_publish(&parsed),
         "model-manifest" => cmd_model_manifest(&parsed),

@@ -179,8 +179,8 @@ lifecycle-decisions --rows reviewed-train.jsonl --output lifecycle-decisions.jso
 row's decision is checked against the contract, the masked input envelope is the state,
 the questions are the ones `training/lifecycle-model/decision/questions.json` declares
 (goal_ref offers the row's own candidates by their titles), and the reviewed action,
-goal_ref and lifecycle_evidence are the answers. That document is what `ster tune decide`
-trains on and `ster decisions benchmark` measures, for example:
+goal_ref and lifecycle_evidence are the answers. That document is what `ster decisions
+benchmark` measures, for example:
 
 ```sh
 transcript-label-trainer lifecycle-decisions --rows reviewed-eval.jsonl --output eval-decisions.json
@@ -190,6 +190,18 @@ ster decisions benchmark --model Qwen/Qwen3-4B --examples eval-decisions.json --
 A row without exactly one reviewed decision, a decision that breaks the contract, or a
 candidate without a reference or a title is refused by row id.
 
+The model itself is trained on the chat it is served. `transcript-label-trainer
+lifecycle-examples --rows reviewed-train.jsonl --output lifecycle-examples.json` writes each
+reviewed row as one `ster tune sft` example: the lifecycle system prompt as its `system`
+turn, the row's user envelope as the `prompt`, and the reviewed decision, its title
+blanked, as the JSON `completion`, with the same row refusals as `lifecycle-decisions`.
+To see how far the base model is from the reviewed answers before training:
+
+```sh
+transcript-label-trainer lifecycle-examples --rows reviewed-eval.jsonl --output eval-examples.json
+ster tune evaluate --model Qwen/Qwen3-4B --examples eval-examples.json --max-sequence 4096 --batch-size 1
+```
+
 The reviewed files are then submitted together to one exclusive Stado GPU
 target:
 
@@ -198,18 +210,21 @@ transcript-label-trainer lifecycle-model \
   ~/.transcript-label-trainer/lifecycle-model/reviewed-train.jsonl \
   ~/.transcript-label-trainer/lifecycle-model/reviewed-eval.jsonl \
   --compute-target TARGET --brama-url <the Brama address the job dials> \
+  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S' \
   --eval-parallel N --eval-slot-context N --eval-gpu-layers N
 ```
 
 The job trains with Ster on the GPU host, which must have `ster` installed (`stado
 product install ster --surface cli`; without it the job stops at `ster: command not
-found`): the reviewed training rows become labelled decisions (`lifecycle-decisions`),
-`ster tune decide` fits an adapter to the pinned Qwen3-4B base, and `ster tune merge`
-folds it into a checkpoint, whose report is kept as `metrics.json`. llama.cpp's own
-converter then exports and quantizes it to Q4_K_M GGUF, the untouched reviewed split
-is evaluated on that GGUF, and an independent Brama `--best` audit judges every held-out
-prediction. Publication requires the passing audit; the served rates are recorded in the
-manifest beside it.
+found`): the reviewed training rows become `lifecycle-examples`, `ster tune sft` fits an
+adapter to the pinned Qwen3-4B base with exactly the `--ster-options` given (an empty value
+is refused before anything is uploaded, and Ster refuses a run missing one of its required
+settings by name), and `ster tune merge` folds it into a checkpoint; Ster's report is kept
+as `metrics.json`. The job's output URI is keyed by the datasets and the options together,
+so other settings never resume or overwrite a model. llama.cpp's own converter then exports
+and quantizes it to Q4_K_M GGUF, the untouched reviewed split is evaluated on that GGUF, and
+an independent Brama `--best` audit judges every held-out prediction. Publication requires
+the passing audit; the served rates are recorded in the manifest beside it.
 
 The quantized model is measured the way production serves it, by
 `transcript-label-trainer lifecycle-evaluate-gguf`: `llama-server` on a loopback

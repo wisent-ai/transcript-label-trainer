@@ -192,11 +192,12 @@ pub(crate) fn model_specs() -> Vec<Spec> {
         name: "lifecycle-model",
         help: "train and qualify Oko's reviewed lifecycle model on Stado".to_string(),
         description: Some(
-            "Upload immutable reviewed train and held-out datasets, fine-tune on the named \
-             exclusive Stado GPU target, audit every held-out decision through Brama -best, \
-             and publish the complete candidate only when the lifecycle quality gate passes: \
-             at most --audit-max-wrong-share of the decisions semantically wrong, judged by \
-             --audit-workers concurrent Brama calls."
+            "Upload immutable reviewed train and held-out datasets, train the served model with \
+             ster tune sft on the named exclusive Stado GPU target (the reviewed rows as \
+             lifecycle-examples, every training setting from --ster-options), audit every held-out \
+             decision through Brama -best, and publish the complete candidate only when the lifecycle \
+             quality gate passes: at most --audit-max-wrong-share of the decisions semantically \
+             wrong, judged by --audit-workers concurrent Brama calls."
                 .to_string(),
         ),
         positionals: vec![
@@ -221,6 +222,15 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 "URL",
                 Kind::Text,
                 "Brama endpoint reachable from the compute target".to_string(),
+            ),
+            required(
+                "--ster-options",
+                "OPTIONS",
+                Kind::Text,
+                "the ster tune sft settings the job trains with, e.g. '--rank R --alpha A --epochs E \
+                 --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S'; Ster \
+                 refuses a run that leaves one of its required settings out"
+                    .to_string(),
             ),
             required("--eval-parallel", "N", Kind::Int, "server slots and concurrent requests of the quantized evaluation".to_string()),
             required("--eval-slot-context", "N", Kind::Int, "context tokens each evaluation slot holds".to_string()),
@@ -251,11 +261,23 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 "canonical Stado GPU target that curates, trains, audits, and publishes the model"
                     .to_string(),
             ),
-            option(
+            required(
                 "--limit",
                 "LIMIT",
                 Kind::Int,
-                "maximum clean authored targets (default: 1500; minimum: 1000)".to_string(),
+                "most clean authored targets the corpus takes".to_string(),
+            ),
+            required(
+                "--min-targets",
+                "N",
+                Kind::Int,
+                "fewest clean authored targets the corpus must reach; fewer refuses the export".to_string(),
+            ),
+            required(
+                "--max-per-session",
+                "N",
+                Kind::Int,
+                "most targets one session may contribute".to_string(),
             ),
             required(
                 "--workers",
