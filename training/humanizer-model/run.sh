@@ -11,6 +11,9 @@ set -euo pipefail
 : "${HUMANIZER_MAX_BOILERPLATE_RATE:?Set HUMANIZER_MAX_BOILERPLATE_RATE to the highest share the judge may call AI boilerplate}"
 : "${HUMANIZER_MIN_VOICE_GAIN:?Set HUMANIZER_MIN_VOICE_GAIN to how much closer to your voice than the base the adapter must be}"
 : "${HUMANIZER_MIN_SEMANTIC_DELTA:?Set HUMANIZER_MIN_SEMANTIC_DELTA to the lowest semantic fidelity change against the base}"
+: "${HUMANIZER_MIN_TRAIN_ROWS:?Set HUMANIZER_MIN_TRAIN_ROWS to the fewest accepted rows the train split needs}"
+: "${HUMANIZER_MIN_VALIDATION_ROWS:?Set HUMANIZER_MIN_VALIDATION_ROWS to the fewest accepted rows the validation split needs}"
+: "${HUMANIZER_MIN_TEST_ROWS:?Set HUMANIZER_MIN_TEST_ROWS to the fewest accepted rows the test split needs}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGETS="${1:?usage: run.sh TARGETS_JSONL}"
 JOB_ID="${WC_JOB_ID:?WC_JOB_ID is required}"
@@ -46,7 +49,9 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORK/cargo-target}"
 TRAINER=("$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release --)
 
 "${TRAINER[@]}" humanizer-prepare "$HUMANIZER_TARGETS" --output-dir "$WORK" \
-  --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS"
+  --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS" \
+  --min-train-rows "$HUMANIZER_MIN_TRAIN_ROWS" --min-validation-rows "$HUMANIZER_MIN_VALIDATION_ROWS" \
+  --min-test-rows "$HUMANIZER_MIN_TEST_ROWS"
 "$VENV/bin/python" "$ROOT/training/humanizer-model/train.py"
 "${TRAINER[@]}" humanizer-audit "$HUMANIZER_PREDICTIONS" --output "$HUMANIZER_AUDIT_OUTPUT" \
   --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS" \

@@ -28,7 +28,7 @@ mod manifest;
 
 pub use audit::{audit_outputs, AuditGate};
 pub use manifest::manifest;
-pub use prepare::prepare_dataset;
+pub use prepare::{prepare_dataset, SplitMinimums};
 pub use publication::{publish_adapter, Publication};
 
 const MAX_PER_SESSION: usize = 6;

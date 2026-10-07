@@ -21,8 +21,19 @@ use crate::util::{Error, Result};
 /// train, keyed on the session so no conversation spans two splits.
 const SPLIT_BUCKETS: u32 = 10;
 
-/// The fewest accepted rows each split needs before training may start.
-const SPLIT_MINIMUMS: [(&str, usize); 3] = [("train", 700), ("validation", 70), ("test", 70)];
+/// The fewest accepted rows each split needs before training may start;
+/// the caller states every one.
+pub struct SplitMinimums {
+    pub train: usize,
+    pub validation: usize,
+    pub test: usize,
+}
+
+impl SplitMinimums {
+    fn named(&self) -> [(&'static str, usize); 3] {
+        [("train", self.train), ("validation", self.validation), ("test", self.test)]
+    }
+}
 
 const REVIEW_FIELDS: [&str; 4] = ["faithful", "generic_ai", "same_language", "usable"];
 
@@ -109,6 +120,7 @@ pub fn prepare_dataset(
     reviewer: &str,
     workers: usize,
     attempts: usize,
+    minimums: &SplitMinimums,
 ) -> Result<Value> {
     let bytes = fs::read(input)
         .map_err(|error| Error(format!("cannot read {}: {error}", input.display())))?;
@@ -128,7 +140,7 @@ pub fn prepare_dataset(
     accepted.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
     let mut splits = serde_json::Map::new();
     let mut files = Vec::new();
-    for (name, minimum) in SPLIT_MINIMUMS {
+    for (name, minimum) in minimums.named() {
         let rows: Vec<&Value> = accepted
             .iter()
             .filter(|row| row["metadata"]["split"] == name)
@@ -155,6 +167,7 @@ pub fn prepare_dataset(
         "accepted_rows": accepted.len(),
         "splits": splits,
         "rejected": rejected,
+        "split_minimums": minimums.named().into_iter().map(|(name, minimum)| (name.to_string(), json!(minimum))).collect::<serde_json::Map<_, _>>(),
         "teacher_model": teacher,
         "review_model": reviewer,
         "system_prompt_sha256": hex::encode(Sha256::digest(SYSTEM_PROMPT.as_bytes())),

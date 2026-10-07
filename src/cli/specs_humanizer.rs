@@ -49,6 +49,25 @@ pub(crate) fn stated_gate(args: &Parsed) -> Result<crate::humanizer::AuditGate> 
     })
 }
 
+/// The fewest accepted rows each split needs before training starts: the
+/// caller's to state, for `humanizer-prepare` and the job that runs it.
+pub(crate) fn minimum_options() -> Vec<Opt> {
+    let minimum = |flag: &'static str, help: &str| required(flag, "N", Kind::Int, help.to_string());
+    vec![
+        minimum("--min-train-rows", "fewest accepted rows the train split needs"),
+        minimum("--min-validation-rows", "fewest accepted rows the validation split needs"),
+        minimum("--min-test-rows", "fewest accepted rows the test split needs"),
+    ]
+}
+
+pub(crate) fn stated_minimums(args: &Parsed) -> Result<crate::humanizer::SplitMinimums> {
+    Ok(crate::humanizer::SplitMinimums {
+        train: stated_count(args, "--min-train-rows")?,
+        validation: stated_count(args, "--min-validation-rows")?,
+        test: stated_count(args, "--min-test-rows")?,
+    })
+}
+
 pub(crate) fn humanizer_specs() -> Vec<Spec> {
     let teacher = brama::DEFAULT_MODEL;
     let best = brama::BEST_MODEL;
@@ -90,6 +109,7 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
         ]
         .into_iter()
         .chain(count_options())
+        .chain(minimum_options())
         .collect(),
     };
     let audit = Spec {
@@ -159,6 +179,7 @@ pub(crate) fn cmd_humanizer_prepare(args: &Parsed) -> Result<i32> {
         reviewer,
         stated_count(args, "--workers")?,
         stated_count(args, "--attempts")?,
+        &stated_minimums(args)?,
     )?;
     outln!("{}", dumps(&report));
     Ok(0)

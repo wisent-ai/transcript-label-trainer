@@ -272,6 +272,7 @@ pub(crate) fn model_specs() -> Vec<Spec> {
         ]
         .into_iter()
         .chain(super::specs_humanizer::gate_options())
+        .chain(super::specs_humanizer::minimum_options())
         .collect(),
     };
 
