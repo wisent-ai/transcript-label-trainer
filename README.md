@@ -168,6 +168,9 @@ repository's.
 - `humanizer-prepare`, `humanizer-audit` and `humanizer-publish` run in the native
   binary. The Stado job trains the adapter with Ster (`ster tune sft`, exported
   with `ster tune export --format peft`) between them.
+  Publication requires an explicit `HUMANIZER_HF_REPO`, preserves the model's
+  qualification gates, refuses public destinations without changing visibility,
+  and uses the supported `hf` CLI only for repository creation and file transfer.
 - The goal, lifecycle and humanizer models train with Ster instead of the three
   torch `train.py` programs, which are gone with `lifecycle_training_rows.py`:
   `goal-examples`, `lifecycle-examples` and `humanizer-examples` write the chat
@@ -176,9 +179,6 @@ repository's.
   `lifecycle-evaluate-gguf`, all through one llama-server harness) measure the
   served model the audit judges. `model-manifest` writes each job's manifest in
   place of the run scripts' inline Python. The repository tracks no Python.
-  Publication requires an explicit `HUMANIZER_HF_REPO`, preserves the model's
-  qualification gates, refuses public destinations without changing visibility,
-  and uses the supported `hf` CLI only for repository creation and file transfer.
 - `release-publish SOURCE --model goal|lifecycle` replaces the goal and
   lifecycle `publish-qualified-release` Python scripts; the goal host scripts
   that wrapped `goal-audit` with fixed job paths and printed rejected rows are
