@@ -21,6 +21,10 @@ harness = false
 name = "release"
 path = "tests/release/main.rs"
 
+[[test]]
+name = "lifecycle"
+path = "tests/lifecycle/main.rs"
+
 [features]
 # The HuggingFace fine-tune backend. Off by default: it pulls candle and
 # tokenizers, which the tfidf-logreg path does not need.

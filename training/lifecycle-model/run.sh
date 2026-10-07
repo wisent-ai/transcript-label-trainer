@@ -15,21 +15,26 @@ cp "$TRAIN_DATASET" "$WORK/reviewed-train.jsonl"
 cp "$EVAL_DATASET" "$WORK/reviewed-eval.jsonl"
 cd "$WORK"
 
-# Ster trains the model: the reviewed rows become Ster labelled decisions,
-# ster tune decide fits an adapter that answers them, and ster tune merge folds
-# it into a standalone checkpoint for the GGUF export below. Ster's report of
-# the run is kept as the training metrics; the gate below measures the served
-# GGUF, never the trainer. A host without Ster stops here with the shell's
-# 'ster: command not found' (stado product install ster --surface cli).
+# Ster trains the model on the chat it is served: lifecycle-examples writes
+# each reviewed row as the lifecycle system prompt, the row's user envelope
+# and the reviewed decision; ster tune sft fits an adapter on them with the
+# settings lifecycle-model was given (--ster-options), and ster tune merge
+# folds it into a standalone checkpoint for the GGUF export below. Ster's
+# report of the run is kept as the training metrics; the gate below measures
+# the served GGUF, never the trainer. A host without Ster stops here with the
+# shell's 'ster: command not found' (stado product install ster --surface cli).
+: "${LIFECYCLE_STER_OPTIONS:?lifecycle-model passes --ster-options as LIFECYCLE_STER_OPTIONS}"
+read -r -a STER_OPTIONS <<<"$LIFECYCLE_STER_OPTIONS"
 ster --version
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORK/cargo-target}"
 STUDENT_MODEL="Qwen/Qwen3-4B"
 STUDENT_REVISION="1cfa9a7208912126459214e8b04321603b3df60c"
 if [ ! -s "$WORK/student/model.safetensors" ]; then
   "$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
-    lifecycle-decisions --rows "$WORK/reviewed-train.jsonl" --output "$WORK/decisions.json"
-  ster tune decide --model "$STUDENT_MODEL" --revision "$STUDENT_REVISION" --device cuda \
-    --examples "$WORK/decisions.json" --output "$WORK/adapter.safetensors" > "$WORK/metrics.json"
+    lifecycle-examples --rows "$WORK/reviewed-train.jsonl" --output "$WORK/examples.json"
+  ster tune sft --model "$STUDENT_MODEL" --revision "$STUDENT_REVISION" --device cuda \
+    --examples "$WORK/examples.json" --output "$WORK/adapter.safetensors" \
+    "${STER_OPTIONS[@]}" > "$WORK/metrics.json"
   ster tune merge --model "$STUDENT_MODEL" --revision "$STUDENT_REVISION" --device cuda \
     --adapter "$WORK/adapter.safetensors" --output "$WORK/student"
 fi
