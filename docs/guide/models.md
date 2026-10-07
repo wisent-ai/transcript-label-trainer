@@ -232,8 +232,8 @@ ster tune evaluate --model Qwen/Qwen3-4B --examples eval-examples.json --max-seq
 
 The reviewed files are then submitted together to one exclusive Stado GPU
 target. Every job (goal, lifecycle, humanizer and `run --compute-target`) is pinned to the
-`--compute-target` host, which decides the hardware, and claims its whole GPU; it states no
-priority, GPU label or VRAM of its own. Its Stado run id is the model name, the key of its
+`--compute-target` host, which decides the hardware; the goal, lifecycle and humanizer jobs
+claim its whole GPU. None states a priority, GPU label or VRAM of its own. Its Stado run id is the model name, the key of its
 data and settings and the source commit, so submitting the same run again answers the job
 Stado already holds instead of queueing a second one:
 
