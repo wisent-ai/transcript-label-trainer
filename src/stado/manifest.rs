@@ -171,6 +171,8 @@ fn judged(output: &Path) -> Result<(bool, Value)> {
 
 fn goal(output: &Path, artifact: &Path) -> Result<Value> {
     let (qualified, review_model) = judged(output)?;
+    let served = read_json(&output.join("metrics-gguf.json"))?;
+    let trained = read_json(&output.join("metrics.json"))?;
     let files = evidence(output, true)?;
     Ok(json!({
         "product": "Jeden goal model",
@@ -179,8 +181,11 @@ fn goal(output: &Path, artifact: &Path) -> Result<Value> {
         "base_model": BASE_MODEL,
         "base_revision": BASE_REVISION,
         "required_quality_gate": JUDGE,
+        "evaluation_surface": "served Q4_K_M GGUF through Jeden's goal chat, decoding constrained to <goal/> or one <goal> line",
         "qualified": qualified,
         "review_model": review_model,
+        "metrics": served,
+        "training_metrics": trained,
         "transport": transport(output, artifact, &files)?,
         "files": files,
     }))

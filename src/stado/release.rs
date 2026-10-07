@@ -39,6 +39,7 @@ pub(crate) const RELEASE_MODELS: [ReleaseModel; 2] = [
             "final-judge.json",
             "metrics.json",
             "predictions.jsonl",
+            "metrics-gguf.json",
             "goal-system-prompt.md",
             "python-requirements.lock",
         ],

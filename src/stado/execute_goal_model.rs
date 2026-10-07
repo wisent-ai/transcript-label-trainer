@@ -2,29 +2,40 @@ use super::*;
 
 /// Submit the reviewed goal dataset to one exclusive Stado GPU target.
 /// `audit_workers` is the caller's count of parallel Brama calls for the job's
-/// final `goal-audit`.
+/// final `goal-audit`, `ster_options` the `ster tune sft` settings it trains
+/// with and `serving` how its quantized evaluation serves the model.
 pub fn execute_goal_model(
     dataset_path: &Path,
     compute_target: &str,
     audit_workers: usize,
+    ster_options: &str,
+    serving: &EvaluationServing,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
         return Err(Error("--compute-target cannot be empty".to_string()));
     }
+    let ster_options = stated_ster_options(ster_options)?;
     let dataset_bytes = std::fs::read(dataset_path)?;
     let key = digest(&dataset_bytes);
     let dataset_uri =
         format!("stado://probierz/inputs/transcript-label-trainer/goal-model/{key}.jsonl");
-    let output_uri = format!("stado://probierz/artifacts/models/jeden/goal-qwen3-4b/{key}");
+    let run_key = digest(format!("{key}\nster={ster_options}\n").as_bytes());
+    let output_uri = format!("stado://probierz/artifacts/models/jeden/goal-qwen3-4b/{run_key}");
     let stado = stado_bin();
     upload(&stado, &dataset_uri, dataset_path, "application/x-ndjson")?;
     let source_ref = repo_ref()?;
     let command = format!(
-        "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/jeden-goal-{key}\"; \
+        "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/jeden-goal-{run_key}\"; \
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{dataset_uri}' \"$work/reviewed-goals.jsonl\"; \
-         GOAL_AUDIT_WORKERS={audit_workers} ./training/goal-model/run.sh \"$work/reviewed-goals.jsonl\""
+         export GOAL_MODEL_WORK_DIR=\"$work\"; export GOAL_STER_OPTIONS={}; \
+         export GOAL_EVAL_PARALLEL={}; export GOAL_EVAL_SLOT_CONTEXT={}; export GOAL_EVAL_GPU_LAYERS={}; \
+         GOAL_AUDIT_WORKERS={audit_workers} ./training/goal-model/run.sh \"$work/reviewed-goals.jsonl\"",
+        shell_quote(ster_options),
+        serving.parallel,
+        serving.slot_context,
+        shell_quote(&serving.gpu_layers),
     );
     let args = vec![
         OsString::from("submit"),
@@ -78,8 +89,18 @@ pub fn execute_goal_model(
     })
 }
 
-/// How the quantized lifecycle model is served while it is evaluated.
-pub struct LifecycleServing {
+/// The `ster tune sft` settings a model job trains with, refused when empty:
+/// the job states every setting it trains with and assumes none.
+pub(crate) fn stated_ster_options(ster_options: &str) -> Result<&str> {
+    let ster_options = ster_options.trim();
+    if ster_options.is_empty() {
+        return Err(Error("--ster-options cannot be empty: the job trains with ster tune sft, which states every setting it trains with".to_string()));
+    }
+    Ok(ster_options)
+}
+
+/// How a job's quantized model is served while it is evaluated.
+pub struct EvaluationServing {
     pub parallel: usize,
     pub slot_context: usize,
     pub gpu_layers: String,
@@ -100,7 +121,7 @@ pub fn execute_lifecycle_model(
     compute_target: &str,
     brama_url: &str,
     ster_options: &str,
-    serving: &LifecycleServing,
+    serving: &EvaluationServing,
     audit: &LifecycleAudit,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
@@ -111,10 +132,7 @@ pub fn execute_lifecycle_model(
     if brama_url.is_empty() {
         return Err(Error("--brama-url cannot be empty".to_string()));
     }
-    let ster_options = ster_options.trim();
-    if ster_options.is_empty() {
-        return Err(Error("--ster-options cannot be empty: the job trains with ster tune sft, which states every setting it trains with".to_string()));
-    }
+    let ster_options = stated_ster_options(ster_options)?;
     let brama_url = shell_quote(brama_url);
     let train_bytes = std::fs::read(train_path)?;
     let eval_bytes = std::fs::read(eval_path)?;

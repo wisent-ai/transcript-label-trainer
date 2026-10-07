@@ -35,7 +35,9 @@ Goal models (fine-tunes trained on a Stado GPU target, gated before publish):
 
 | command | does |
 |---|---|
-| `goal-model` | curate masked lake messages, teacher-label task goals through Brama, require an independent `best` review, train on the named exclusive Stado GPU target, and publish GGUF artifacts only after the held-out gold predictions pass a second `best` audit. `--limit N` (most teacher-labeled candidates), `--workers N` (parallel teacher calls while curating) and `--audit-workers N` (parallel calls in the job's final audit) are required, at least 1 |
+| `goal-model` | curate masked lake messages, teacher-label task goals through Brama, require an independent `best` review, train the served model with `ster tune sft` on the named exclusive Stado GPU target with exactly the `--ster-options` given (required; an empty value is refused as `--ster-options cannot be empty`), ask the quantized model for every held-out gold row with `goal-evaluate-gguf` at the stated `--eval-parallel N`, `--eval-slot-context N` and `--eval-gpu-layers N`, and publish GGUF artifacts only after those served predictions pass a second `best` audit. `--limit N` (most teacher-labeled candidates), `--workers N` (parallel teacher calls while curating) and `--audit-workers N` (parallel calls in the job's final audit) are required, at least 1 |
+| `goal-examples` | write `--rows` (reviewed goal JSONL) to `--output` as the Ster example set `ster tune sft` trains on: every row not marked gold, the goal system prompt as its `system`, `<user>message</user>` as its `prompt` and `<goal>…</goal>` or `<goal/>` as its `completion`; answers the example and held-out counts, and refuses a file without a row or whose every row is gold |
+| `goal-evaluate-gguf` | start `llama-server` (`--server`) on the quantized `--model` on a system-assigned loopback port with `--parallel N` slots of `--slot-context N` tokens and `--gpu-layers N` offloaded, wait for its health answer, ask every gold row of `--dataset` the way Jeden serves it with decoding constrained to `<goal/>` or one `<goal>…</goal>` line, and write `--predictions` (what `goal-audit` reads) and the exact-match share to `--metrics`; a failed request fails the run naming its session; the server log goes to `--server-log` |
 | `goal-audit` | independently audit student goal predictions (JSONL of message, reference goal, student output) with `--workers N` parallel Brama calls (required, at least 1) and write the complete audit record |
 | `lifecycle-review` | classify masked Oko training envelopes through a named Brama route with `--workers N` parallel reviews (required, at least 1), enforce the `oko-goal-lifecycle-v1` contract, and write ordered JSONL with reviewer provenance for an immutable `--split train\|eval` |
 | `lifecycle-model` | upload immutable reviewed train and held-out datasets, train the served model with `ster tune sft` on the named Stado GPU target with exactly the `--ster-options` given (required; an empty value is refused as `--ster-options cannot be empty`), measure the quantized model with `lifecycle-evaluate-gguf` at the stated `--eval-parallel N`, `--eval-slot-context N` and `--eval-gpu-layers N` (required, no defaults), audit every held-out decision through Brama `best` with `--audit-workers N` concurrent calls, and publish the candidate only when at most `--audit-max-wrong-share F` of the decisions are wrong (both required) |
@@ -57,7 +59,9 @@ The goal path in three commands. Replace `TARGET` with a registered Stado GPU ta
 
 ```sh
 # 1. Title model: curate, teacher-label, review, train, audit, publish GGUF.
-transcript-label-trainer goal-model --compute-target TARGET --limit N --workers N --audit-workers N
+transcript-label-trainer goal-model --compute-target TARGET --limit N --workers N --audit-workers N \
+  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S' \
+  --eval-parallel N --eval-slot-context N --eval-gpu-layers N
 
 # 2. Lifecycle datasets: review masked envelopes into immutable splits.
 transcript-label-trainer lifecycle-review envelopes.jsonl \

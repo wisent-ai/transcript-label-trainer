@@ -70,24 +70,52 @@ Replace `TARGET` below with the registered Stado GPU target selected for trainin
 ```sh
 transcript-label-trainer goal-model \
   --compute-target TARGET \
-  --limit 1500 --workers N --audit-workers N
+  --limit 1500 --workers N --audit-workers N \
+  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S' \
+  --eval-parallel N --eval-slot-context N --eval-gpu-layers N
 ```
 
 The command generates task and no-task labels with a Brama teacher, then requires
 two review passes through the pinned Brama reviewer before any row enters the
 dataset. It holds out reviewed OMP titles plus 32 teacher task rows and 32
-teacher no-task rows, submits the remaining JSONL and exact trainer commit to
-the named Stado target, and performs an exclusive full fine-tune from pinned
-`Qwen/Qwen3-4B@1cfa9a7208912126459214e8b04321603b3df60c`. Held-out rows never
-enter training. Every student prediction over that holdout must receive
-`both-sensible` from a final Brama `--best` audit or the model remains
-unqualified; a rejected candidate is retained for diagnosis but cannot enter
-the Jeden Desktop release namespace.
+teacher no-task rows as gold, and submits the JSONL and exact trainer commit to
+the named Stado target. The GPU host must have `ster` installed (`stado product
+install ster --surface cli`; without it the job stops at `ster: command not found`).
+There the reviewed teacher rows become `transcript-label-trainer goal-examples`: each
+one the chat Jeden serves, the goal system prompt as its `system` turn,
+`<user>message</user>` as its `prompt` and the reviewed `<goal>…</goal>` or `<goal/>`
+as its `completion`. `ster tune sft` fits an adapter to pinned
+`Qwen/Qwen3-4B@1cfa9a7208912126459214e8b04321603b3df60c` with exactly the
+`--ster-options` given (an empty value is refused before anything is uploaded),
+`ster tune merge` folds it in, and llama.cpp's converter exports and quantizes it to
+Q4_K_M. Gold rows never enter training.
 
-A qualified job publishes the Q4_K_M GGUF, metrics, held-out predictions, the
-full final audit, canonical prompt, dependency lock, and checksums under the
-content-addressed URI printed as `model artifact:
-stado://probierz/artifacts/models/jeden/goal-qwen3-4b/<dataset-sha256>`.
+`transcript-label-trainer goal-evaluate-gguf` then asks that quantized model for every
+gold row the way Jeden serves it: `llama-server` on a loopback port the system assigns
+(`--eval-parallel` slots of `--eval-slot-context` tokens, `--eval-gpu-layers` offloaded,
+all three required), the same system prompt and user turn, decoding constrained to
+`<goal/>` or one `<goal>…</goal>` line. It writes `predictions.jsonl` and the exact-match
+share in `metrics-gguf.json`; a server that exits before it is ready fails with its
+status and log, and a failed request fails the run naming its session. Every one of
+those served predictions must receive `both-sensible` from a final Brama `--best` audit
+or the model remains unqualified; a rejected candidate is retained for diagnosis but
+cannot enter the Jeden Desktop release namespace. To build an example set and see how
+the base model answers it before any job:
+
+```sh
+transcript-label-trainer goal-examples --rows reviewed-goals.jsonl --output goal-examples.json
+ster tune evaluate --model Qwen/Qwen3-4B --examples goal-examples.json --max-sequence 2048 --batch-size 1
+```
+
+`goal-examples` refuses a file without a row and a file whose every row is gold.
+
+A qualified job publishes the Q4_K_M GGUF, Ster's training report (`metrics.json`), the
+served predictions and their `metrics-gguf.json`, the full final audit, canonical prompt,
+the converter's dependency lock, and checksums under the content-addressed URI printed as
+`model artifact: stado://probierz/artifacts/models/jeden/goal-qwen3-4b/<key>`, the key
+being the dataset and the `--ster-options` together, so other settings never resume or
+overwrite a model.
+
 Stado also retains its canonical `status/<job-id>/output/` copy. All model calls
 use `brama.rs`; the pipeline has no direct provider credentials or second auth
 implementation. The job's `model-manifest.json` is written by `transcript-label-trainer

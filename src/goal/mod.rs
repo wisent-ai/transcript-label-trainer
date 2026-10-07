@@ -22,7 +22,9 @@ use crate::{bail, lake};
 mod system_prompt;
 mod messages;
 mod audit_prompt;
+mod served;
 
 pub use system_prompt::*;
 pub use messages::*;
 pub use audit_prompt::*;
+pub(crate) use served::{evaluate_gguf, export_examples, GoalEvaluation};

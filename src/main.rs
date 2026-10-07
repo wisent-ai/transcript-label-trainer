@@ -18,6 +18,7 @@ mod lifecycle;
 mod model;
 mod onboarding;
 mod placement;
+mod serving;
 mod stado;
 mod util;
 

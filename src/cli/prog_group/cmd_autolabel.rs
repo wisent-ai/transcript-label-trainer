@@ -67,6 +67,10 @@ pub(crate) fn cmd_aspect_discover(args: &Parsed) -> Result<i32> {
 }
 
 pub(crate) fn cmd_goal_model(args: &Parsed) -> Result<i32> {
+    // The job's own settings are checked before curation spends any Brama
+    // call: a run that would be refused at submission is refused first.
+    let ster_options = stado::stated_ster_options(args.text("--ster-options").unwrap_or_default())?;
+    let serving = evaluation_serving(args)?;
     let root = placement::resolve_placement()
         .training_root
         .join("goal-model")
@@ -85,6 +89,8 @@ pub(crate) fn cmd_goal_model(args: &Parsed) -> Result<i32> {
         &dataset,
         args.text("--compute-target").unwrap_or_default(),
         stated_count(args, "--audit-workers")?,
+        ster_options,
+        &serving,
     )?;
     outln!("Stado job: {}", job.job_id);
     outln!("model artifact: {}", job.output_uri);
@@ -136,7 +142,7 @@ pub(crate) fn cmd_lifecycle_model(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(1)),
         args.text("--compute-target").unwrap_or_default(), args.text("--brama-url").unwrap_or_default(),
         args.text("--ster-options").unwrap_or_default(),
-        &lifecycle_serving(args)?,
+        &evaluation_serving(args)?,
         &stado::LifecycleAudit {
             workers: stated_count(args, "--audit-workers")?,
             max_wrong_share: stated_share(args, "--audit-max-wrong-share")?,

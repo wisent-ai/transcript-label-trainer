@@ -1,20 +1,11 @@
 //! `lifecycle-evaluate-gguf`: the quantized lifecycle model measured the way
-//! production serves it — `llama-server` answering Oko's chat contract with
-//! decoding constrained to the checked-in decision schema, narrowed per
-//! request to that request's candidate references.
-//!
-//! Nothing here waits by the clock. The server is ready when its health
-//! answer is ready; between probes the evaluator reads the server's next log
-//! line, so it waits on the server's own progress, and a server that exits
-//! first is a failure naming its status and log. Each request waits for its
-//! answer; a request that fails is a failure naming its row, never retried on
-//! a guessed schedule. The answer's length is bounded by the schema's grammar,
-//! not by a token budget.
+//! production serves it — `llama-server` (`crate::serving`) answering Oko's
+//! chat contract with decoding constrained to the checked-in decision schema,
+//! narrowed per request to that request's candidate references. A request
+//! that fails is a failure naming its row. The answer's length is bounded by
+//! the schema's grammar, not by a token budget.
 
-use std::io::{BufRead, BufReader};
-use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
 
 use serde_json::{json, Map};
 
@@ -34,20 +25,18 @@ pub struct GgufEvaluation {
     pub gpu_layers: String,
 }
 
-/// The served alias every request names.
-fn alias(model: &Path) -> String {
-    model.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default()
-}
-
-/// An HTTP client that waits for the server's answer: reqwest's blocking
-/// client otherwise gives up after its own 30 s.
-fn waiting_client() -> Result<reqwest::blocking::Client> {
-    reqwest::blocking::Client::builder().timeout(None).build().map_err(|error| Error(format!("the HTTP client could not be built: {error}")))
-}
-
-/// A loopback port the operating system has free right now.
-fn free_port() -> Result<u16> {
-    Ok(TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?.local_addr()?.port())
+impl GgufEvaluation {
+    /// How this run serves its model.
+    fn serving(&self) -> crate::serving::Serving {
+        crate::serving::Serving {
+            server: self.server.clone(),
+            model: self.model.clone(),
+            server_log: self.server_log.clone(),
+            parallel: self.parallel,
+            slot_context: self.slot_context,
+            gpu_layers: self.gpu_layers.clone(),
+        }
+    }
 }
 
 /// The checked-in schema with `goal_ref` narrowed from its pattern to `refs`.
@@ -119,62 +108,12 @@ fn target(row: &TrainingRow, schema: &Value) -> Result<Decision> {
     decision(&value.to_string(), schema).ok_or_else(|| Error(format!("{} has a reference decision outside the output schema", row.id)))
 }
 
-/// Start the server and return once its health answer is ready.
-fn start_server(run: &GgufEvaluation, port: u16) -> Result<Child> {
-    let mut child = Command::new(&run.server)
-        .arg("--model")
-        .arg(&run.model)
-        .args(["--host", &Ipv4Addr::LOCALHOST.to_string(), "--port", &port.to_string(), "--alias", &alias(&run.model)])
-        .args(["--ctx-size", &(run.slot_context * run.parallel).to_string(), "--gpu-layers", &run.gpu_layers])
-        .args(["--parallel", &run.parallel.to_string(), "--no-webui"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| Error(format!("{} could not start: {error}", run.server.display())))?;
-    let mut log = fs::File::create(&run.server_log)?;
-    let stderr = child.stderr.take().ok_or("llama-server has no stderr")?;
-    let stdout = child.stdout.take().ok_or("llama-server has no stdout")?;
-    let mut copy_out = fs::File::create(run.server_log.with_extension("stdout.log"))?;
-    thread::spawn(move || std::io::copy(&mut BufReader::new(stdout), &mut copy_out));
-    let health = format!("http://{}:{port}/health", Ipv4Addr::LOCALHOST);
-    let client = waiting_client()?;
-    let mut lines = BufReader::new(stderr).lines();
-    loop {
-        if client.get(&health).send().map(|response| response.status().is_success()).unwrap_or(false) {
-            thread::spawn(move || {
-                for line in lines.map_while(std::result::Result::ok) {
-                    let _ = writeln!(log, "{line}");
-                }
-            });
-            return Ok(child);
-        }
-        match lines.next() {
-            Some(line) => writeln!(log, "{}", line?)?,
-            None => {
-                let status = child.wait()?;
-                return Err(Error(format!("llama-server exited {status} before it was ready; its log is {}", run.server_log.display())));
-            }
-        }
-    }
-}
-
 /// Ask the server for `row`'s decision; `(raw answer, decision when it satisfies the schema)`.
-fn classify(client: &reqwest::blocking::Client, endpoint: &str, alias: &str, schema: &Value, row: &TrainingRow) -> Result<(String, Option<Decision>)> {
+fn classify(server: &crate::serving::Server, schema: &Value, row: &TrainingRow) -> Result<(String, Option<Decision>)> {
     let user = &row.messages.iter().find(|message| message.role == "user").ok_or_else(|| Error(format!("{} has no user message", row.id)))?.content;
     let narrowed = narrowed(schema, &existing_refs(row, schema)?)?;
-    let body = json!({
-        "model": alias,
-        "messages": [{ "role": "system", "content": SYSTEM_PROMPT.trim() }, { "role": "user", "content": user }],
-        "temperature": 0,
-        "stream": false,
-        "chat_template_kwargs": { "enable_thinking": false },
-        "response_format": { "type": "json_schema", "json_schema": { "name": "oko_goal_lifecycle", "strict": true, "schema": narrowed } },
-    });
-    let response = client.post(endpoint).json(&body).send().map_err(|error| Error(format!("{} inference failed: {error}", row.id)))?;
-    let status = response.status();
-    let answer: Value = response.json().map_err(|error| Error(format!("{} answered {status} without JSON: {error}", row.id)))?;
-    let raw = answer.pointer("/choices/0/message/content").and_then(Value::as_str).ok_or_else(|| Error(format!("{} answered {status} without a message: {answer}", row.id)))?.trim().to_string();
+    let constraint = json!({ "type": "json_schema", "json_schema": { "name": "oko_goal_lifecycle", "strict": true, "schema": narrowed } });
+    let raw = server.answer(&row.id, SYSTEM_PROMPT.trim(), user, ("response_format", constraint))?;
     let parsed = decision(&raw, &narrowed);
     Ok((raw, parsed))
 }

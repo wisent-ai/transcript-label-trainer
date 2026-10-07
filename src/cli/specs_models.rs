@@ -61,9 +61,11 @@ pub(crate) fn model_specs() -> Vec<Spec> {
         description: Some(
             "Read only privacy-masked Transcript Lake events, use a Brama teacher \
              to label task goals, require an independent Brama best review, then \
-             train on the named exclusive Stado GPU target. The held-out gold \
-             predictions must all pass a second best audit before GGUF artifacts \
-             are published."
+             train the served model with ster tune sft on the named exclusive Stado \
+             GPU target (the reviewed rows as goal-examples, every training setting \
+             from --ster-options). The held-out gold rows are asked of the quantized \
+             model as Jeden serves it (goal-evaluate-gguf) and every prediction must \
+             pass a second best audit before GGUF artifacts are published."
                 .to_string(),
         ),
         positionals: Vec::new(),
@@ -98,6 +100,18 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Int,
                 "parallel Brama calls in the job's final goal-audit, at least 1".to_string(),
             ),
+            required(
+                "--ster-options",
+                "OPTIONS",
+                Kind::Text,
+                "the ster tune sft settings the job trains with, e.g. '--rank R --alpha A --epochs E \
+                 --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S'; Ster \
+                 refuses a run that leaves one of its required settings out"
+                    .to_string(),
+            ),
+            required("--eval-parallel", "N", Kind::Int, "server slots of the quantized evaluation".to_string()),
+            required("--eval-slot-context", "N", Kind::Int, "context tokens each evaluation slot holds".to_string()),
+            required("--eval-gpu-layers", "N", Kind::Text, "layers llama-server offloads to the GPU in the evaluation".to_string()),
         ],
     };
 

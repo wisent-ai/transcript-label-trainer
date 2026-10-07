@@ -29,23 +29,23 @@ pub fn evaluate_gguf(run: &GgufEvaluation) -> Result<Value> {
         return Err(Error(format!("{} holds no evaluation row", run.dataset.display())));
     }
     let targets = rows.iter().map(|row| target(row, &schema)).collect::<Result<Vec<_>>>()?;
-    let port = free_port()?;
-    let mut server = start_server(run, port)?;
-    let endpoint = format!("http://{}:{port}/v1/chat/completions", Ipv4Addr::LOCALHOST);
-    let served = alias(&run.model);
+    let server = crate::serving::Server::start(&run.serving())?;
+    let shared = &server;
     let rows = Arc::new(rows);
     let next = Arc::new(AtomicUsize::new(0));
     let done = Arc::new(AtomicUsize::new(0));
     let answers: Arc<Mutex<Vec<Option<Result<(String, Option<Decision>)>>>>> = Arc::new(Mutex::new((0..rows.len()).map(|_| None).collect()));
-    let client = waiting_client()?;
+    // Scoped workers borrow the one server; the scope ends when every worker
+    // has answered, before the server is stopped.
+    let joined: Result<()> = thread::scope(|scope| {
     let workers: Vec<_> = (0..run.parallel.min(rows.len()))
         .map(|_| {
             let (rows, next, done, answers) = (Arc::clone(&rows), Arc::clone(&next), Arc::clone(&done), Arc::clone(&answers));
-            let (client, endpoint, served, schema) = (client.clone(), endpoint.clone(), served.clone(), schema.clone());
-            thread::spawn(move || loop {
+            let (server, schema) = (shared, schema.clone());
+            scope.spawn(move || loop {
                 let index = next.fetch_add(1, Ordering::SeqCst);
                 let Some(row) = rows.get(index) else { break };
-                let answer = classify(&client, &endpoint, &served, &schema, row);
+                let answer = classify(server, &schema, row);
                 answers.lock().expect("evaluation answers lock")[index] = Some(answer);
                 println!("quantized lifecycle predictions {}/{}", done.fetch_add(1, Ordering::SeqCst) + 1, rows.len());
             })
@@ -54,8 +54,10 @@ pub fn evaluate_gguf(run: &GgufEvaluation) -> Result<Value> {
     for worker in workers {
         worker.join().map_err(|_| Error("an evaluation worker panicked".to_string()))?;
     }
-    let _ = server.kill();
-    let _ = server.wait();
+    Ok(())
+    });
+    server.stop();
+    joined?;
 
     let answers = std::mem::take(&mut *answers.lock().expect("evaluation answers lock"));
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
