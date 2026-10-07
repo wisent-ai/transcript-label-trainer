@@ -6,9 +6,6 @@ use super::*;
 /// it; this one is the HF path's own.
 pub(crate) const MIN_PER_CLASS: usize = 2;
 
-/// Inference batch size, the 8 the Python `_hf_predict` hardcoded.
-pub(crate) const PREDICT_BATCH: usize = 8;
-
 /// The `TrainingArguments` defaults the Python path inherited by passing none
 /// of them: seed 0, linear learning-rate decay to zero with no warmup, no
 /// weight decay, gradients clipped at a global norm of 1.
@@ -94,6 +91,7 @@ pub fn predict(
     artifact_dir: &Path,
     texts: &[String],
     max_length: usize,
+    batch_size: usize,
 ) -> Result<Vec<(String, f64)>> {
     if texts.is_empty() {
         return Ok(Vec::new());
@@ -121,7 +119,7 @@ pub fn predict(
     let mut tokenizer = load_tokenizer(&artifact_dir.join("tokenizer.json"))?;
     prepare_tokenizer(&mut tokenizer, arch.max_positions(&config)?.min(max_length))?;
 
-    infer(&model, &tokenizer, texts, &classes, &device)
+    infer(&model, &tokenizer, texts, &classes, &device, batch_size)
 }
 
 // ---------------------------------------------------------------------------

@@ -34,16 +34,20 @@ pub(crate) fn evaluate_slice(
     ))
 }
 
-/// `(value, confidence)` per text, batched the way `_hf_predict` batched.
+/// `(value, confidence)` per text, `batch_size` texts a forward pass: the
+/// batch size the model was trained at.
 pub(crate) fn infer(
     model: &Classifier,
     tokenizer: &Tokenizer,
     texts: &[String],
     classes: &[String],
     device: &Device,
+    batch_size: usize,
 ) -> Result<Vec<(String, f64)>> {
+    let batch_size = std::num::NonZeroUsize::new(batch_size)
+        .ok_or_else(|| Error("prediction needs a positive batch size; the artifact records zero".to_string()))?;
     let mut out = Vec::with_capacity(texts.len());
-    for chunk in texts.chunks(PREDICT_BATCH) {
+    for chunk in texts.chunks(batch_size.get()) {
         let index: Vec<usize> = (0..chunk.len()).collect();
         let labels = vec![0usize; chunk.len()];
         let batch = Batches::encode(tokenizer, chunk, &labels, &index, device)?;
