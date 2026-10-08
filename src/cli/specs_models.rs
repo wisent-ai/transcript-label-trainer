@@ -89,18 +89,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 format!("Brama-routed goal teacher (default: {teacher})"),
             ),
             required(
-                "--workers",
-                "N",
-                Kind::Int,
-                "parallel Brama teacher calls while curating, at least 1".to_string(),
-            ),
-            required(
-                "--audit-workers",
-                "N",
-                Kind::Int,
-                "parallel Brama calls in the job's final goal-audit, at least 1".to_string(),
-            ),
-            required(
                 "--ster-options",
                 "OPTIONS",
                 Kind::Text,
@@ -141,12 +129,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Text,
                 "use an explicit Brama-routed model when the best subscription is unavailable"
                     .to_string(),
-            ),
-            required(
-                "--workers",
-                "N",
-                Kind::Int,
-                "parallel Brama audit calls, at least 1".to_string(),
             ),
         ],
     };
@@ -192,12 +174,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Int,
                 "cap reviewed rows".to_string(),
             ),
-            required(
-                "--workers",
-                "N",
-                Kind::Int,
-                "parallel Brama reviews, at least 1".to_string(),
-            ),
         ],
     };
 
@@ -210,7 +186,7 @@ pub(crate) fn model_specs() -> Vec<Spec> {
              lifecycle-examples, every training setting from --ster-options), audit every held-out \
              decision through Brama -best, and publish the complete candidate only when the lifecycle \
              quality gate passes: at most --audit-max-wrong-share of the decisions semantically \
-             wrong, judged by --audit-workers concurrent Brama calls."
+             wrong, judged with as many concurrent Brama calls as Brama measured the route to carry."
                 .to_string(),
         ),
         positionals: vec![
@@ -247,7 +223,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                  Ster refuses a run that leaves one of its required settings out"
                     .to_string(),
             ),
-            required("--audit-workers", "N", Kind::Int, "concurrent Brama calls of the final audit; the route's own concurrency allowance".to_string()),
             required("--audit-max-wrong-share", "F", Kind::Float, "largest share of held-out decisions the audit may call wrong, between none and all".to_string()),
         ],
     };
@@ -323,12 +298,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                     .to_string(),
             ),
             required(
-                "--workers",
-                "N",
-                Kind::Int,
-                "parallel Brama calls in the job's preparation and audit".to_string(),
-            ),
-            required(
                 "--attempts",
                 "N",
                 Kind::Int,
@@ -372,7 +341,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Text,
                 "use an explicit Brama-routed independent judge".to_string(),
             ),
-            required("--workers", "N", Kind::Int, "concurrent Brama calls; the route's own concurrency allowance".to_string()),
             required("--max-wrong-share", "F", Kind::Float, "largest share of decisions the audit may call wrong, between none and all".to_string()),
         ],
     };

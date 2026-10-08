@@ -84,7 +84,6 @@ set +e
   lifecycle-audit "$WORK/predictions-gguf.jsonl" \
   --output "$WORK/final-judge.json" \
   --brama-model "${LIFECYCLE_AUDIT_MODEL:-best}" \
-  --workers "${LIFECYCLE_AUDIT_WORKERS:?Set LIFECYCLE_AUDIT_WORKERS to the concurrent Brama calls of the final audit}" \
   --max-wrong-share "${LIFECYCLE_AUDIT_MAX_WRONG_SHARE:?Set LIFECYCLE_AUDIT_MAX_WRONG_SHARE to the largest share of decisions the audit may call wrong}"
 AUDIT_EXIT=$?
 set -e

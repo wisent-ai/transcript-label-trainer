@@ -1,12 +1,13 @@
 use super::*;
 
+/// Review the lifecycle dataset with `model`, as many calls at once as Brama
+/// measured that route to carry.
 pub fn review_dataset(
     input: &Path,
     output: &Path,
     split: &str,
     model: &str,
     limit: Option<usize>,
-    workers: usize,
 ) -> Result<Value> {
     if !["train", "eval"].contains(&split) {
         return Err(Error("--split must be train or eval".to_string()));
@@ -46,6 +47,7 @@ pub fn review_dataset(
         }));
     }
     let client = BramaClient::from_env()?;
+    let workers = client.allowance(model)?.get();
     let rows = Arc::new(rows);
     let next = Arc::new(AtomicUsize::new(0));
     let results: Arc<Mutex<Vec<Option<Result<Value>>>>> =

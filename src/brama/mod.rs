@@ -36,8 +36,10 @@ use sha2::{Digest, Sha256};
 use crate::bail;
 use crate::util::{home_dir, Error, Result};
 
+mod allowance;
 mod default_stado_bin;
 mod brama_client;
 
+pub use allowance::allowance;
 pub use default_stado_bin::*;
 pub use brama_client::*;

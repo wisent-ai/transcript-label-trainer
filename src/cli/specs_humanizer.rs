@@ -1,15 +1,14 @@
 use super::*;
 
-fn count_options() -> [Opt; 2] {
-    [
-        required("--workers", "N", Kind::Int, "parallel Brama calls".to_string()),
-        required(
-            "--attempts",
-            "N",
-            Kind::Int,
-            "times one question is asked before its row is given up".to_string(),
-        ),
-    ]
+/// How often one question is asked; how many go at once is the route's
+/// allowance, which Brama measures.
+fn count_options() -> Vec<Opt> {
+    vec![required(
+        "--attempts",
+        "N",
+        Kind::Int,
+        "times one question is asked before its row is given up".to_string(),
+    )]
 }
 
 /// One stated bound: any finite number, refused by its flag's name when
@@ -140,7 +139,6 @@ pub(crate) fn cmd_humanizer_prepare(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.text("--output-dir").unwrap_or_default()),
         teacher,
         reviewer,
-        stated_count(args, "--workers")?,
         stated_count(args, "--attempts")?,
     )?;
     outln!("{}", dumps(&report));
@@ -153,7 +151,6 @@ pub(crate) fn cmd_humanizer_audit(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),
         judge,
-        stated_count(args, "--workers")?,
         stated_count(args, "--attempts")?,
     )?;
     outln!("{}", dumps(&summary));

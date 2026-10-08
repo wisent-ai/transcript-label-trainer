@@ -165,10 +165,6 @@ fn a_goal_job_without_ster_settings_is_refused_before_a_row_is_curated() {
         "target-under-test",
         "--limit",
         "1",
-        "--workers",
-        "1",
-        "--audit-workers",
-        "1",
         "--ster-options",
         " ",
     ]);

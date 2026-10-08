@@ -155,8 +155,6 @@ fn a_lifecycle_job_without_ster_settings_is_refused_before_anything_is_read() {
         "http://brama.invalid",
         "--ster-options",
         " ",
-        "--audit-workers",
-        "4",
         "--audit-max-wrong-share",
         "0.1",
     ]);

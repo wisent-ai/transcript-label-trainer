@@ -1,15 +1,14 @@
 use super::*;
 
-/// Audits every prediction with `workers` concurrent Brama calls and passes
-/// when at most `max_wrong_share` of them are semantically wrong, none is
-/// unjudgeable or a dangerous finish, and no audit call failed. Both numbers
-/// are the caller's: the route's concurrency allowance is the route owner's,
-/// and the tolerated share is the operator's.
+/// Audits every prediction with as many concurrent Brama calls as Brama
+/// measured `model`'s route to carry, and passes when at most
+/// `max_wrong_share` of them are semantically wrong, none is unjudgeable or a
+/// dangerous finish, and no audit call failed. The tolerated share is the
+/// operator's.
 pub fn audit_predictions(
     input: &Path,
     output: &Path,
     model: &str,
-    workers: std::num::NonZeroUsize,
     max_wrong_share: f64,
 ) -> Result<Value> {
     // A share lies between none and all; the sign of a positive share is one.
@@ -26,6 +25,7 @@ pub fn audit_predictions(
         return Err(Error("lifecycle predictions input is empty".to_string()));
     }
     let client = BramaClient::from_env()?;
+    let workers = client.allowance(model)?;
     let predictions = Arc::new(predictions);
     let next = Arc::new(AtomicUsize::new(0));
     let aborted = Arc::new(AtomicBool::new(false));

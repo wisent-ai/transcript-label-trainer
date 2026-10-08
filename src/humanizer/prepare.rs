@@ -121,13 +121,15 @@ pub fn prepare_dataset(
     output_dir: &Path,
     teacher: &str,
     reviewer: &str,
-    workers: usize,
     attempts: usize,
 ) -> Result<Value> {
     let bytes = fs::read(input)
         .map_err(|error| Error(format!("cannot read {}: {error}", input.display())))?;
     let targets: Vec<TargetRow> = read_jsonl(input)?;
     let client = BramaClient::from_env()?;
+    // Each target is asked of the teacher and then reviewed, one after the
+    // other, so the calls at once are the smaller of the two allowances.
+    let workers = client.allowance(teacher)?.min(client.allowance(reviewer)?).get();
     let outcomes = fan_out(&targets, workers, "prepared", |row| {
         pair(row, &client, teacher, reviewer, attempts)
     });

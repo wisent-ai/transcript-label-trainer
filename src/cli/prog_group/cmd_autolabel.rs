@@ -81,13 +81,11 @@ pub(crate) fn cmd_goal_model(args: &Parsed) -> Result<i32> {
         &dataset,
         stated_count(args, "--limit")?,
         args.text("--teacher-model"),
-        stated_count(args, "--workers")?,
     )?;
     outln!("{}", dumps(&summary));
     let job = stado::execute_goal_model(
         &dataset,
         args.text("--compute-target").unwrap_or_default(),
-        stated_count(args, "--audit-workers")?,
         &ster_options,
     )?;
     outln!("Stado job: {}", job.job_id);
@@ -110,7 +108,6 @@ pub(crate) fn cmd_goal_audit(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),
         review_model,
-        stated_count(args, "--workers")?,
     )?;
     outln!("{}", dumps(&result));
     Ok(i32::from(
@@ -128,7 +125,6 @@ pub(crate) fn cmd_lifecycle_review(args: &Parsed) -> Result<i32> {
         args.text("--split").unwrap_or_default(),
         model,
         args.int("--limit").map(|value| value as usize),
-        stated_count(args, "--workers")?,
     )?;
     outln!("{}", dumps(&result));
     Ok(0)
@@ -140,10 +136,7 @@ pub(crate) fn cmd_lifecycle_model(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(1)),
         args.text("--compute-target").unwrap_or_default(), args.text("--brama-url").unwrap_or_default(),
         args.text("--ster-options").unwrap_or_default(),
-        &stado::LifecycleAudit {
-            workers: stated_count(args, "--audit-workers")?,
-            max_wrong_share: stated_share(args, "--audit-max-wrong-share")?,
-        },
+        &stado::LifecycleAudit { max_wrong_share: stated_share(args, "--audit-max-wrong-share")? },
     )?;
     outln!("Stado job: {}", job.job_id);
     outln!("model artifact: {}", job.output_uri);
@@ -184,7 +177,6 @@ pub(crate) fn cmd_humanizer_model(args: &Parsed) -> Result<i32> {
         &targets,
         args.text("--compute-target").unwrap_or_default(),
         &hf_repo,
-        stated_count(args, "--workers")?,
         stated_count(args, "--attempts")?,
         &training,
     )?;
@@ -226,8 +218,6 @@ pub(crate) fn cmd_lifecycle_audit(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),
         review_model,
-        std::num::NonZeroUsize::new(stated_count(args, "--workers")?)
-            .ok_or_else(|| Error("--workers must be positive".to_string()))?,
         stated_share(args, "--max-wrong-share")?,
     )?;
     outln!("{}", dumps(&result));

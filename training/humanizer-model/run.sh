@@ -3,7 +3,6 @@
 set -euo pipefail
 
 : "${HUMANIZER_HF_REPO:?Set HUMANIZER_HF_REPO to the private Hugging Face destination}"
-: "${HUMANIZER_WORKERS:?Set HUMANIZER_WORKERS to the parallel Brama calls humanizer-model was given}"
 : "${HUMANIZER_ATTEMPTS:?Set HUMANIZER_ATTEMPTS to the Brama attempts humanizer-model was given}"
 : "${HUMANIZER_STER_OPTIONS:?humanizer-model passes --ster-options as HUMANIZER_STER_OPTIONS}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -39,7 +38,7 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORK/cargo-target}"
 TRAINER=("$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release --)
 
 "${TRAINER[@]}" humanizer-prepare "$HUMANIZER_TARGETS" --output-dir "$WORK" \
-  --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS"
+  --attempts "$HUMANIZER_ATTEMPTS"
 # Ster trains the adapter on the prepared train split, exports it in the
 # vLLM/PEFT layout humanizer-publish publishes, and merges it into a
 # checkpoint so the evaluation asks the student exactly as served. A host
@@ -85,7 +84,7 @@ if [ ! -s "$HUMANIZER_PREDICTIONS" ]; then
     --base-model "$HUMANIZER_BASE_MODEL" --base-revision "$HUMANIZER_BASE_REVISION"
 fi
 "${TRAINER[@]}" humanizer-audit "$HUMANIZER_PREDICTIONS" --output "$HUMANIZER_AUDIT_OUTPUT" \
-  --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS"
+  --attempts "$HUMANIZER_ATTEMPTS"
 HF_BIN="$VENV/bin/hf" "${TRAINER[@]}" humanizer-publish "$HUMANIZER_MODEL_DIR" \
   --repo "$HUMANIZER_HF_REPO" --metrics "$HUMANIZER_METRICS" \
   --audit "$HUMANIZER_AUDIT_OUTPUT" --preparation "$HUMANIZER_PREPARATION" \

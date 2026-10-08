@@ -1,13 +1,13 @@
 use super::*;
 
 /// Submit the reviewed goal dataset to one exclusive Stado GPU target.
-/// `audit_workers` is the caller's count of parallel Brama calls for the job's
-/// final `goal-audit` and `ster_options` the `ster tune sft` settings it
-/// trains with; its quantized evaluation lets llama-server size itself.
+/// `ster_options` are the `ster tune sft` settings it trains with; its
+/// quantized evaluation lets llama-server size itself, and its final
+/// `goal-audit` sends as many calls at once as Brama measured the route to
+/// carry.
 pub fn execute_goal_model(
     dataset_path: &Path,
     compute_target: &str,
-    audit_workers: usize,
     ster_options: &str,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
@@ -29,7 +29,7 @@ pub fn execute_goal_model(
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{dataset_uri}' \"$work/reviewed-goals.jsonl\"; \
          export GOAL_MODEL_WORK_DIR=\"$work\"; export GOAL_STER_OPTIONS={}; \
-         GOAL_AUDIT_WORKERS={audit_workers} ./training/goal-model/run.sh \"$work/reviewed-goals.jsonl\"",
+         ./training/goal-model/run.sh \"$work/reviewed-goals.jsonl\"",
         shell_quote(&ster_options),
     );
     // The same data, settings and source revision is the same run: Stado
@@ -101,10 +101,10 @@ pub(crate) fn stated_ster_options(ster_options: &str) -> Result<String> {
     })
 }
 
-/// The final audit the lifecycle job runs: its Brama concurrency and the
-/// largest share of held-out decisions it may call wrong.
+/// The final audit the lifecycle job runs: the largest share of held-out
+/// decisions it may call wrong. Its concurrency is the route's allowance as
+/// Brama measures it.
 pub struct LifecycleAudit {
-    pub workers: usize,
     pub max_wrong_share: f64,
 }
 
@@ -157,10 +157,9 @@ pub fn execute_lifecycle_model(
          \"$stado\" storage get '{train_uri}' \"$work/reviewed-train.jsonl\"; \
          \"$stado\" storage get '{eval_uri}' \"$work/reviewed-eval.jsonl\"; \
          export BRAMA_URL={brama_url}; export LIFECYCLE_STER_OPTIONS={ster_options}; \
-         export LIFECYCLE_AUDIT_WORKERS={}; export LIFECYCLE_AUDIT_MAX_WRONG_SHARE={}; \
+         export LIFECYCLE_AUDIT_MAX_WRONG_SHARE={}; \
          ./training/lifecycle-model/run.sh \
          \"$work/reviewed-train.jsonl\" \"$work/reviewed-eval.jsonl\"",
-        audit.workers,
         audit.max_wrong_share,
     );
     let run_id = format!("oko-lifecycle-{run_key}-{source_ref}");
@@ -222,15 +221,14 @@ pub struct HumanizerTraining {
 }
 
 /// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
-/// `workers` and `attempts` are the caller's counts for the job's Brama
-/// preparation and audit and `training` how it trains the adapter; the job
-/// is refused without them. Its audit holds the adapter to the base it was
-/// trained from.
+/// `attempts` is the caller's count for the job's Brama preparation and audit
+/// (how many go at once is each route's allowance as Brama measures it) and
+/// `training` how it trains the adapter; the job is refused without them. Its
+/// audit holds the adapter to the base it was trained from.
 pub fn execute_humanizer_model(
     targets_path: &Path,
     compute_target: &str,
     hf_repo: &str,
-    workers: usize,
     attempts: usize,
     training: &HumanizerTraining,
 ) -> Result<GoalModelJob> {
@@ -265,7 +263,7 @@ pub fn execute_humanizer_model(
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{targets_uri}' \"$work/targets.jsonl\"; \
          HUMANIZER_HF_REPO={hf_repo} HUMANIZER_WORK_DIR=\"$work\" \
-         HUMANIZER_WORKERS={workers} HUMANIZER_ATTEMPTS={attempts} \
+         HUMANIZER_ATTEMPTS={attempts} \
          HUMANIZER_STER_OPTIONS={} \
          ./training/humanizer-model/run.sh \"$work/targets.jsonl\"",
         shell_quote(&ster_options),

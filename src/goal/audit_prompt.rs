@@ -59,11 +59,12 @@ pub(crate) fn write_audit_result(output: &Path, result: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Audit goal predictions with `review_model`, as many calls at once as Brama
+/// measured that route to carry.
 pub fn audit_predictions(
     input: &Path,
     output: &Path,
     review_model: &str,
-    workers: usize,
 ) -> Result<Value> {
     let source = fs::read_to_string(input)?;
     let input_sha256 = hex::encode(Sha256::digest(source.as_bytes()));
@@ -111,6 +112,7 @@ pub fn audit_predictions(
         .collect();
 
     let client = BramaClient::from_env()?;
+    let workers = client.allowance(review_model)?.get();
     let prediction_order: HashMap<&str, usize> = predictions
         .iter()
         .enumerate()

@@ -110,11 +110,11 @@ pub fn audit_outputs(
     predictions: &Path,
     output: &Path,
     model: &str,
-    workers: usize,
     attempts: usize,
 ) -> Result<Value> {
     let rows: Vec<Prediction> = read_jsonl(predictions)?;
     let client = BramaClient::from_env()?;
+    let workers = client.allowance(model)?.get();
     let outcomes = fan_out(&rows, workers, "audited", |row| {
         judge(row, &client, model, attempts)
     });

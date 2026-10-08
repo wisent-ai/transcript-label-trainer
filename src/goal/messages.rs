@@ -107,11 +107,13 @@ pub(crate) fn process_candidate(
     Ok(Some(candidate))
 }
 
+/// Curate the goal dataset. Each candidate is asked of the teacher and then
+/// reviewed, one after the other, so the calls at once are the smaller of the
+/// two routes' allowances as Brama measured them.
 pub fn build_dataset(
     output: &Path,
     limit: usize,
     teacher_model: Option<&str>,
-    workers: usize,
 ) -> Result<Value> {
     let teacher_model = teacher_model
         .filter(|value| !value.is_empty())
@@ -139,6 +141,7 @@ pub fn build_dataset(
     }
 
     let client = BramaClient::from_env()?;
+    let workers = client.allowance(teacher_model)?.min(client.allowance(CURATION_REVIEW_MODEL)?).get();
     let total = candidates.len();
     let processed = Arc::new(AtomicUsize::new(0));
     let indexed: Vec<Candidate> = candidates
