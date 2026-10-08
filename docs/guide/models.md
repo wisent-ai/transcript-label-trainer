@@ -70,14 +70,18 @@ Replace `TARGET` below with the registered Stado GPU target selected for trainin
 ```sh
 transcript-label-trainer goal-model \
   --compute-target TARGET \
-  --limit 1500 --workers N --audit-workers N \
+  --limit N --workers N --audit-workers N \
   --ster-options trl
 ```
 
 The command generates task and no-task labels with a Brama teacher, then requires
 two review passes through the pinned Brama reviewer before any row enters the
-dataset. It holds out reviewed OMP titles plus 32 teacher task rows and 32
-teacher no-task rows as gold, and submits the JSONL and exact trainer commit to
+dataset. It holds out reviewed OMP titles and, of the teacher's task rows and its
+no-task rows each, the share scikit-learn's
+[`train_test_split`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html)
+documents as its test size (0.25, rounded up so each class holds at least one out)
+as gold; a dataset without a held-out task row, a held-out no-task row and a
+training row is refused with its counts. It submits the JSONL and exact trainer commit to
 the named Stado target. The GPU host must have `ster` installed (`stado product
 install ster --surface cli`; without it the job stops at `ster: command not found`).
 There the reviewed teacher rows become `transcript-label-trainer goal-examples`: each

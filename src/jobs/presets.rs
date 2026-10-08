@@ -122,7 +122,7 @@ pub(crate) const EVAL_SPLIT_PRESET: &str = SCIKIT_LEARN;
 
 // train_test_split test_size: "If train_size is also None, it will be set to 0.25",
 // https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
-const TEST_SIZE: f64 = 0.25;
+pub(crate) const TEST_SIZE: f64 = 0.25;
 
 /// The holdout `eval_split: scikit-learn` states for the split named `name`.
 pub(crate) fn eval_split_preset(name: &str) -> EvalSplit {

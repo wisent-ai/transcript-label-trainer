@@ -159,10 +159,8 @@ pub fn build_dataset(
                     .cloned()
                     .map(|candidate| {
                         let outcome = process_candidate(candidate, &client, teacher_model);
-                        let done = progress.fetch_add(1, Ordering::Relaxed) + 1;
-                        if done % 100 == 0 || done == total {
-                            eprintln!("reviewed {done}/{total} goal candidates");
-                        }
+                        let done = progress.fetch_add(std::num::NonZeroUsize::MIN.get(), Ordering::Relaxed) + std::num::NonZeroUsize::MIN.get();
+                        eprintln!("reviewed {done}/{total} goal candidates");
                         outcome
                     })
                     .collect::<Vec<_>>()
@@ -191,25 +189,22 @@ pub fn build_dataset(
         .iter()
         .filter(|candidate| candidate.row.gold)
         .count();
-    let mut held_out_tasks = 0;
-    let mut held_out_no_tasks = 0;
-    for candidate in accepted.iter_mut().filter(|candidate| !candidate.row.gold) {
-        let selected = if candidate.row.goal.is_some() {
-            if held_out_tasks >= 32 {
-                false
-            } else {
-                held_out_tasks += 1;
-                true
-            }
-        } else if held_out_no_tasks >= 32 {
-            false
-        } else {
-            held_out_no_tasks += 1;
-            true
-        };
-        if selected {
-            candidate.row.gold = true;
+    // The teacher rows held out as gold: in each class (a task goal, or no
+    // task), the share scikit-learn's train_test_split documents as its test
+    // size, rounded up so a class with any row holds one out, taken in the
+    // candidates' order.
+    let mut tasks: Vec<usize> = Vec::new();
+    let mut no_tasks: Vec<usize> = Vec::new();
+    for (position, candidate) in accepted.iter().enumerate().filter(|(_, candidate)| !candidate.row.gold) {
+        match candidate.row.goal {
+            Some(_) => tasks.push(position),
+            None => no_tasks.push(position),
         }
+    }
+    let held_share = |class: &[usize]| (class.len() as f64 * crate::jobs::TEST_SIZE).ceil() as usize;
+    let (held_out_tasks, held_out_no_tasks) = (held_share(&tasks), held_share(&no_tasks));
+    for position in tasks.iter().take(held_out_tasks).chain(no_tasks.iter().take(held_out_no_tasks)) {
+        accepted[*position].row.gold = true;
     }
     accepted.retain(|candidate| candidate.row.goal.is_some() || candidate.row.gold);
     let gold_accepted = accepted
@@ -221,17 +216,17 @@ pub fn build_dataset(
         .iter()
         .filter(|candidate| candidate.row.goal.is_none())
         .count();
-    if source_gold_rows < 16
-        || held_out_tasks < 32
-        || held_out_no_tasks < 32
-        || teacher_accepted < 100
-    {
+    // The model must be scored on both answers and trained on something: a
+    // held-out task row, a held-out no-task row and a training row.
+    let empty = |count: usize| count.checked_sub(std::num::NonZeroUsize::MIN.get()).is_none();
+    if empty(held_out_tasks) || empty(held_out_no_tasks) || empty(teacher_accepted) {
         let rejected = total.saturating_sub(accepted.len() + failures.len());
         let first_failure = failures.first().map(String::as_str).unwrap_or("none");
         bail!(
-            "reviewed goal dataset is too small: {source_gold_rows} source gold, \
+            "reviewed goal dataset cannot be scored and trained: {source_gold_rows} source gold, \
              {held_out_tasks} teacher-task holdout, {held_out_no_tasks} no-task \
-             holdout, and {teacher_accepted} training rows; {rejected} rejected, \
+             holdout, and {teacher_accepted} training rows; a held-out task row, a held-out \
+             no-task row and a training row are required; {rejected} rejected, \
              {} failed; first failure: {first_failure}",
             failures.len()
         )
