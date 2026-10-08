@@ -23,7 +23,6 @@ pub(crate) const TOP_LEVEL_KEYS: &[&str] = &[
     "task",
     "evaluator",
     "model",
-    "min_labeled_sessions",
     "scope",
     "eval_split",
     "judge",
@@ -72,9 +71,6 @@ pub struct Job {
     pub task: String,
     pub evaluator: String,
     pub model: String,
-    /// The fewest labeled sessions the training side needs before a model is
-    /// fitted; the job states it, nothing here assumes one.
-    pub min_labeled_sessions: usize,
     pub scope: Scope,
     pub eval_split: EvalSplit,
     pub judge: Judge,

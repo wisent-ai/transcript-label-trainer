@@ -159,14 +159,12 @@ pub(crate) fn train_hf(
 
 /// Train one aspect from the command line with the backend settings the
 /// caller stated (`model_id` names the HuggingFace model a fine-tune starts
-/// from); `min_sessions` is the caller's floor of labeled sessions on the
-/// training side.
+/// from).
 pub fn train(
     aspect: &str,
     model_id: Option<&str>,
     training: &jobs::Training,
     eval_split: &Value,
-    min_sessions: usize,
 ) -> Result<Value, TrainFailure> {
     let eval_split: jobs::EvalSplit =
         serde_json::from_value(eval_split.clone()).map_err(Error::from)?;
@@ -178,7 +176,6 @@ pub fn train(
         aspect,
         eval_split,
         None,
-        min_sessions,
         None,
     )?;
     match (model_id, training) {

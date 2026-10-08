@@ -77,24 +77,16 @@ pub struct Resolved {
 /// Preselected label records joined with their lake text.
 ///
 /// `subject` names the selection in error messages ("aspect 'topic'" for
-/// train, "job 'topic-v1' (…)" for run), and `min_sessions` is the caller's
-/// stated floor of labeled sessions. Returns the rows that survived, in
-/// selection order, plus the per-value counts. Fails with the exact numbers
-/// when the selection cannot be trained.
+/// train, "job 'topic-v1' (…)" for run). Returns the rows that survived, in
+/// selection order, plus the per-value counts. A classifier needs two
+/// distinct values to tell apart and nothing more; no session count is
+/// chosen, so the selection fails, with its exact numbers, only when fewer
+/// than two values survive.
 pub(crate) fn frame_from_labels(
     labels: &[lake::SessionLabel],
     subject: &str,
     min_text_chars: Option<u64>,
-    min_sessions: usize,
 ) -> Result<(Vec<lake::SessionLabel>, BTreeMap<String, usize>), TrainFailure> {
-    let n_labeled = labels.len();
-    if n_labeled < min_sessions {
-        return Err(not_enough(format!(
-            "{subject} has {n_labeled} labeled session(s); at least \
-             {min_sessions} are required to train. Add labels with \
-             'transcript-lake label add' and retry."
-        )));
-    }
     let ids: Vec<String> = labels.iter().map(|l| l.session_id.clone()).collect();
     let texts_by_id = lake::session_texts(&ids)?;
 
@@ -133,12 +125,11 @@ pub(crate) fn frame_from_labels(
     }
 
     let counts = class_counts(rows.iter().map(|r| r.value.as_str()));
-    if rows.len() < min_sessions || !at_least_two(counts.keys()) {
+    if !at_least_two(counts.keys()) {
         return Err(not_enough(format!(
             "{subject} has {} usable labeled session(s) across {} distinct \
-             value(s); at least {min_sessions} sessions and two distinct \
-             values are required to train. Add labels with 'transcript-lake \
-             label add' and retry.",
+             value(s); two distinct values are required to train. Add labels \
+             with 'transcript-lake label add' and retry.",
             rows.len(),
             counts.len()
         )));
@@ -164,14 +155,12 @@ pub(crate) fn build_plan(
     out_name: &str,
     eval_split: jobs::EvalSplit,
     min_text_chars: Option<u64>,
-    min_sessions: usize,
     job_meta: Option<Value>,
 ) -> Result<Plan, TrainFailure> {
-    let (rows, _counts) = frame_from_labels(labels, subject, min_text_chars, min_sessions)?;
+    let (rows, _counts) = frame_from_labels(labels, subject, min_text_chars)?;
     let request = evaluate::SplitRequest {
         name: out_name,
         eval_split: &eval_split,
-        min_labeled_sessions: min_sessions,
     };
     let split = evaluate::resolve_split(&request, &rows, subject)?;
     Ok(Plan {

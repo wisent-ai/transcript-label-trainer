@@ -234,7 +234,6 @@ trainButton.addEventListener("click", async () => {
     : { fraction: Number(value("train-fraction")), seed: Number(value("train-seed")) };
   const body = {
     aspect: value("train-aspect"),
-    min_labeled_sessions: Number(value("train-min-sessions")),
     model: backendSelect.value === "huggingface" ? value("train-model-id") : backendSelect.value,
     eval_split: evalSplit,
     training,

@@ -34,7 +34,7 @@ back from the artifact. A base model whose `config.json` states no
 `initializer_range` or classifier dropout is refused rather than given one.
 
 ```sh
-transcript-label-trainer train --aspect topic --min-labeled-sessions N \
+transcript-label-trainer train --aspect topic \
   --model distilbert-base-multilingual-cased \
   --epochs E --batch-size B --learning-rate LR --max-length TOKENS \
   --seed S --weight-decay W --max-grad-norm G --in-training-eval-share F \
@@ -51,7 +51,7 @@ decrease a line-search step must achieve) and `--max-backtracks` (line-search
 candidates tried before a step is abandoned).
 
 ```sh
-transcript-label-trainer train --aspect topic --min-labeled-sessions N \
+transcript-label-trainer train --aspect topic \
   --ngram-max N --lowercase B --sublinear-tf B --smooth-idf B \
   --min-df F --max-df F --c F --max-iter N --tol F --lbfgs-memory N \
   --armijo-c1 F --max-backtracks N \
@@ -124,7 +124,6 @@ name: topic-v1
 task: classify the primary topic of the session
 evaluator: manual
 model: tfidf-logreg
-min_labeled_sessions: N            # required: fewest labeled sessions on the training side
 scope:
   aspect: topic
   runtimes: [claude, codex, kimi]  # optional; default is all runtimes
@@ -201,10 +200,10 @@ What "frozen" buys you, and what it costs:
   per class, shuffled by `seed` (and the class name, so labeling one class more
   does not reshuffle the others). No class is ever emptied into the holdout,
   and any class with two or more sessions contributes at least one.
-- **It costs training data.** The floor you state (`min_labeled_sessions` in
-  the job, `--min-labeled-sessions` for `train`) and two distinct values apply
-  to the *training* side, so the holdout comes on top of it. Too few and the
-  run fails with the exact numbers and says how to disable the split.
+- **It costs training data.** Training needs two distinct values on the
+  *training* side, so the holdout comes on top of that; no session count is
+  set. Too few and the run fails with the exact numbers and says how to
+  disable the split.
 - **If the spec's fraction or seed later disagrees with the file, the file
   wins** and the run says so on stderr. That is what frozen means; delete the
   file by hand if you truly want a different holdout, and accept that the
@@ -265,7 +264,6 @@ Rules, mirroring `autolabel`:
   uses. There is no second credential route.
 
 `train` takes the same split as flags: `--eval-split-fraction` and
-`--eval-split-seed` are required unless `--no-eval-split` is given, and
-`--min-labeled-sessions N` is always required. `evaluate <aspect>` then scores
-it the same way.
+`--eval-split-seed` are required unless `--no-eval-split` is given.
+`evaluate <aspect>` then scores it the same way.
 

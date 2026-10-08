@@ -33,7 +33,6 @@ pub fn prepare_job(job: &jobs::Job, resolved: &Resolved) -> Result<Plan, TrainFa
     job_meta.insert("name".to_string(), json!(job.name));
     job_meta.insert("task".to_string(), json!(job.task));
     job_meta.insert("evaluator".to_string(), json!(job.evaluator));
-    job_meta.insert("min_labeled_sessions".to_string(), json!(job.min_labeled_sessions));
     job_meta.insert("scope".to_string(), job_scope_json(&job.scope));
     job_meta.insert(
         "eval_split".to_string(),
@@ -51,7 +50,6 @@ pub fn prepare_job(job: &jobs::Job, resolved: &Resolved) -> Result<Plan, TrainFa
         &job.name,
         job.eval_split.clone(),
         job.scope.min_text_chars,
-        job.min_labeled_sessions,
         Some(Value::Object(job_meta)),
     )
 }

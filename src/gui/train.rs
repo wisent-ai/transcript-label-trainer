@@ -1,7 +1,7 @@
 //! The window's `train`: POST /api/train with what `train` takes —
-//! `aspect`, `min_labeled_sessions`, `model` (`tfidf-logreg` or a HuggingFace
-//! model id), `eval_split` ({fraction, seed} or false) and `training`, the
-//! backend's settings as the text a person typed for each key. The holdout is
+//! `aspect`, `model` (`tfidf-logreg` or a HuggingFace model id),
+//! `eval_split` ({fraction, seed} or false) and `training`, the backend's
+//! settings as the text a person typed for each key. The holdout is
 //! checked by the validator `run` uses, the settings by the reader behind
 //! `train`'s flags, and the run is `model::train`, the implementation behind
 //! `train`. Guarded like the upload (session token and the listener's exact
@@ -53,11 +53,6 @@ fn run(raw: &str) -> std::result::Result<Value, (bool, String)> {
     let backend = text("model").map_err(|_| {
         refused(format!("model is required: {} or a HuggingFace model id", jobs::SKLEARN_MODEL))
     })?;
-    let min_sessions = jobs::get(&body, "min_labeled_sessions")
-        .and_then(serde_yaml::Value::as_u64)
-        .and_then(|value| usize::try_from(value).ok())
-        .and_then(std::num::NonZeroUsize::new)
-        .ok_or_else(|| refused("min_labeled_sessions is required: a positive whole number".to_string()))?;
     let eval_split = jobs::eval_split(&body).map_err(|error| refused(error.to_string()))?;
     let settings = match jobs::get(&body, "training") {
         Some(serde_yaml::Value::Mapping(settings)) => settings,
@@ -70,7 +65,7 @@ fn run(raw: &str) -> std::result::Result<Value, (bool, String)> {
     let training = jobs::training_from_flags(backend, typed).map_err(|error| refused(error.to_string()))?;
     let eval_split = serde_json::to_value(&eval_split).map_err(|error| refused(error.to_string()))?;
     let model_id = (backend != jobs::SKLEARN_MODEL).then_some(backend);
-    model::train(aspect, model_id, &training, &eval_split, min_sessions.get()).map_err(|failure| {
+    model::train(aspect, model_id, &training, &eval_split).map_err(|failure| {
         let not_enough_data = matches!(failure, crate::util::TrainFailure::NotEnoughData(_));
         (not_enough_data, failure.to_string())
     })

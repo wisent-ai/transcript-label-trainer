@@ -209,7 +209,7 @@ pub fn discover(
                     "transcript-label-trainer autolabel --aspect {aspect} --values {values_csv} --best"
                 ),
                 format!(
-                    "transcript-label-trainer train --aspect {aspect} --min-labeled-sessions N \
+                    "transcript-label-trainer train --aspect {aspect} \
                      --training scikit-learn --eval-split-fraction F --eval-split-seed N"
                 ),
             ]),

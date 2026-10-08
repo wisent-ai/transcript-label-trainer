@@ -1,9 +1,8 @@
 use super::*;
 
 /// HF fine-tuning needs two sessions per class on the training side so the
-/// stratified in-training split keeps every class on both sides. The floor of
-/// labeled sessions overall is the caller's (`--min-labeled-sessions` or the
-/// job's `min_labeled_sessions`); this one is the HF path's own.
+/// stratified in-training split keeps every class on both sides: a class with
+/// one session cannot sit on both sides of a split.
 pub(crate) const MIN_PER_CLASS: usize = 2;
 
 /// Training decays the learning rate linearly to zero with no warmup; the

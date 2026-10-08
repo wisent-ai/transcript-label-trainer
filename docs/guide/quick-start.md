@@ -78,7 +78,7 @@ yours to state: `--eval-split-fraction` (a share between 0 and 1) and
 `--eval-split-seed`, or `--no-eval-split` to train on every labeled session.
 
 ```sh
-transcript-label-trainer train --aspect reviewed --min-labeled-sessions N \
+transcript-label-trainer train --aspect reviewed \
   --training scikit-learn \
   --eval-split-fraction F --eval-split-seed N
 ```
@@ -87,10 +87,9 @@ transcript-label-trainer train --aspect reviewed --min-labeled-sessions N \
 scikit-learn's and SciPy's documented defaults; the training guide lists each
 value and its source, and every setting can be stated by its own flag instead.
 
-With too few labeled sessions this fails cleanly, stating the minimum and the
-actual count — that is correct behavior, not a crash. The minimum is the
-`--min-labeled-sessions` you state, across at least two distinct values *on the
-training side*, so the holdout you state comes on top of that.
+With fewer than two distinct values on the training side this fails cleanly,
+stating the counts — that is correct behavior, not a crash. The holdout you
+state comes out of the labeled sessions first.
 
 Emit suggestions for sessions that have no label on that aspect yet:
 

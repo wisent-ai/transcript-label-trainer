@@ -1,11 +1,10 @@
 use super::*;
 
-/// What a split is resolved for: the artifact directory's name, the stated
-/// holdout, and the stated floor of labeled sessions on the training side.
+/// What a split is resolved for: the artifact directory's name and the
+/// stated holdout.
 pub struct SplitRequest<'a> {
     pub name: &'a str,
     pub eval_split: &'a jobs::EvalSplit,
-    pub min_labeled_sessions: usize,
 }
 
 /// Load or create the frozen holdout for this artifact directory.
@@ -93,20 +92,19 @@ pub fn resolve_split(
         .iter()
         .map(|index| values[*index].as_str())
         .collect();
-    if train_index.len() < job.min_labeled_sessions || !model::at_least_two(train_values.iter()) {
+    if !model::at_least_two(train_values.iter()) {
         return Err(TrainFailure::NotEnoughData(format!(
             "{subject} has {total} usable labeled session(s), of which {} are held \
              out by the frozen evaluation split (fraction={}, seed={}), leaving {} \
-             session(s) across {} distinct value(s) to train on; at least {} \
-             sessions and two distinct values are required. Add labels with \
-             'transcript-lake label add', or set 'eval_split: false' in the job \
-             spec to train on every labeled session.",
+             session(s) across {} distinct value(s) to train on; two distinct \
+             values are required. Add labels with 'transcript-lake label add', or \
+             set 'eval_split: false' in the job spec to train on every labeled \
+             session.",
             holdout_index.len(),
             opt_float(fraction),
             opt_int(seed),
             train_index.len(),
             train_values.len(),
-            job.min_labeled_sessions,
         )));
     }
 

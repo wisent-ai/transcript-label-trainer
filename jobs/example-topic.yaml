@@ -10,10 +10,9 @@
 #   the SCOPE of training data     -> scope (aspect plus optional filters)
 #   the TASK                       -> task (free text stored with the artifacts)
 #
-# eval_split and min_labeled_sessions are required and have no default: state
-# the holdout share and seed (or `eval_split: false`) and the fewest labeled
-# sessions the training side needs. judge is on unless the spec says
-# `judge: false`.
+# eval_split is required and has no default: state the holdout share and seed
+# (or `eval_split: false`). Training needs two distinct values on the training
+# side and no session count. judge is on unless the spec says `judge: false`.
 # training is required too: tfidf-logreg states ngram_max, lowercase,
 # sublinear_tf, smooth_idf, min_df, max_df, c, max_iter, tol, lbfgs_memory,
 # armijo_c1 and max_backtracks, or names a preset that states them all with
@@ -31,10 +30,6 @@ name: topic-v1
 task: classify the primary topic of the session
 evaluator: manual
 model: tfidf-logreg
-# The fewest labeled sessions the training side needs before a model is
-# fitted, after the holdout is taken out. Yours to state; the trainer refuses
-# this file until it is filled in.
-min_labeled_sessions:
 scope:
   aspect: topic
   # Optional filters, all unset here so the job trains on everything the
