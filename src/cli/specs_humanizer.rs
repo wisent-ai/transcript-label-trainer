@@ -1,36 +1,5 @@
 use super::*;
 
-/// How often one question is asked; how many go at once is the route's
-/// allowance, which Brama measures.
-fn count_options() -> Vec<Opt> {
-    vec![required(
-        "--attempts",
-        "N",
-        Kind::Int,
-        "times one question is asked before its row is given up".to_string(),
-    )]
-}
-
-/// One stated bound: any finite number, refused by its flag's name when
-/// missing or not finite.
-fn stated_bound(args: &Parsed, flag: &str) -> Result<f64> {
-    match args.float(flag) {
-        Some(value) if value.is_finite() => Ok(value),
-        Some(value) => Err(Error(format!("{flag} must be a finite number, not {value}"))),
-        None => Err(Error(format!("{flag} is required: this command assumes no value for it"))),
-    }
-}
-
-/// One stated share between none and all, refused by its flag's name when
-/// missing or outside that range; the sign of a positive share is one.
-pub(crate) fn stated_share(args: &Parsed, flag: &str) -> Result<f64> {
-    let value = stated_bound(args, flag)?;
-    match !value.is_sign_negative() && value <= value.signum() {
-        true => Ok(value),
-        false => Err(Error(format!("{flag} must be a share from none to all of the text, not {value}"))),
-    }
-}
-
 pub(crate) fn humanizer_specs() -> Vec<Spec> {
     let teacher = brama::DEFAULT_MODEL;
     let best = brama::BEST_MODEL;
@@ -69,10 +38,7 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
                 Kind::Text,
                 format!("Brama route that reviews every pair (default: {best})"),
             ),
-        ]
-        .into_iter()
-        .chain(count_options())
-        .collect(),
+        ],
     };
     let audit = Spec {
         name: "humanizer-audit",
@@ -81,8 +47,8 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
             "Judge every held-out case for semantic fidelity, voice match and AI boilerplate \
              for both the base model and the trained adapter, write the complete record, and \
              exit 1 unless the adapter beats the base: higher voice match, semantic fidelity \
-             and pass rate no lower, AI boilerplate rate no higher. Any case the judge cannot \
-             answer fails the audit."
+             and pass rate no lower, AI boilerplate rate no higher. Each case is asked once; \
+             any case the judge cannot answer fails the audit."
                 .to_string(),
         ),
         positionals: vec![Positional {
@@ -102,10 +68,7 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
                 Kind::Text,
                 format!("Brama route of the independent judge (default: {best})"),
             ),
-        ]
-        .into_iter()
-        .chain(count_options())
-        .collect(),
+        ],
     };
     let publish = Spec {
         name: "humanizer-publish",
@@ -139,7 +102,6 @@ pub(crate) fn cmd_humanizer_prepare(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.text("--output-dir").unwrap_or_default()),
         teacher,
         reviewer,
-        stated_count(args, "--attempts")?,
     )?;
     outln!("{}", dumps(&report));
     Ok(0)
@@ -151,7 +113,6 @@ pub(crate) fn cmd_humanizer_audit(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),
         judge,
-        stated_count(args, "--attempts")?,
     )?;
     outln!("{}", dumps(&summary));
     Ok(i32::from(

@@ -161,23 +161,12 @@ pub(crate) fn cmd_humanizer_model(args: &Parsed) -> Result<i32> {
     std::fs::create_dir_all(&root)?;
     let stamp = crate::util::now_iso().replace([':', '-'], "");
     let targets = root.join(format!("lukasz-targets-{stamp}.jsonl"));
-    let bounds = crate::humanizer::CorpusBounds {
-        limit: stated_count(args, "--limit")?,
-        minimum: stated_count(args, "--min-targets")?,
-        max_per_session: stated_count(args, "--max-per-session")?,
-        min_chars: stated_count(args, "--min-target-chars")?,
-        max_chars: stated_count(args, "--max-target-chars")?,
-        max_lines: stated_count(args, "--max-target-lines")?,
-        min_words: stated_count(args, "--min-target-words")?,
-        min_meaningful_share: crate::cli::specs_humanizer::stated_share(args, "--min-meaningful-share")?,
-    };
-    let summary = crate::humanizer::export_targets(&targets, &bounds)?;
+    let summary = crate::humanizer::export_targets(&targets)?;
     outln!("{}", dumps(&summary));
     let job = stado::execute_humanizer_model(
         &targets,
         args.text("--compute-target").unwrap_or_default(),
         &hf_repo,
-        stated_count(args, "--attempts")?,
         &training,
     )?;
     outln!("Stado job: {}", job.job_id);

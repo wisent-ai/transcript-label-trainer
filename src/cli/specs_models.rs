@@ -248,61 +248,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 "canonical Stado GPU target that curates, trains, audits, and publishes the model"
                     .to_string(),
             ),
-            required(
-                "--limit",
-                "LIMIT",
-                Kind::Int,
-                "most clean authored targets the corpus takes".to_string(),
-            ),
-            required(
-                "--min-targets",
-                "N",
-                Kind::Int,
-                "fewest clean authored targets the corpus must reach; fewer refuses the export".to_string(),
-            ),
-            required(
-                "--max-per-session",
-                "N",
-                Kind::Int,
-                "most targets one session may contribute".to_string(),
-            ),
-            required(
-                "--min-target-chars",
-                "N",
-                Kind::Int,
-                "fewest characters an authored target may have".to_string(),
-            ),
-            required(
-                "--max-target-chars",
-                "N",
-                Kind::Int,
-                "most characters an authored target may have".to_string(),
-            ),
-            required(
-                "--max-target-lines",
-                "N",
-                Kind::Int,
-                "most lines an authored target may have".to_string(),
-            ),
-            required(
-                "--min-target-words",
-                "N",
-                Kind::Int,
-                "fewest words holding a letter an authored target needs".to_string(),
-            ),
-            required(
-                "--min-meaningful-share",
-                "F",
-                Kind::Float,
-                "smallest share of an authored target's characters that are letters, digits or spaces"
-                    .to_string(),
-            ),
-            required(
-                "--attempts",
-                "N",
-                Kind::Int,
-                "times the job asks one Brama question before its row is given up".to_string(),
-            ),
         ]
         .into_iter()
         .chain(super::specs_humanizer_served::training_options())

@@ -36,7 +36,7 @@ impl Split {
     }
 }
 
-const REVIEW_FIELDS: [&str; 4] = ["faithful", "generic_ai", "same_language", "usable"];
+const REVIEW_FIELDS: &[&str] = &["authored", "faithful", "generic_ai", "same_language", "usable"];
 
 fn parse_review(answer: &str) -> Result<serde_json::Map<String, Value>> {
     let review = json_object(answer, "review")?;
@@ -69,11 +69,10 @@ fn pair(
     client: &BramaClient,
     teacher: &str,
     reviewer: &str,
-    attempts: usize,
 ) -> Result<Value, String> {
     let target = row.target.trim();
     let excerpt = |error: Error| format!("error:{}", error.0);
-    let source = ask(client, teacher, attempts, TEACHER_PROMPT, target.to_string(), |answer| {
+    let source = ask(client, teacher, TEACHER_PROMPT, target.to_string(), |answer| {
         Ok(answer.to_string())
     })
     .map_err(excerpt)?;
@@ -81,7 +80,7 @@ fn pair(
         return Err("source_contract".to_string());
     }
     let question = json!({"source": source, "target": target}).to_string();
-    let review = ask(client, reviewer, attempts, REVIEW_PROMPT, question, parse_review)
+    let review = ask(client, reviewer, REVIEW_PROMPT, question, parse_review)
         .map_err(excerpt)?;
     if review.get("usable") != Some(&Value::Bool(true)) {
         return Err("review_rejected".to_string());
@@ -121,7 +120,6 @@ pub fn prepare_dataset(
     output_dir: &Path,
     teacher: &str,
     reviewer: &str,
-    attempts: usize,
 ) -> Result<Value> {
     let bytes = fs::read(input)
         .map_err(|error| Error(format!("cannot read {}: {error}", input.display())))?;
@@ -131,7 +129,7 @@ pub fn prepare_dataset(
     // other, so the calls at once are the smaller of the two allowances.
     let workers = client.allowance(teacher)?.min(client.allowance(reviewer)?).get();
     let outcomes = fan_out(&targets, workers, "prepared", |row| {
-        pair(row, &client, teacher, reviewer, attempts)
+        pair(row, &client, teacher, reviewer)
     });
     let mut accepted = Vec::new();
     let mut rejected: BTreeMap<String, usize> = BTreeMap::new();

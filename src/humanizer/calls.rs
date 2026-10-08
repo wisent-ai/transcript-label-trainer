@@ -1,6 +1,6 @@
-//! What preparation and audit share: reading JSONL, asking Brama as many
-//! times as the caller states, pulling the JSON object out of an answer, and
-//! fanning rows out over worker threads while reporting progress.
+//! What preparation and audit share: reading JSONL, asking Brama one
+//! question, pulling the JSON object out of an answer, and fanning rows out
+//! over worker threads while reporting progress.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -53,13 +53,12 @@ pub(crate) fn json_object(answer: &str, what: &str) -> Result<serde_json::Map<St
     }
 }
 
-/// Ask `model` once per attempt, `attempts` times at most, until `accept`
-/// takes the answer. The count is the caller's (`--attempts`); a row that
-/// fails every attempt is counted with its last error, never dropped silently.
+/// Ask `model` once and hand the answer to `accept`. No retry count is
+/// stated, so none is made: a failed or unacceptable answer is the row's
+/// error, counted with its reason, never dropped silently.
 pub(crate) fn ask<T>(
     client: &BramaClient,
     model: &str,
-    attempts: usize,
     system: &str,
     user: String,
     accept: impl Fn(&str) -> Result<T>,
@@ -68,19 +67,11 @@ pub(crate) fn ask<T>(
         Message::new("system", system.to_string()),
         Message::new("user", user),
     ];
-    let mut last = Error(format!("{model} was never asked"));
-    for _ in 0..attempts {
-        let answer = client.chat(model, &messages);
-        let answer = answer.and_then(|content| match content.is_empty() {
-            true => Err(Error("Brama returned empty content".to_string())),
-            false => Ok(content),
-        });
-        match answer.and_then(|content| accept(&content)) {
-            Ok(value) => return Ok(value),
-            Err(error) => last = error,
-        }
+    let content = client.chat(model, &messages)?;
+    if content.is_empty() {
+        return Err(Error(format!("{model} returned empty content")));
     }
-    Err(last)
+    accept(&content)
 }
 
 /// `work` applied to every row on `workers` threads, results in row order.

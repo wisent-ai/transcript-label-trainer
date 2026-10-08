@@ -221,15 +221,13 @@ pub struct HumanizerTraining {
 }
 
 /// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
-/// `attempts` is the caller's count for the job's Brama preparation and audit
-/// (how many go at once is each route's allowance as Brama measures it) and
-/// `training` how it trains the adapter; the job is refused without them. Its
-/// audit holds the adapter to the base it was trained from.
+/// `training` is how it trains the adapter; the job's Brama preparation and
+/// audit ask each question once, as many at a time as each route's measured
+/// allowance. Its audit holds the adapter to the base it was trained from.
 pub fn execute_humanizer_model(
     targets_path: &Path,
     compute_target: &str,
     hf_repo: &str,
-    attempts: usize,
     training: &HumanizerTraining,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
@@ -263,7 +261,6 @@ pub fn execute_humanizer_model(
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{targets_uri}' \"$work/targets.jsonl\"; \
          HUMANIZER_HF_REPO={hf_repo} HUMANIZER_WORK_DIR=\"$work\" \
-         HUMANIZER_ATTEMPTS={attempts} \
          HUMANIZER_STER_OPTIONS={} \
          ./training/humanizer-model/run.sh \"$work/targets.jsonl\"",
         shell_quote(&ster_options),
