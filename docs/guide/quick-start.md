@@ -79,11 +79,13 @@ yours to state: `--eval-split-fraction` (a share between 0 and 1) and
 
 ```sh
 transcript-label-trainer train --aspect reviewed --min-labeled-sessions N \
-  --ngram-max N --lowercase B --sublinear-tf B --smooth-idf B \
-  --min-df F --max-df F --c F --max-iter N --tol F --lbfgs-memory N \
-  --armijo-c1 F --backtrack F --max-backtracks N --cv-seed N \
+  --training scikit-learn \
   --eval-split-fraction F --eval-split-seed N
 ```
+
+`--training scikit-learn` states every TF-IDF and solver setting from
+scikit-learn's and SciPy's documented defaults; the training guide lists each
+value and its source, and every setting can be stated by its own flag instead.
 
 With too few labeled sessions this fails cleanly, stating the minimum and the
 actual count — that is correct behavior, not a crash. The minimum is the

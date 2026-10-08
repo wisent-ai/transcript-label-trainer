@@ -108,6 +108,7 @@ async function refresh() {
     showPlacement(payload.placement);
     showRetained(payload.corpus);
     trainingKeys = payload.training_keys;
+    trainingPresets = payload.training_presets;
     showTrainingFields();
   } catch (error) {
     statusLine.dataset.kind = "error";
@@ -175,6 +176,29 @@ const trainButton = document.getElementById("train-button");
 const trainStatus = document.getElementById("train-status");
 const trainMetrics = document.getElementById("train-metrics");
 let trainingKeys = {};
+let trainingPresets = {};
+const presetsBox = document.getElementById("train-presets");
+
+// One button per preset of the chosen backend: it types the preset's
+// documented values into the fields, which are then sent like typed ones.
+function showPresetButtons() {
+  presetsBox.replaceChildren();
+  const presets = trainingPresets[backendSelect.value];
+  if (presets === null || typeof presets !== "object") return;
+  for (const [name, settings] of Object.entries(presets)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `Fill with ${name}'s documented defaults`;
+    button.addEventListener("click", () => {
+      settingsBox.querySelectorAll("input[data-key]").forEach((input) => {
+        if (Object.hasOwn(settings, input.dataset.key)) input.value = String(settings[input.dataset.key]);
+      });
+      trainStatus.dataset.kind = "";
+      trainStatus.textContent = `Settings filled from ${name}'s documentation; each stays editable.`;
+    });
+    presetsBox.append(button);
+  }
+}
 
 function showTrainingFields() {
   const fine = backendSelect.value === "huggingface";
@@ -194,6 +218,7 @@ function showTrainingFields() {
     label.append(key, " ", input);
     settingsBox.append(label);
   }
+  showPresetButtons();
 }
 
 backendSelect.addEventListener("change", showTrainingFields);

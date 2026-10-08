@@ -16,9 +16,10 @@
 # `judge: false`.
 # training is required too: tfidf-logreg states ngram_max, lowercase,
 # sublinear_tf, smooth_idf, min_df, max_df, c, max_iter, tol, lbfgs_memory,
-# armijo_c1, backtrack, max_backtracks and cv_seed; a HuggingFace model states
-# epochs, batch_size, learning_rate, max_length, seed, weight_decay,
-# max_grad_norm and in_training_eval_share.
+# armijo_c1 and max_backtracks, or names a preset that states them all with
+# vendor citations (scikit-learn); a HuggingFace model states epochs,
+# batch_size, learning_rate, max_length, seed, weight_decay, max_grad_norm and
+# in_training_eval_share.
 #
 # Run it with:  transcript-label-trainer run jobs/example-topic.yaml
 # Run it on a Stado target with:
@@ -63,20 +64,8 @@ eval_split:
 judge:
   model: best
 
-# The tfidf-logreg settings. Every one is yours to state; the trainer refuses
-# this file until each is filled in and records them in metrics.json.
-training:
-  ngram_max:
-  lowercase:
-  sublinear_tf:
-  smooth_idf:
-  min_df:
-  max_df:
-  c:
-  max_iter:
-  tol:
-  lbfgs_memory:
-  armijo_c1:
-  backtrack:
-  max_backtracks:
-  cv_seed:
+# The tfidf-logreg settings: scikit-learn's documented defaults for
+# TfidfVectorizer and LogisticRegression(solver="lbfgs"), with SciPy's
+# L-BFGS-B memory and Armijo constant. Each value and its document are listed
+# in docs/guide/training.md; metrics.json records them.
+training: scikit-learn

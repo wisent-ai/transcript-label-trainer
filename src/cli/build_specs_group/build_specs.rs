@@ -55,6 +55,16 @@ fn training_specs() -> Vec<Spec> {
         hf("--weight-decay", "AdamW weight decay, zero or more"),
         hf("--max-grad-norm", "global gradient norm clip, above zero"),
         hf("--in-training-eval-share", "share of the training side sliced off to watch the loss"),
+            option(
+                "--training",
+                "PRESET",
+                Kind::Text,
+                "state every tfidf-logreg setting at once from a preset whose values cite \
+                 their vendor documentation: scikit-learn (the documented defaults of \
+                 TfidfVectorizer, LogisticRegression and SciPy's L-BFGS-B); refused beside \
+                 any single setting flag"
+                    .to_string(),
+            ),
         tfidf("--ngram-max", "longest word n-gram counted"),
         tfidf("--lowercase", "true or false: lowercase text before counting"),
         tfidf("--sublinear-tf", "true or false: term frequency as one plus its logarithm"),
@@ -66,9 +76,7 @@ fn training_specs() -> Vec<Spec> {
         tfidf("--tol", "the solver stops once no gradient component exceeds this"),
         tfidf("--lbfgs-memory", "correction pairs the solver keeps"),
         tfidf("--armijo-c1", "share of the predicted decrease a step must achieve"),
-        tfidf("--backtrack", "share a rejected step is shrunk to"),
-        tfidf("--max-backtracks", "shrinks tried before a step is abandoned"),
-        tfidf("--cv-seed", "seed of each class's cross-validation shuffle"),
+        tfidf("--max-backtracks", "line-search candidates tried before a step is abandoned"),
             option(
                 "--eval-split-fraction",
                 "F",
@@ -112,8 +120,8 @@ fn training_specs() -> Vec<Spec> {
              (required, a positive integer) is the fewest labeled sessions the training \
              side needs before a model is fitted. 'training' is required: for \
              tfidf-logreg ngram_max, lowercase, sublinear_tf, smooth_idf, min_df, max_df, \
-             c, max_iter, tol, lbfgs_memory, armijo_c1, backtrack, max_backtracks and \
-             cv_seed; for a HuggingFace 'model' epochs, batch_size, learning_rate, \
+             c, max_iter, tol, lbfgs_memory, armijo_c1 and max_backtracks; for a \
+             HuggingFace 'model' epochs, batch_size, learning_rate, \
              max_length, seed, weight_decay, max_grad_norm and in_training_eval_share. \
              'judge' (model: {teacher}) names the Brama-routed \
              teacher that 'evaluate' asks for a verdict; 'judge: false' skips it. run \

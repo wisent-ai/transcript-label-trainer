@@ -46,17 +46,37 @@ n-gram), `--lowercase`, `--sublinear-tf` and `--smooth-idf` (each `true` or
 `false`), `--min-df` (terms in fewer documents are dropped), `--max-df` (terms
 in more than this share of documents are dropped), `--c` (inverse L2 strength),
 `--max-iter`, `--tol` (the solver stops once no gradient component exceeds it),
-`--lbfgs-memory` (correction pairs kept), `--armijo-c1` and `--backtrack`
-(line-search shares), `--max-backtracks` and `--cv-seed` (cross-validation
-shuffle).
+`--lbfgs-memory` (correction pairs kept), `--armijo-c1` (share of the predicted
+decrease a line-search step must achieve) and `--max-backtracks` (line-search
+candidates tried before a step is abandoned).
 
 ```sh
 transcript-label-trainer train --aspect topic --min-labeled-sessions N \
   --ngram-max N --lowercase B --sublinear-tf B --smooth-idf B \
   --min-df F --max-df F --c F --max-iter N --tol F --lbfgs-memory N \
-  --armijo-c1 F --backtrack F --max-backtracks N --cv-seed N \
+  --armijo-c1 F --max-backtracks N \
   --eval-split-fraction F --eval-split-seed N
 ```
+
+Or state them all at once with `--training scikit-learn` (refused beside any
+single setting flag, and for a HuggingFace model). The preset is the
+documented defaults of the libraries this backend reproduces:
+
+| setting | value | source |
+|---|---|---|
+| `ngram_max`, `lowercase`, `sublinear_tf`, `smooth_idf`, `min_df`, `max_df` | 1, true, false, true, 1, 1.0 | [TfidfVectorizer](https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.text.TfidfVectorizer.html) `ngram_range=(1, 1)`, `lowercase=True`, `sublinear_tf=False`, `smooth_idf=True`, `min_df=1`, `max_df=1.0` |
+| `c`, `max_iter`, `tol` | 1.0, 100, 1e-4 | [LogisticRegression](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html) `C=1.0`, `max_iter=100`, `tol=1e-4` |
+| `max_backtracks` | 50 | the `"maxls": 50` LogisticRegression hands L-BFGS-B ([source](https://github.com/scikit-learn/scikit-learn/blob/main/sklearn/linear_model/_logistic.py)) |
+| `lbfgs_memory` | 10 | [SciPy L-BFGS-B](https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html) `maxcor=10` |
+| `armijo_c1` | 1e-4 | SciPy `scalar_search_armijo` `c1=1e-4` ([source](https://github.com/scipy/scipy/blob/main/scipy/optimize/_linesearch.py)) |
+
+The line search picks each next step by minimising the quadratic through the
+current loss, its slope and the rejected step's loss, as SciPy's Armijo search
+does, so no shrink factor is set. Cross-validated accuracy uses stratified
+folds in each class's own order, without shuffling, as scikit-learn's
+`StratifiedKFold` does by default, so no seed is set and the same labels always
+give the same folds. The Train panel's **Fill with scikit-learn's documented
+defaults** button types the same values into its fields.
 
 The data path is identical: labels from the lake label store, session text via
 Transcript Lake, and the same session floor and frozen evaluation split all
@@ -116,21 +136,20 @@ eval_split:                        # required: fraction and seed, or false
   seed: N                          # makes the first run's pick reproducible
 judge:                             # optional; ON by default, shown with its default
   model: best                      # the Brama alias `evaluate` asks
-training:                          # required: every tfidf-logreg setting
-  ngram_max: N
-  lowercase: B
-  sublinear_tf: B
-  smooth_idf: B
-  min_df: F
-  max_df: F
-  c: F
-  max_iter: N
-  tol: F
-  lbfgs_memory: N
-  armijo_c1: F
-  backtrack: F
-  max_backtracks: N
-  cv_seed: N
+training: scikit-learn             # required: a preset, or every tfidf-logreg setting:
+# training:
+#   ngram_max: N
+#   lowercase: B
+#   sublinear_tf: B
+#   smooth_idf: B
+#   min_df: F
+#   max_df: F
+#   c: F
+#   max_iter: N
+#   tol: F
+#   lbfgs_memory: N
+#   armijo_c1: F
+#   max_backtracks: N
 ```
 
 Every field is validated with a clear error — there are no silent defaults.

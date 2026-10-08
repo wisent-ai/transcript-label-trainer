@@ -126,35 +126,13 @@ impl TfidfModel {
 // Cross-validated accuracy
 // ---------------------------------------------------------------------------
 
-/// splitmix64: enough of a generator to shuffle one class's members, small
-/// enough to be obviously reproducible. It stands in for the numpy
-/// `RandomState` behind `StratifiedKFold(shuffle=True, random_state=0)`,
-/// which cannot be reproduced outside numpy and whose exact permutation was
-/// never part of the product — the reported metric is.
-pub(crate) struct Splitmix(pub(crate) u64);
-
-impl Splitmix {
-    pub(crate) fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        z ^ (z >> 31)
-    }
-
-    pub(crate) fn shuffle<T>(&mut self, items: &mut [T]) {
-        for i in (1..items.len()).rev() {
-            let j = (self.next() % (i as u64 + 1)) as usize;
-            items.swap(i, j);
-        }
-    }
-}
-
 /// Mean accuracy over stratified folds, each fold refitting the whole
 /// pipeline under the run's settings — vectorizer included — on the other
-/// folds, the way `cross_val_score` over a `Pipeline` does. Shuffling is
-/// keyed per class, from the stated seed, so a class that gains members does
-/// not reshuffle the others.
+/// folds, the way `cross_val_score` over a `Pipeline` does. Folds follow each
+/// class's own order without shuffling, as scikit-learn's StratifiedKFold
+/// does by default (shuffle=False,
+/// https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.StratifiedKFold.html),
+/// so no seed is needed and the same labels always give the same folds.
 pub(crate) fn cross_val_accuracy(
     texts: &[String],
     values: &[String],
@@ -166,9 +144,7 @@ pub(crate) fn cross_val_accuracy(
         by_class.entry(value.as_str()).or_default().push(i);
     }
     let mut assignment = vec![0usize; texts.len()];
-    for (class_number, (_, members)) in by_class.iter_mut().enumerate() {
-        let mut rng = Splitmix(settings.cv_seed.wrapping_add(class_number as u64));
-        rng.shuffle(members);
+    for members in by_class.values() {
         for (position, &row) in members.iter().enumerate() {
             assignment[row] = position % folds;
         }

@@ -54,7 +54,13 @@ pub(crate) fn fit_lbfgs(problem: &Problem<'_>, settings: &jobs::TfidfTraining) -
             slope = dot(&direction, &g);
         }
 
-        let mut step = 1.0f64;
+        // Armijo backtracking that picks each next step by minimising the
+        // quadratic through f(0), f'(0) and f(step), as SciPy's
+        // scalar_search_armijo does
+        // (https://github.com/scipy/scipy/blob/main/scipy/optimize/_linesearch.py),
+        // so no shrink factor is chosen; the step starts at the full
+        // quasi-Newton step and tries at most max_backtracks candidates.
+        let mut step = slope.signum().abs();
         let mut accepted = None;
         for _ in 0..settings.max_backtracks {
             let candidate: Vec<f64> = (0..dim).map(|i| x[i] + step * direction[i]).collect();
@@ -63,7 +69,14 @@ pub(crate) fn fit_lbfgs(problem: &Problem<'_>, settings: &jobs::TfidfTraining) -
                 accepted = Some((candidate, candidate_f, candidate_g));
                 break;
             }
-            step *= settings.backtrack;
+            // Minimiser of the quadratic through fx, slope and f(step):
+            // a = -slope*step*step / (2*(f(step) - fx - slope*step)).
+            let curvature = candidate_f - fx - slope * step;
+            let next = -slope * step * step / (curvature + curvature);
+            if !(next.is_finite() && next > f64::MIN_POSITIVE && next < step) {
+                break;
+            }
+            step = next;
         }
         let Some((new_x, new_f, new_g)) = accepted else {
             // No step along a descent direction lowers the objective: the

@@ -220,6 +220,7 @@ pub(crate) fn state() -> Result<Value> {
             (crate::jobs::SKLEARN_MODEL): crate::jobs::TFIDF_KEYS,
             "huggingface": crate::jobs::HF_KEYS,
         },
+        "training_presets": crate::jobs::presets_json()?,
     }))
 }
 

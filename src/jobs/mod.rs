@@ -10,7 +10,8 @@
 //! holdout is frozen out of training; `judge` has a Brama-routed teacher rule
 //! on whether the trained model's holdout predictions are acceptable, on
 //! unless the spec says `judge: false`. Every job also states its backend's
-//! `training` settings.
+//! `training` settings, key by key or as a named preset whose values cite the
+//! vendor documentation they come from.
 //!
 //! Every field is validated here; invalid specs fail with clear errors and no
 //! silent defaults.
@@ -27,7 +28,9 @@ use crate::util::{float_repr, Result};
 mod source_pattern;
 mod eval_split;
 mod training;
+mod presets;
 
 pub use source_pattern::*;
 pub use eval_split::*;
 pub use training::*;
+pub(crate) use presets::{presets_json, PRESETS};

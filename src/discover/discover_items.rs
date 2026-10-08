@@ -210,10 +210,7 @@ pub fn discover(
                 ),
                 format!(
                     "transcript-label-trainer train --aspect {aspect} --min-labeled-sessions N \
-                     --ngram-max N --lowercase B --sublinear-tf B --smooth-idf B --min-df F \
-                     --max-df F --c F --max-iter N --tol F --lbfgs-memory N --armijo-c1 F \
-                     --backtrack F --max-backtracks N --cv-seed N \
-                     --eval-split-fraction F --eval-split-seed N"
+                     --training scikit-learn --eval-split-fraction F --eval-split-seed N"
                 ),
             ]),
         );

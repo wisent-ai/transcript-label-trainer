@@ -107,8 +107,7 @@ fn a_job_with_a_line_search_share_above_all_is_refused_by_its_key() {
              min_labeled_sessions: {one}\nscope:\n  aspect: topic\neval_split: false\ntraining:\n\
              \x20 ngram_max: {one}\n  lowercase: true\n  sublinear_tf: true\n  smooth_idf: true\n\
              \x20 min_df: {one}\n  max_df: {one}\n  c: {one}\n  max_iter: {one}\n  tol: {one}\n\
-             \x20 lbfgs_memory: {one}\n  armijo_c1: {above}\n  backtrack: {above}\n\
-             \x20 max_backtracks: {one}\n  cv_seed: {one}\n"
+             \x20 lbfgs_memory: {one}\n  armijo_c1: {above}\n  max_backtracks: {one}\n"
         ),
     )
     .unwrap();
@@ -119,6 +118,80 @@ fn a_job_with_a_line_search_share_above_all_is_refused_by_its_key() {
         stderr.contains(&format!(
             "training.armijo_c1 (--armijo-c1) must be a share above none and below all, got {above}"
         )),
+        "{stderr}"
+    );
+    run.passed();
+}
+
+#[test]
+fn a_setting_flag_beside_the_preset_is_refused_by_name() {
+    let mut run = Run::start("preset-beside-flag");
+    let floor = one();
+    let answer = run.run(&[
+        "train",
+        "--aspect",
+        "topic",
+        "--min-labeled-sessions",
+        &floor,
+        "--no-eval-split",
+        "--training",
+        "scikit-learn",
+        "--max-iter",
+        &floor,
+    ]);
+    let stderr = String::from_utf8_lossy(&answer.stderr);
+    assert!(!answer.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("--max-iter cannot be stated beside --training scikit-learn"),
+        "{stderr}"
+    );
+    assert!(!run.root.join("models").exists(), "no artifact directory is written");
+    run.passed();
+}
+
+#[test]
+fn a_job_naming_an_unknown_preset_is_refused_with_the_presets_that_exist() {
+    let mut run = Run::start("job-unknown-preset");
+    let one = one();
+    let job = run.root.join("job.yaml");
+    fs::write(
+        &job,
+        format!(
+            "name: topic-under-test\ntask: classify the topic\nevaluator: manual\nmodel: tfidf-logreg\n\
+             min_labeled_sessions: {one}\nscope:\n  aspect: topic\neval_split: false\ntraining: sklearn\n"
+        ),
+    )
+    .unwrap();
+    let answer = run.run(&["run", job.to_str().unwrap()]);
+    let stderr = String::from_utf8_lossy(&answer.stderr);
+    assert!(!answer.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("unknown training preset 'sklearn': the presets are scikit-learn"),
+        "{stderr}"
+    );
+    run.passed();
+}
+
+#[test]
+fn the_preset_on_a_fine_tune_is_refused() {
+    let mut run = Run::start("preset-on-fine-tune");
+    let floor = one();
+    let answer = run.run(&[
+        "train",
+        "--aspect",
+        "topic",
+        "--min-labeled-sessions",
+        &floor,
+        "--no-eval-split",
+        "--model",
+        "distilbert-base-multilingual-cased",
+        "--training",
+        "scikit-learn",
+    ]);
+    let stderr = String::from_utf8_lossy(&answer.stderr);
+    assert!(!answer.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("training preset 'scikit-learn' applies to model 'tfidf-logreg'"),
         "{stderr}"
     );
     run.passed();

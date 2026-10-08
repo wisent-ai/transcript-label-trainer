@@ -24,20 +24,6 @@ scope:
 eval_split:
   fraction:
   seed:
-# The tfidf-logreg settings are the operator's to state as well; `run` refuses
-# this job until each is filled in.
-training:
-  ngram_max:
-  lowercase:
-  sublinear_tf:
-  smooth_idf:
-  min_df:
-  max_df:
-  c:
-  max_iter:
-  tol:
-  lbfgs_memory:
-  armijo_c1:
-  backtrack:
-  max_backtracks:
-  cv_seed:
+# The tfidf-logreg settings: scikit-learn's documented defaults, each value
+# and its document listed in docs/guide/training.md.
+training: scikit-learn

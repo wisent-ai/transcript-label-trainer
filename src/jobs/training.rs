@@ -21,9 +21,7 @@ pub(crate) const TFIDF_KEYS: &[&str] = &[
     "tol",
     "lbfgs_memory",
     "armijo_c1",
-    "backtrack",
     "max_backtracks",
-    "cv_seed",
 ];
 
 /// The HuggingFace fine-tune keys.
@@ -61,12 +59,8 @@ pub struct TfidfTraining {
     pub lbfgs_memory: usize,
     /// Share of the predicted decrease a line-search step must achieve.
     pub armijo_c1: f64,
-    /// Share a rejected step is shrunk to.
-    pub backtrack: f64,
-    /// Shrinks tried before a step is abandoned.
+    /// Line-search candidates tried before a step is abandoned.
     pub max_backtracks: usize,
-    /// Seed of each class's cross-validation shuffle.
-    pub cv_seed: u64,
 }
 
 /// One HuggingFace fine-tune's settings, recorded under `hyperparameters`.
@@ -110,26 +104,36 @@ fn backend_keys(model: &str) -> (&'static [&'static str], &'static [&'static str
     }
 }
 
-/// Validate a job's `training` section for `model`.
+/// Validate a job's `training` section for `model`: a mapping of every key,
+/// or the name of a preset (`training: scikit-learn`).
 pub(crate) fn training(raw: &serde_yaml::Mapping, model: &str) -> Result<Training> {
-    let Some(Yaml::Mapping(mapping)) = get(raw, "training") else {
-        bail!(
-            "'training' is required for model {}: a mapping with {}",
+    match get(raw, "training") {
+        Some(Yaml::Mapping(mapping)) => settings(mapping, model),
+        Some(Yaml::String(name)) => super::presets::preset(name, model),
+        _ => bail!(
+            "'training' is required for model {}: a mapping with {}, or a preset ({})",
             py_repr_str(model),
-            backend_keys(model).0.join(", ")
-        )
-    };
-    settings(mapping, model)
+            backend_keys(model).0.join(", "),
+            super::PRESETS.join(", ")
+        ),
+    }
 }
 
-/// The settings `train` was given as flags: each key of the model's backend
-/// read from its `--dashed-name` flag as a YAML scalar, then validated
-/// exactly as a job's `training` section is. A flag of the other backend is
-/// refused.
+/// The settings `train` was given as flags: `--training PRESET`, or each key
+/// of the model's backend read from its `--dashed-name` flag as a YAML scalar,
+/// then validated exactly as a job's `training` section is. A flag of the
+/// other backend is refused, and so is a key flag beside a preset: each value
+/// has one source.
 pub fn training_from_flags<'a>(model: &str, text: impl Fn(&str) -> Option<&'a str>) -> Result<Training> {
     let (keys, other) = backend_keys(model);
     if let Some(stray) = other.iter().map(|key| flag_name(key)).find(|flag| text(flag.as_str()).is_some()) {
         bail!("{stray} does not apply to model {}", py_repr_str(model))
+    }
+    if let Some(name) = text("--training") {
+        if let Some(beside) = keys.iter().map(|key| flag_name(key)).find(|flag| text(flag.as_str()).is_some()) {
+            bail!("{beside} cannot be stated beside --training {name}: the preset states every setting")
+        }
+        return super::presets::preset(name, model);
     }
     let mut mapping = serde_yaml::Mapping::new();
     for key in keys {
@@ -224,9 +228,7 @@ fn settings(mapping: &serde_yaml::Mapping, model: &str) -> Result<Training> {
             tol: section.positive("tol")?,
             lbfgs_memory: section.whole("lbfgs_memory")?,
             armijo_c1: section.share("armijo_c1")?,
-            backtrack: section.share("backtrack")?,
             max_backtracks: section.whole("max_backtracks")?,
-            cv_seed: section.seed("cv_seed")?,
         }));
     }
     Ok(Training::Hf(HfTraining {
