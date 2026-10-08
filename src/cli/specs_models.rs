@@ -179,8 +179,8 @@ pub(crate) fn model_specs() -> Vec<Spec> {
              ster tune sft on the named exclusive Stado GPU target (the reviewed rows as \
              lifecycle-examples, every training setting from --ster-options), audit every held-out \
              decision through Brama -best, and publish the complete candidate only when the lifecycle \
-             quality gate passes: at most --audit-max-wrong-share of the decisions semantically \
-             wrong, judged with as many concurrent Brama calls as Brama measured the route to carry."
+             quality gate passes: no decision semantically wrong (no tolerated share was stated), \
+             judged with as many concurrent Brama calls as Brama measured the route to carry."
                 .to_string(),
         ),
         positionals: vec![
@@ -217,7 +217,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                  Ster refuses a run that leaves one of its required settings out"
                     .to_string(),
             ),
-            required("--audit-max-wrong-share", "F", Kind::Float, "largest share of held-out decisions the audit may call wrong, between none and all".to_string()),
         ],
     };
 
@@ -225,11 +224,11 @@ pub(crate) fn model_specs() -> Vec<Spec> {
         name: "humanizer-model",
         help: "train and qualify Echo's personal-voice humanizer on Stado".to_string(),
         description: Some(
-            "Export only privacy-masked likely-authored user turns from Transcript Lake, \
-             derive inverse style-transfer inputs through Brama, freeze session-separated \
-             train, validation, and test splits, train a LoRA adapter on the pinned Cydonia-24B \
-             deployment base on the named exclusive Stado GPU target, compare it with the base \
-             model, require an independent Brama audit, and publish only a qualified private adapter revision. \
+            "Export every distinct privacy-masked user turn from Transcript Lake, \
+             derive inverse style-transfer inputs through Brama (whose review judges authorship), \
+             freeze session-separated train and test splits, train a LoRA adapter on the pinned \
+             Cydonia deployment base on the named exclusive Stado GPU target, compare it with \
+             the base model, require an independent Brama audit, and publish only a qualified private adapter revision. \
              HUMANIZER_HF_REPO must name the destination repository; there is no account default."
                 .to_string(),
         ),
@@ -253,8 +252,8 @@ pub(crate) fn model_specs() -> Vec<Spec> {
         help: "apply the final Brama semantic audit to lifecycle predictions".to_string(),
         description: Some(
             "Judge every held-out student decision independently, reject inferred completion, \
-             retain the full verdict record, and fail the lifecycle quality gate when more than \
-             --max-wrong-share of them are semantically wrong."
+             retain the full verdict record, and fail the lifecycle quality gate when any of them \
+             is semantically wrong: no tolerated share was stated."
                 .to_string(),
         ),
         positionals: vec![Positional {
@@ -280,7 +279,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 Kind::Text,
                 "use an explicit Brama-routed independent judge".to_string(),
             ),
-            required("--max-wrong-share", "F", Kind::Float, "largest share of decisions the audit may call wrong, between none and all".to_string()),
         ],
     };
     vec![

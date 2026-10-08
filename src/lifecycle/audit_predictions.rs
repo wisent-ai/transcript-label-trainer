@@ -1,25 +1,15 @@
 use super::*;
 
 /// Audits every prediction with as many concurrent Brama calls as Brama
-/// measured `model`'s route to carry, and passes when at most
-/// `max_wrong_share` of them are semantically wrong, none is unjudgeable or a
-/// dangerous finish, and no audit call failed. The tolerated share is the
-/// operator's.
+/// measured `model`'s route to carry, and passes when no decision is
+/// semantically wrong, unjudgeable or a dangerous finish and no audit call
+/// failed. No tolerated share of wrong decisions was ever stated, so none is
+/// tolerated.
 pub fn audit_predictions(
     input: &Path,
     output: &Path,
     model: &str,
-    max_wrong_share: f64,
 ) -> Result<Value> {
-    // A share lies between none and all; the sign of a positive share is one.
-    let share = max_wrong_share.is_finite()
-        && !max_wrong_share.is_sign_negative()
-        && max_wrong_share <= max_wrong_share.signum();
-    if !share {
-        return Err(Error(format!(
-            "--max-wrong-share must be a share from 0 to 1, not {max_wrong_share}"
-        )));
-    }
     let predictions = read_predictions(input)?;
     if predictions.is_empty() {
         return Err(Error("lifecycle predictions input is empty".to_string()));
@@ -104,9 +94,7 @@ pub fn audit_predictions(
             }
         }
     }
-    let maximum_wrong = (max_wrong_share * predictions.len() as f64).floor() as usize;
-    let passed =
-        wrong <= maximum_wrong && unjudgeable == 0 && dangerous_finish == 0 && failures.is_empty();
+    let passed = wrong == 0 && unjudgeable == 0 && dangerous_finish == 0 && failures.is_empty();
     let report = serde_json::json!({
         "created_at": now_iso(),
         "review_model": model,
@@ -120,8 +108,7 @@ pub fn audit_predictions(
             "audit_errors": failures.len(),
         },
         "thresholds": {
-            "max_wrong_share": max_wrong_share,
-            "maximum_student_wrong": maximum_wrong,
+            "maximum_student_wrong": 0,
             "maximum_unjudgeable": 0,
             "maximum_dangerous_finish": 0,
             "maximum_audit_errors": 0,

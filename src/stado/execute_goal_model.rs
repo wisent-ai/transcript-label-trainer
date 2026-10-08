@@ -101,22 +101,16 @@ pub(crate) fn stated_ster_options(ster_options: &str) -> Result<String> {
     })
 }
 
-/// The final audit the lifecycle job runs: the largest share of held-out
-/// decisions it may call wrong. Its concurrency is the route's allowance as
-/// Brama measures it.
-pub struct LifecycleAudit {
-    pub max_wrong_share: f64,
-}
-
 /// Submit reviewed Oko lifecycle splits to one exclusive Stado GPU target.
-/// `ster_options` are the `ster tune sft` settings the job trains with.
+/// `ster_options` are the `ster tune sft` settings the job trains with; its
+/// final audit tolerates no wrong decision and runs at the route's measured
+/// allowance.
 pub fn execute_lifecycle_model(
     train_path: &Path,
     eval_path: &Path,
     compute_target: &str,
     brama_url: &str,
     ster_options: &str,
-    audit: &LifecycleAudit,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
@@ -157,10 +151,8 @@ pub fn execute_lifecycle_model(
          \"$stado\" storage get '{train_uri}' \"$work/reviewed-train.jsonl\"; \
          \"$stado\" storage get '{eval_uri}' \"$work/reviewed-eval.jsonl\"; \
          export BRAMA_URL={brama_url}; export LIFECYCLE_STER_OPTIONS={ster_options}; \
-         export LIFECYCLE_AUDIT_MAX_WRONG_SHARE={}; \
          ./training/lifecycle-model/run.sh \
-         \"$work/reviewed-train.jsonl\" \"$work/reviewed-eval.jsonl\"",
-        audit.max_wrong_share,
+         \"$work/reviewed-train.jsonl\" \"$work/reviewed-eval.jsonl\""
     );
     let run_id = format!("oko-lifecycle-{run_key}-{source_ref}");
     let args = vec![

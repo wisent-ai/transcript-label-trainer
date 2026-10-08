@@ -83,8 +83,7 @@ set +e
 "$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release -- \
   lifecycle-audit "$WORK/predictions-gguf.jsonl" \
   --output "$WORK/final-judge.json" \
-  --brama-model "${LIFECYCLE_AUDIT_MODEL:-best}" \
-  --max-wrong-share "${LIFECYCLE_AUDIT_MAX_WRONG_SHARE:?Set LIFECYCLE_AUDIT_MAX_WRONG_SHARE to the largest share of decisions the audit may call wrong}"
+  --best
 AUDIT_EXIT=$?
 set -e
 [ -s "$WORK/final-judge.json" ]

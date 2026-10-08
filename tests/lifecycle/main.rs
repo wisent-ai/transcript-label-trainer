@@ -155,8 +155,6 @@ fn a_lifecycle_job_without_ster_settings_is_refused_before_anything_is_read() {
         "http://brama.invalid",
         "--ster-options",
         " ",
-        "--audit-max-wrong-share",
-        "0.1",
     ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
