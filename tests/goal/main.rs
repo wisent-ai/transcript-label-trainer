@@ -148,12 +148,6 @@ fn an_evaluation_of_a_model_that_does_not_exist_is_refused_before_a_server_start
         path(&server),
         "--server-log",
         path(&log),
-        "--parallel",
-        "1",
-        "--slot-context",
-        "4096",
-        "--gpu-layers",
-        "all",
     ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
@@ -177,12 +171,6 @@ fn a_goal_job_without_ster_settings_is_refused_before_a_row_is_curated() {
         "1",
         "--ster-options",
         " ",
-        "--eval-parallel",
-        "1",
-        "--eval-slot-context",
-        "4096",
-        "--eval-gpu-layers",
-        "all",
     ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");

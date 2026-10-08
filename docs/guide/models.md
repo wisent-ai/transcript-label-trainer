@@ -71,8 +71,7 @@ Replace `TARGET` below with the registered Stado GPU target selected for trainin
 transcript-label-trainer goal-model \
   --compute-target TARGET \
   --limit 1500 --workers N --audit-workers N \
-  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S' \
-  --eval-parallel N --eval-slot-context N --eval-gpu-layers N
+  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S'
 ```
 
 The command generates task and no-task labels with a Brama teacher, then requires
@@ -91,9 +90,12 @@ as its `completion`. `ster tune sft` fits an adapter to pinned
 Q4_K_M. Gold rows never enter training.
 
 `transcript-label-trainer goal-evaluate-gguf` then asks that quantized model for every
-gold row the way Jeden serves it: `llama-server` on a loopback port the system assigns
-(`--eval-parallel` slots of `--eval-slot-context` tokens, `--eval-gpu-layers` offloaded,
-all three required), the same system prompt and user turn, decoding constrained to
+gold row the way Jeden serves it: `llama-server` on a loopback port the system assigns,
+sized by llama-server itself from the model and the device — its documented defaults
+`--parallel -1` (auto slots), `--ctx-size 0` (the model's context, fitted to device
+memory by `--fit on`) and `--gpu-layers auto`
+([llama-server options](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)),
+so the job states none of them — the same system prompt and user turn, decoding constrained to
 `<goal/>` or one `<goal>…</goal>` line. It writes `predictions.jsonl` and the exact-match
 share in `metrics-gguf.json`; a server that exits before it is ready fails with its
 status and log, and a failed request fails the run naming its session. Every one of
@@ -242,8 +244,7 @@ transcript-label-trainer lifecycle-model \
   ~/.transcript-label-trainer/lifecycle-model/reviewed-train.jsonl \
   ~/.transcript-label-trainer/lifecycle-model/reviewed-eval.jsonl \
   --compute-target TARGET --brama-url <the Brama address the job dials> \
-  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S' \
-  --eval-parallel N --eval-slot-context N --eval-gpu-layers N
+  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S'
 ```
 
 The job trains with Ster on the GPU host, which must have `ster` installed (`stado
@@ -260,8 +261,9 @@ the passing audit; the served rates are recorded in the manifest beside it.
 
 The quantized model is measured the way production serves it, by
 `transcript-label-trainer lifecycle-evaluate-gguf`: `llama-server` on a loopback
-port the system assigns, with `--eval-parallel` slots of `--eval-slot-context`
-tokens and `--eval-gpu-layers` layers offloaded, each answer constrained to
+port the system assigns, sized by llama-server itself as for the goal model, asked
+on as many concurrent requests as the slots it chose (its `/props` `total_slots`;
+an answer without a positive one fails the run), each answer constrained to
 `lifecycle-output-schema.json` narrowed to the row's candidate references. The
 evaluation waits for the server's health answer (reading its log between probes;
 a server that exits first fails the run with its status and log path) and for
@@ -336,9 +338,12 @@ it into the student checkpoint the evaluation asks.
 `transcript-label-trainer humanizer-evaluate-gguf` asks the base and the merged
 student, both converted to full-precision GGUF so the student answers exactly as the base
 with the published adapter attached, for every test row through `llama-server`, one model
-after the other, with `--eval-parallel`, `--eval-slot-context`, `--eval-gpu-layers` and at
-most `--eval-max-tokens` tokens per answer, all stated on `humanizer-model`. Each answer
-is scored by chrF over character n-grams of order `--chrf-order` against the target and the
+after the other, each sized by llama-server itself as for the goal model and each answer
+running until the model ends it (llama-server's default). Each answer is scored by chrF
+as [sacrebleu](https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/chrf.py)
+computes it by default — character n-grams of orders one to six with whitespace removed
+and case kept, precision and recall averaged over the orders, combined with recall weighted
+twice (beta 2), all recorded under `chrf` in `metrics.json` — against the target and the
 source and by its length against the target's; `predictions.jsonl` carries both answers
 for `humanizer-audit`, and `metrics.json` the means and the target chrF gain the manifest
 records. A model file that does not exist is refused before a server starts, and a failed

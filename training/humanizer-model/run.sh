@@ -19,11 +19,6 @@ set -euo pipefail
 : "${HUMANIZER_TEST_SHARE:?Set HUMANIZER_TEST_SHARE to the share of sessions held out for test}"
 : "${HUMANIZER_VALIDATION_SHARE:?Set HUMANIZER_VALIDATION_SHARE to the share of sessions held out for validation}"
 : "${HUMANIZER_STER_OPTIONS:?humanizer-model passes --ster-options as HUMANIZER_STER_OPTIONS}"
-: "${HUMANIZER_EVAL_PARALLEL:?humanizer-model passes --eval-parallel as HUMANIZER_EVAL_PARALLEL}"
-: "${HUMANIZER_EVAL_SLOT_CONTEXT:?humanizer-model passes --eval-slot-context as HUMANIZER_EVAL_SLOT_CONTEXT}"
-: "${HUMANIZER_EVAL_GPU_LAYERS:?humanizer-model passes --eval-gpu-layers as HUMANIZER_EVAL_GPU_LAYERS}"
-: "${HUMANIZER_EVAL_MAX_TOKENS:?humanizer-model passes --eval-max-tokens as HUMANIZER_EVAL_MAX_TOKENS}"
-: "${HUMANIZER_CHRF_ORDER:?humanizer-model passes --chrf-order as HUMANIZER_CHRF_ORDER}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGETS="${1:?usage: run.sh TARGETS_JSONL}"
 JOB_ID="${WC_JOB_ID:?WC_JOB_ID is required}"
@@ -105,10 +100,7 @@ if [ ! -s "$HUMANIZER_PREDICTIONS" ]; then
     --base "$WORK/base-f16.gguf" --student "$WORK/student-f16.gguf" \
     --dataset "$HUMANIZER_TEST_DATASET" --predictions "$HUMANIZER_PREDICTIONS" --metrics "$HUMANIZER_METRICS" \
     --server "$LLAMA_CPP/build/bin/llama-server" --server-log "$WORK/llama-server-eval.log" \
-    --base-model "$HUMANIZER_BASE_MODEL" --base-revision "$HUMANIZER_BASE_REVISION" \
-    --parallel "$HUMANIZER_EVAL_PARALLEL" --slot-context "$HUMANIZER_EVAL_SLOT_CONTEXT" \
-    --gpu-layers "$HUMANIZER_EVAL_GPU_LAYERS" --max-tokens "$HUMANIZER_EVAL_MAX_TOKENS" \
-    --chrf-order "$HUMANIZER_CHRF_ORDER"
+    --base-model "$HUMANIZER_BASE_MODEL" --base-revision "$HUMANIZER_BASE_REVISION"
 fi
 "${TRAINER[@]}" humanizer-audit "$HUMANIZER_PREDICTIONS" --output "$HUMANIZER_AUDIT_OUTPUT" \
   --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS" \

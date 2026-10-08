@@ -109,9 +109,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                  refuses a run that leaves one of its required settings out"
                     .to_string(),
             ),
-            required("--eval-parallel", "N", Kind::Int, "server slots of the quantized evaluation".to_string()),
-            required("--eval-slot-context", "N", Kind::Int, "context tokens each evaluation slot holds".to_string()),
-            required("--eval-gpu-layers", "N", Kind::Text, "layers llama-server offloads to the GPU in the evaluation".to_string()),
         ],
     };
 
@@ -246,9 +243,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                  refuses a run that leaves one of its required settings out"
                     .to_string(),
             ),
-            required("--eval-parallel", "N", Kind::Int, "server slots and concurrent requests of the quantized evaluation".to_string()),
-            required("--eval-slot-context", "N", Kind::Int, "context tokens each evaluation slot holds".to_string()),
-            required("--eval-gpu-layers", "N", Kind::Text, "layers llama-server offloads to the GPU in the evaluation".to_string()),
             required("--audit-workers", "N", Kind::Int, "concurrent Brama calls of the final audit; the route's own concurrency allowance".to_string()),
             required("--audit-max-wrong-share", "F", Kind::Float, "largest share of held-out decisions the audit may call wrong, between none and all".to_string()),
         ],

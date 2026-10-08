@@ -8,8 +8,9 @@
 //! through `crate::serving`, one server after the other, and writes the
 //! `predictions.jsonl` `humanizer-audit` judges and the `metrics.json` the
 //! manifest reads. Each answer is scored against the target and the source by
-//! chrF over character n-grams of the caller's order, and by its length
-//! against the target's; nothing here assumes an order or a token budget.
+//! chrF as sacrebleu computes it by default, and by its length against the
+//! target's. Each answer runs until the model ends it, as llama-server does by
+//! default; nothing here sets a token budget.
 
 use std::path::{Path, PathBuf};
 
@@ -98,39 +99,63 @@ pub fn export_examples(rows: &Path, output: &Path) -> Result<Value> {
     Ok(json!({ "examples": count, "output": output.display().to_string() }))
 }
 
-/// How often each character n-gram of `text` occurs, lowercased with its
-/// whitespace collapsed; a text shorter than one n-gram is its own one gram.
-fn grams(text: &str, order: usize) -> Map<String, Value> {
-    let normalized: Vec<char> = text.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ").chars().collect();
-    let mut all: Vec<String> = if normalized.len() < order {
-        vec![normalized.iter().collect()]
-    } else {
-        normalized.windows(order).map(|window| window.iter().collect()).collect()
-    };
+/// chrF's settings, sacrebleu's documented defaults: character n-grams of
+/// every order up to six with whitespace removed and case kept, and an
+/// F-score weighting recall twice as much as precision.
+// https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/chrf.py (char_order=6)
+const CHAR_ORDER: usize = 6;
+// https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/chrf.py (beta=2)
+const BETA: f64 = 2.0;
+/// Where those settings are documented, recorded with the metrics.
+const CHRF_SOURCE: &str = "https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/chrf.py";
+
+/// Each distinct character n-gram of `chars` of length `order` with how
+/// often it occurs; empty when the text is shorter than one n-gram.
+fn grams(chars: &[char], order: usize) -> Vec<(&[char], usize)> {
+    let mut all: Vec<&[char]> = chars.windows(order).collect();
     all.sort();
-    all.chunk_by(|left, right| left == right)
-        .filter_map(|run| run.first().map(|gram| (gram.clone(), json!(run.len()))))
-        .collect()
+    all.chunk_by(|left, right| left == right).filter_map(|run| run.first().map(|gram| (*gram, run.len()))).collect()
 }
 
-/// chrF of `candidate` against `reference`: the F-score of their shared
-/// n-grams, which for precision and recall over these counts is twice the
-/// overlap over the two totals (each total holds at least one gram).
-fn chrf(reference: &str, candidate: &str, order: usize) -> f64 {
-    let (left, right) = (grams(reference, order), grams(candidate, order));
-    let count = |value: &Value| value.as_u64().unwrap_or_default();
-    let overlap: u64 = left
-        .iter()
-        .map(|(gram, have)| count(have).min(right.get(gram).map(count).unwrap_or_default()))
-        .sum();
-    let total: u64 = left.values().map(count).sum::<u64>() + right.values().map(count).sum::<u64>();
-    (overlap + overlap) as f64 / total as f64
+/// chrF of `candidate` against `reference` (Popović 2015, as sacrebleu
+/// computes it): precision and recall of shared character n-grams, each
+/// averaged over the orders both texts are long enough for, combined into
+/// their F-score with recall weighted `BETA` times. Nothing in common, or a
+/// text with no n-gram at all, scores zero.
+fn chrf(reference: &str, candidate: &str) -> f64 {
+    let strip = |text: &str| text.chars().filter(|c| !c.is_whitespace()).collect::<Vec<char>>();
+    let (reference, candidate) = (strip(reference), strip(candidate));
+    let scores: Vec<(f64, f64)> = (std::num::NonZeroUsize::MIN.get()..=CHAR_ORDER)
+        .filter_map(|order| {
+            let (wanted, got) = (grams(&reference, order), grams(&candidate, order));
+            if wanted.is_empty() || got.is_empty() {
+                return None;
+            }
+            let total = |counts: &[(&[char], usize)]| counts.iter().map(|(_, count)| *count).sum::<usize>() as f64;
+            let overlap: usize = wanted
+                .iter()
+                .map(|(gram, have)| got.iter().filter(|(other, _)| other == gram).map(|(_, count)| (*have).min(*count)).sum::<usize>())
+                .sum();
+            Some((overlap as f64 / total(&got), overlap as f64 / total(&wanted)))
+        })
+        .collect();
+    let orders = scores.len().max(std::num::NonZeroUsize::MIN.get()) as f64;
+    let precision = scores.iter().map(|(precision, _)| precision).sum::<f64>() / orders;
+    let recall = scores.iter().map(|(_, recall)| recall).sum::<f64>() / orders;
+    let weight = BETA * BETA;
+    let denominator = weight * precision + recall;
+    if !denominator.is_normal() {
+        // Precision and recall are both zero: so is their product.
+        return precision * recall;
+    }
+    // F-beta, https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/chrf.py: (1 + beta^2) P R / (beta^2 P + R)
+    (1.0 + weight) * precision * recall / denominator
 }
 
-fn score(row: &Turns, candidate: &str, order: usize) -> Value {
+fn score(row: &Turns, candidate: &str) -> Value {
     json!({
-        "target_chrf": chrf(&row.target, candidate, order),
-        "source_chrf": chrf(&row.source, candidate, order),
+        "target_chrf": chrf(&row.target, candidate),
+        "source_chrf": chrf(&row.source, candidate),
         "length_ratio": candidate.chars().count() as f64 / row.target.chars().count() as f64,
     })
 }
@@ -155,20 +180,18 @@ pub(crate) struct HumanizerEvaluation {
     pub(crate) dataset: PathBuf,
     pub(crate) predictions: PathBuf,
     pub(crate) metrics: PathBuf,
-    pub(crate) max_tokens: usize,
-    pub(crate) chrf_order: usize,
     pub(crate) base_model: String,
     pub(crate) base_revision: String,
 }
 
 /// Ask the model `serving` serves for every row, in order; the first failed
 /// request ends the run naming its row.
-fn answers(serving: &Serving, rows: &[Turns], max_tokens: usize, which: &str) -> Result<Vec<String>> {
+fn answers(serving: &Serving, rows: &[Turns], which: &str) -> Result<Vec<String>> {
     let server = Server::start(serving)?;
     let answered = rows
         .iter()
         .map(|row| {
-            let answer = server.answer(&row.id, &row.system, &row.source, ("max_tokens", json!(max_tokens)));
+            let answer = server.answer(&row.id, &row.system, &row.source, None);
             println!("{which} humanizer answer for {}: {}", row.id, if answer.is_ok() { "received" } else { "failed" });
             answer
         })
@@ -186,12 +209,12 @@ pub(crate) fn evaluate_gguf(run: &HumanizerEvaluation) -> Result<Value> {
             return Err(Error(format!("the {which} model {} does not exist", serving.model.display())));
         }
     }
-    let base = answers(&run.base, &rows, run.max_tokens, "base")?;
-    let student = answers(&run.student, &rows, run.max_tokens, "student")?;
+    let base = answers(&run.base, &rows, "base")?;
+    let student = answers(&run.student, &rows, "student")?;
     let mut lines = String::new();
     let (mut base_scores, mut student_scores) = (Vec::new(), Vec::new());
     for ((row, base), student) in rows.iter().zip(&base).zip(&student) {
-        let (base_score, student_score) = (score(row, base, run.chrf_order), score(row, student, run.chrf_order));
+        let (base_score, student_score) = (score(row, base), score(row, student));
         let prediction = json!({
             "id": row.id,
             "source": row.source,
@@ -216,8 +239,7 @@ pub(crate) fn evaluate_gguf(run: &HumanizerEvaluation) -> Result<Value> {
         "base_revision": run.base_revision,
         "test_sha256": hex::encode(Sha256::digest(std::fs::read(&run.dataset)?)),
         "test_rows": rows.len(),
-        "chrf_order": run.chrf_order,
-        "max_tokens": run.max_tokens,
+        "chrf": { "char_order": CHAR_ORDER, "beta": BETA, "whitespace": false, "lowercase": false, "source": CHRF_SOURCE },
         "evaluation_surface": "base and merged student as full-precision GGUFs through llama-server, one after the other",
         "base": base_means,
         "student": student_means,

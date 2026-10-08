@@ -2,14 +2,13 @@ use super::*;
 
 /// Submit the reviewed goal dataset to one exclusive Stado GPU target.
 /// `audit_workers` is the caller's count of parallel Brama calls for the job's
-/// final `goal-audit`, `ster_options` the `ster tune sft` settings it trains
-/// with and `serving` how its quantized evaluation serves the model.
+/// final `goal-audit` and `ster_options` the `ster tune sft` settings it
+/// trains with; its quantized evaluation lets llama-server size itself.
 pub fn execute_goal_model(
     dataset_path: &Path,
     compute_target: &str,
     audit_workers: usize,
     ster_options: &str,
-    serving: &EvaluationServing,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
     if compute_target.is_empty() {
@@ -30,12 +29,8 @@ pub fn execute_goal_model(
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
          \"$stado\" storage get '{dataset_uri}' \"$work/reviewed-goals.jsonl\"; \
          export GOAL_MODEL_WORK_DIR=\"$work\"; export GOAL_STER_OPTIONS={}; \
-         export GOAL_EVAL_PARALLEL={}; export GOAL_EVAL_SLOT_CONTEXT={}; export GOAL_EVAL_GPU_LAYERS={}; \
          GOAL_AUDIT_WORKERS={audit_workers} ./training/goal-model/run.sh \"$work/reviewed-goals.jsonl\"",
         shell_quote(ster_options),
-        serving.parallel,
-        serving.slot_context,
-        shell_quote(&serving.gpu_layers),
     );
     // The same data, settings and source revision is the same run: Stado
     // answers a repeated submission with the job it already holds.
@@ -98,13 +93,6 @@ pub(crate) fn stated_ster_options(ster_options: &str) -> Result<&str> {
     Ok(ster_options)
 }
 
-/// How a job's quantized model is served while it is evaluated.
-pub struct EvaluationServing {
-    pub parallel: usize,
-    pub slot_context: usize,
-    pub gpu_layers: String,
-}
-
 /// The final audit the lifecycle job runs: its Brama concurrency and the
 /// largest share of held-out decisions it may call wrong.
 pub struct LifecycleAudit {
@@ -120,7 +108,6 @@ pub fn execute_lifecycle_model(
     compute_target: &str,
     brama_url: &str,
     ster_options: &str,
-    serving: &EvaluationServing,
     audit: &LifecycleAudit,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
@@ -162,14 +149,9 @@ pub fn execute_lifecycle_model(
          \"$stado\" storage get '{train_uri}' \"$work/reviewed-train.jsonl\"; \
          \"$stado\" storage get '{eval_uri}' \"$work/reviewed-eval.jsonl\"; \
          export BRAMA_URL={brama_url}; export LIFECYCLE_STER_OPTIONS={ster_options}; \
-         export LIFECYCLE_EVAL_PARALLEL={}; export LIFECYCLE_EVAL_SLOT_CONTEXT={}; \
-         export LIFECYCLE_EVAL_GPU_LAYERS={}; \
          export LIFECYCLE_AUDIT_WORKERS={}; export LIFECYCLE_AUDIT_MAX_WRONG_SHARE={}; \
          ./training/lifecycle-model/run.sh \
          \"$work/reviewed-train.jsonl\" \"$work/reviewed-eval.jsonl\"",
-        serving.parallel,
-        serving.slot_context,
-        shell_quote(&serving.gpu_layers),
         audit.workers,
         audit.max_wrong_share,
     );
@@ -224,14 +206,11 @@ pub fn execute_lifecycle_model(
     })
 }
 
-/// How the humanizer job trains and measures its adapter: the `ster tune
-/// sft` settings, how the base and student GGUFs are served, the most tokens
-/// one answer may hold and the chrF n-gram order its scores count.
+/// How the humanizer job trains its adapter: the `ster tune sft` settings.
+/// Its evaluation lets llama-server size itself and each answer run until the
+/// model ends it, and scores by chrF with sacrebleu's documented settings.
 pub struct HumanizerTraining {
     pub ster_options: String,
-    pub serving: EvaluationServing,
-    pub max_tokens: usize,
-    pub chrf_order: usize,
 }
 
 /// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
@@ -289,8 +268,7 @@ pub fn execute_humanizer_model(
          HUMANIZER_MIN_TRAIN_ROWS={} HUMANIZER_MIN_VALIDATION_ROWS={} HUMANIZER_MIN_TEST_ROWS={} \
          HUMANIZER_MIN_LENGTH_RATIO={} HUMANIZER_MAX_LENGTH_RATIO={} \
          HUMANIZER_TEST_SHARE={} HUMANIZER_VALIDATION_SHARE={} \
-         HUMANIZER_STER_OPTIONS={} HUMANIZER_EVAL_PARALLEL={} HUMANIZER_EVAL_SLOT_CONTEXT={} \
-         HUMANIZER_EVAL_GPU_LAYERS={} HUMANIZER_EVAL_MAX_TOKENS={} HUMANIZER_CHRF_ORDER={} \
+         HUMANIZER_STER_OPTIONS={} \
          ./training/humanizer-model/run.sh \"$work/targets.jsonl\"",
         gate.min_semantic_fidelity,
         gate.min_voice_match,
@@ -306,11 +284,6 @@ pub fn execute_humanizer_model(
         minimums.held_out.test,
         minimums.held_out.validation,
         shell_quote(ster_options),
-        training.serving.parallel,
-        training.serving.slot_context,
-        shell_quote(&training.serving.gpu_layers),
-        training.max_tokens,
-        training.chrf_order,
     );
     let run_id = format!("echo-humanizer-{run_key}-{source_ref}");
     let args = vec![

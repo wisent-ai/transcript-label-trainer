@@ -28,9 +28,6 @@ pub(crate) fn release_specs() -> Vec<Spec> {
             path("--server", "the llama-server executable"),
             path("--server-log", "where the server's log is written"),
             path("--output-schema", "the checked-in decision schema"),
-            required("--parallel", "N", Kind::Int, "server slots and concurrent requests".to_string()),
-            required("--slot-context", "N", Kind::Int, "context tokens each slot holds".to_string()),
-            required("--gpu-layers", "N", Kind::Text, "layers llama-server offloads to the GPU, as llama-server takes it".to_string()),
         ],
     };
     vec![evaluate_gguf, Spec {
@@ -331,24 +328,8 @@ pub(crate) fn cmd_lifecycle_evaluate_gguf(args: &Parsed) -> Result<i32> {
         server: path("--server"),
         server_log: path("--server-log"),
         output_schema: path("--output-schema"),
-        parallel: stated_count(args, "--parallel")?,
-        slot_context: stated_count(args, "--slot-context")?,
-        gpu_layers: args.text("--gpu-layers").unwrap_or_default().to_string(),
     };
     let report = crate::lifecycle::evaluate_gguf(&run)?;
     outln!("{}", dumps(&report));
     Ok(0)
-}
-
-/// The serving settings a model job's quantized evaluation is stated to run with.
-pub(crate) fn evaluation_serving(args: &Parsed) -> Result<stado::EvaluationServing> {
-    let gpu_layers = args.text("--eval-gpu-layers").unwrap_or_default().trim().to_string();
-    if gpu_layers.is_empty() {
-        return Err(Error("--eval-gpu-layers N is required on the command line; this command has no default for it".to_string()));
-    }
-    Ok(stado::EvaluationServing {
-        parallel: stated_count(args, "--eval-parallel")?,
-        slot_context: stated_count(args, "--eval-slot-context")?,
-        gpu_layers,
-    })
 }

@@ -42,9 +42,6 @@ pub(crate) fn goal_served_specs() -> Vec<Spec> {
             path("--metrics", "JSON the exact-match share is written to"),
             path("--server", "the llama-server executable"),
             path("--server-log", "where the server's log is written"),
-            required("--parallel", "N", Kind::Int, "server slots".to_string()),
-            required("--slot-context", "N", Kind::Int, "context tokens each slot holds".to_string()),
-            required("--gpu-layers", "N", Kind::Text, "layers llama-server offloads to the GPU, as llama-server takes it".to_string()),
         ],
     };
     vec![examples, evaluate]
@@ -62,9 +59,6 @@ pub(crate) fn cmd_goal_evaluate_gguf(args: &Parsed) -> Result<i32> {
             server: path("--server"),
             model: path("--model"),
             server_log: path("--server-log"),
-            parallel: stated_count(args, "--parallel")?,
-            slot_context: stated_count(args, "--slot-context")?,
-            gpu_layers: args.text("--gpu-layers").unwrap_or_default().to_string(),
         },
         dataset: path("--dataset"),
         predictions: path("--predictions"),

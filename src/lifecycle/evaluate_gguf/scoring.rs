@@ -1,6 +1,7 @@
-//! The evaluation run: every row asked on `parallel` workers, one progress
-//! line per finished row, then the predictions file and the metrics, which
-//! report each measured rate and leave out a rate with nothing to measure.
+//! The evaluation run: every row asked on one worker per slot the server
+//! chose, one progress line per finished row, then the predictions file and
+//! the metrics, which report each measured rate and leave out a rate with
+//! nothing to measure.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -20,9 +21,6 @@ pub fn evaluate_gguf(run: &GgufEvaluation) -> Result<Value> {
             return Err(Error(format!("the GGUF evaluation {what} {} does not exist", path.display())));
         }
     }
-    if run.parallel == 0 || run.slot_context == 0 {
-        return Err(Error("--parallel and --slot-context must be at least 1".to_string()));
-    }
     let schema: Value = serde_json::from_str(&fs::read_to_string(&run.output_schema)?)?;
     let rows = read_rows(&run.dataset)?;
     if rows.is_empty() {
@@ -38,7 +36,7 @@ pub fn evaluate_gguf(run: &GgufEvaluation) -> Result<Value> {
     // Scoped workers borrow the one server; the scope ends when every worker
     // has answered, before the server is stopped.
     let joined: Result<()> = thread::scope(|scope| {
-    let workers: Vec<_> = (0..run.parallel.min(rows.len()))
+    let workers: Vec<_> = (0..server.slots.min(rows.len()))
         .map(|_| {
             let (rows, next, done, answers) = (Arc::clone(&rows), Arc::clone(&next), Arc::clone(&done), Arc::clone(&answers));
             let (server, schema) = (shared, schema.clone());

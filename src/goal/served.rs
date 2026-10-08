@@ -92,7 +92,7 @@ pub(crate) struct GoalEvaluation {
 fn predictions(server: &Server, gold: &[GoalRow]) -> Result<Vec<(String, bool)>> {
     gold.iter()
         .map(|row| {
-            let student = server.answer(&row.session_id, SYSTEM_PROMPT.trim(), &user_turn(&row.message), ("grammar", json!(ANSWER_GRAMMAR)))?;
+            let student = server.answer(&row.session_id, SYSTEM_PROMPT.trim(), &user_turn(&row.message), Some(("grammar", json!(ANSWER_GRAMMAR))))?;
             let exact = student == answer(row);
             println!("quantized goal prediction for {}: {}", row.session_id, if exact { "exact" } else { "differs" });
             Ok((student, exact))

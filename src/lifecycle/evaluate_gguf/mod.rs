@@ -11,7 +11,8 @@ use serde_json::{json, Map};
 
 use super::*;
 
-/// What one evaluation run is given; every field is the caller's.
+/// What one evaluation run is given; every field is the caller's. How the
+/// server sizes its slots, context and offload is its own (`crate::serving`).
 pub struct GgufEvaluation {
     pub model: PathBuf,
     pub dataset: PathBuf,
@@ -20,9 +21,6 @@ pub struct GgufEvaluation {
     pub server: PathBuf,
     pub server_log: PathBuf,
     pub output_schema: PathBuf,
-    pub parallel: usize,
-    pub slot_context: usize,
-    pub gpu_layers: String,
 }
 
 impl GgufEvaluation {
@@ -32,9 +30,6 @@ impl GgufEvaluation {
             server: self.server.clone(),
             model: self.model.clone(),
             server_log: self.server_log.clone(),
-            parallel: self.parallel,
-            slot_context: self.slot_context,
-            gpu_layers: self.gpu_layers.clone(),
         }
     }
 }
@@ -113,7 +108,7 @@ fn classify(server: &crate::serving::Server, schema: &Value, row: &TrainingRow) 
     let user = &row.messages.iter().find(|message| message.role == "user").ok_or_else(|| Error(format!("{} has no user message", row.id)))?.content;
     let narrowed = narrowed(schema, &existing_refs(row, schema)?)?;
     let constraint = json!({ "type": "json_schema", "json_schema": { "name": "oko_goal_lifecycle", "strict": true, "schema": narrowed } });
-    let raw = server.answer(&row.id, SYSTEM_PROMPT.trim(), user, ("response_format", constraint))?;
+    let raw = server.answer(&row.id, SYSTEM_PROMPT.trim(), user, Some(("response_format", constraint)))?;
     let parsed = decision(&raw, &narrowed);
     Ok((raw, parsed))
 }

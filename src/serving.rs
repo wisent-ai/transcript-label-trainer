@@ -21,30 +21,33 @@ use serde_json::{json, Value};
 
 use crate::util::{Error, Result};
 
-/// How the model is served; every field is the caller's.
+/// Which server serves which model, and where its log goes. How many slots it
+/// runs, how much context it holds and how many layers it offloads are
+/// llama-server's own to size from the model and the device: its documented
+/// defaults are `--parallel -1` (auto), `--ctx-size 0` (loaded from the
+/// model, fitted to device memory by `--fit on`) and `--gpu-layers auto`
+/// (https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
 pub(crate) struct Serving {
     pub(crate) server: PathBuf,
     pub(crate) model: PathBuf,
     pub(crate) server_log: PathBuf,
-    pub(crate) parallel: usize,
-    pub(crate) slot_context: usize,
-    pub(crate) gpu_layers: String,
 }
 
-/// A running server: the chat endpoint, the alias every request names, and
-/// a client that waits for each answer.
+/// A running server: the chat endpoint, the alias every request names, the
+/// slots it chose (its `/props` `total_slots`), and a client that waits for
+/// each answer.
 pub(crate) struct Server {
     child: Child,
     pub(crate) endpoint: String,
     pub(crate) alias: String,
+    pub(crate) slots: usize,
     pub(crate) client: reqwest::blocking::Client,
 }
 
 impl Server {
-    /// Start `serving` and return once it answers its health check. A server
-    /// or model file that does not exist is refused before anything starts;
-    /// the slot and context counts are the caller's, stated at least one on
-    /// the command line.
+    /// Start `serving` and return once it answers its health check and has
+    /// said how many slots it runs. A server or model file that does not
+    /// exist is refused before anything starts.
     pub(crate) fn start(serving: &Serving) -> Result<Self> {
         for (what, path) in [("model", &serving.model), ("server", &serving.server)] {
             if !path.is_file() {
@@ -52,12 +55,22 @@ impl Server {
             }
         }
         let port = free_port()?;
-        let child = start_server(serving, port)?;
+        let mut child = start_server(serving, port)?;
+        let client = waiting_client()?;
+        let slots = match served_slots(&client, port) {
+            Ok(slots) => slots,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        };
         Ok(Self {
             child,
             endpoint: format!("http://{}:{port}/v1/chat/completions", Ipv4Addr::LOCALHOST),
             alias: alias(&serving.model),
-            client: waiting_client()?,
+            slots,
+            client,
         })
     }
 
@@ -68,10 +81,11 @@ impl Server {
     }
 
     /// Ask for the answer to one conversation — `system` then `user` — with
-    /// thinking off and greedy decoding, constrained by `constraint` (the
-    /// request field llama-server reads it from, and its value), and return
-    /// the answer's text. `id` names the request in a failure.
-    pub(crate) fn answer(&self, id: &str, system: &str, user: &str, constraint: (&str, Value)) -> Result<String> {
+    /// thinking off and greedy decoding, constrained by `constraint` when one
+    /// is given (the request field llama-server reads it from, and its
+    /// value), and return the answer's text. `id` names the request in a
+    /// failure.
+    pub(crate) fn answer(&self, id: &str, system: &str, user: &str, constraint: Option<(&str, Value)>) -> Result<String> {
     let mut body = json!({
         "model": self.alias,
         "messages": [{ "role": "system", "content": system }, { "role": "user", "content": user }],
@@ -79,12 +93,31 @@ impl Server {
         "stream": false,
         "chat_template_kwargs": { "enable_thinking": false },
     });
-    body[constraint.0] = constraint.1;
+    if let Some((field, value)) = constraint {
+        body[field] = value;
+    }
     let response = self.client.post(&self.endpoint).json(&body).send().map_err(|error| Error(format!("{id} inference failed: {error}")))?;
     let status = response.status();
     let answer: Value = response.json().map_err(|error| Error(format!("{id} answered {status} without JSON: {error}")))?;
     Ok(answer.pointer("/choices/0/message/content").and_then(Value::as_str).ok_or_else(|| Error(format!("{id} answered {status} without a message: {answer}")))?.trim().to_string())
     }
+}
+
+/// The slots the server chose, from its `/props` answer's `total_slots`.
+fn served_slots(client: &reqwest::blocking::Client, port: u16) -> Result<usize> {
+    let props = format!("http://{}:{port}/props", Ipv4Addr::LOCALHOST);
+    let answer: Value = client
+        .get(&props)
+        .send()
+        .and_then(reqwest::blocking::Response::json)
+        .map_err(|error| Error(format!("llama-server did not answer {props} with JSON: {error}")))?;
+    answer
+        .get("total_slots")
+        .and_then(Value::as_u64)
+        .and_then(|slots| usize::try_from(slots).ok())
+        .and_then(std::num::NonZeroUsize::new)
+        .map(std::num::NonZeroUsize::get)
+        .ok_or_else(|| Error(format!("llama-server's {props} states no positive total_slots: {answer}")))
 }
 
 /// The served alias every request names.
@@ -109,8 +142,7 @@ fn start_server(run: &Serving, port: u16) -> Result<Child> {
         .arg("--model")
         .arg(&run.model)
         .args(["--host", &Ipv4Addr::LOCALHOST.to_string(), "--port", &port.to_string(), "--alias", &alias(&run.model)])
-        .args(["--ctx-size", &(run.slot_context * run.parallel).to_string(), "--gpu-layers", &run.gpu_layers])
-        .args(["--parallel", &run.parallel.to_string(), "--no-webui"])
+        .args(["--no-webui"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

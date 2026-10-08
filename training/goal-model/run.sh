@@ -70,10 +70,7 @@ if [ ! -s "$WORK/predictions.jsonl" ]; then
     --predictions "$WORK/predictions.jsonl" \
     --metrics "$WORK/metrics-gguf.json" \
     --server "$LLAMA_CPP/build/bin/llama-server" \
-    --server-log "$WORK/llama-server-eval.log" \
-    --parallel "${GOAL_EVAL_PARALLEL:?goal-model passes --eval-parallel as GOAL_EVAL_PARALLEL}" \
-    --slot-context "${GOAL_EVAL_SLOT_CONTEXT:?goal-model passes --eval-slot-context as GOAL_EVAL_SLOT_CONTEXT}" \
-    --gpu-layers "${GOAL_EVAL_GPU_LAYERS:?goal-model passes --eval-gpu-layers as GOAL_EVAL_GPU_LAYERS}"
+    --server-log "$WORK/llama-server-eval.log"
 fi
 
 set +e

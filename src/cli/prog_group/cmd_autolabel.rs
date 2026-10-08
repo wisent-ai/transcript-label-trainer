@@ -70,7 +70,6 @@ pub(crate) fn cmd_goal_model(args: &Parsed) -> Result<i32> {
     // The job's own settings are checked before curation spends any Brama
     // call: a run that would be refused at submission is refused first.
     let ster_options = stado::stated_ster_options(args.text("--ster-options").unwrap_or_default())?;
-    let serving = evaluation_serving(args)?;
     let root = placement::resolve_placement()
         .training_root
         .join("goal-model")
@@ -90,7 +89,6 @@ pub(crate) fn cmd_goal_model(args: &Parsed) -> Result<i32> {
         args.text("--compute-target").unwrap_or_default(),
         stated_count(args, "--audit-workers")?,
         ster_options,
-        &serving,
     )?;
     outln!("Stado job: {}", job.job_id);
     outln!("model artifact: {}", job.output_uri);
@@ -142,7 +140,6 @@ pub(crate) fn cmd_lifecycle_model(args: &Parsed) -> Result<i32> {
         std::path::Path::new(args.positional(1)),
         args.text("--compute-target").unwrap_or_default(), args.text("--brama-url").unwrap_or_default(),
         args.text("--ster-options").unwrap_or_default(),
-        &evaluation_serving(args)?,
         &stado::LifecycleAudit {
             workers: stated_count(args, "--audit-workers")?,
             max_wrong_share: stated_share(args, "--audit-max-wrong-share")?,
@@ -159,13 +156,10 @@ pub(crate) fn cmd_humanizer_model(args: &Parsed) -> Result<i32> {
     if hf_repo.trim().is_empty() {
         return Err(Error("HUMANIZER_HF_REPO must explicitly name a private destination".into()));
     }
-    // The job's training and evaluation settings are checked before the
-    // corpus is exported: a run that would be refused at submission is refused first.
+    // The job's training settings are checked before the corpus is exported:
+    // a run that would be refused at submission is refused first.
     let training = stado::HumanizerTraining {
         ster_options: stado::stated_ster_options(args.text("--ster-options").unwrap_or_default())?.to_string(),
-        serving: evaluation_serving(args)?,
-        max_tokens: stated_count(args, "--eval-max-tokens")?,
-        chrf_order: stated_count(args, "--chrf-order")?,
     };
     let root = placement::resolve_placement()
         .training_root

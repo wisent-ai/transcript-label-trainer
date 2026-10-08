@@ -76,10 +76,7 @@ if [ ! -s "$WORK/metrics-gguf.json" ]; then
     --metrics "$WORK/metrics-gguf.json" \
     --server "$LLAMA_CPP/build/bin/llama-server" \
     --server-log "$WORK/llama-server-eval.log" \
-    --output-schema "$ROOT/training/lifecycle-model/lifecycle-output-schema.json" \
-    --parallel "${LIFECYCLE_EVAL_PARALLEL:?lifecycle-model passes --eval-parallel as LIFECYCLE_EVAL_PARALLEL}" \
-    --slot-context "${LIFECYCLE_EVAL_SLOT_CONTEXT:?lifecycle-model passes --eval-slot-context as LIFECYCLE_EVAL_SLOT_CONTEXT}" \
-    --gpu-layers "${LIFECYCLE_EVAL_GPU_LAYERS:?lifecycle-model passes --eval-gpu-layers as LIFECYCLE_EVAL_GPU_LAYERS}"
+    --output-schema "$ROOT/training/lifecycle-model/lifecycle-output-schema.json"
 fi
 
 set +e
