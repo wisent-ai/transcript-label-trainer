@@ -74,13 +74,14 @@ through training to real label suggestions, which are recorded by `infer` only
 when emitted.
 
 Train one aspect from the manual labels in the lake. The frozen holdout is
-yours to state: `--eval-split-fraction` (a share between 0 and 1) and
-`--eval-split-seed`, or `--no-eval-split` to train on every labeled session.
+stated with the run: `--eval-split scikit-learn` (scikit-learn's documented
+test share, seeded by the aspect's name), `--eval-split-fraction` (a share
+between 0 and 1) with `--eval-split-seed`, or `--no-eval-split` to train on
+every labeled session.
 
 ```sh
 transcript-label-trainer train --aspect reviewed \
-  --training scikit-learn \
-  --eval-split-fraction F --eval-split-seed N
+  --training scikit-learn --eval-split scikit-learn
 ```
 
 `--training scikit-learn` states every TF-IDF and solver setting from

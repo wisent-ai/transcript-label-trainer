@@ -39,17 +39,15 @@ scope:
   # values: [bugfix, feature, chore]  # only these label values
   # min_text_chars: 200               # skip sessions with shorter text
 
-# The frozen evaluation split. The holdout is chosen once from the fraction
-# (between 0 and 1) and seed stated here, written to
+# The frozen evaluation split. The holdout is chosen once, written to
 # $TLT_HOME/models/topic-v1/eval-split.json, and reused by every later run of
 # this job: sessions labeled later can only join the training side, and
-# nothing in the file is ever trained on. Both fields are yours to state; the
-# trainer chooses neither and refuses this file until they are filled in. Use
-# `eval_split: false` to train on every labeled session instead — then there
-# is nothing for `evaluate` to score.
-eval_split:
-  fraction:
-  seed:
+# nothing in the file is ever trained on. `scikit-learn` takes the test share
+# scikit-learn's train_test_split documents and a seed derived from the job's
+# name (docs/guide/training.md cites both); a mapping with `fraction` and
+# `seed` states them instead. Use `eval_split: false` to train on every
+# labeled session — then there is nothing for `evaluate` to score.
+eval_split: scikit-learn
 
 # The Brama teacher that `transcript-label-trainer evaluate topic-v1` asks
 # whether the model's holdout predictions are acceptable. On by default;

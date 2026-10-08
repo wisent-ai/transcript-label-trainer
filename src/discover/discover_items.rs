@@ -210,7 +210,7 @@ pub fn discover(
                 ),
                 format!(
                     "transcript-label-trainer train --aspect {aspect} \
-                     --training scikit-learn --eval-split-fraction F --eval-split-seed N"
+                     --training scikit-learn --eval-split scikit-learn"
                 ),
             ]),
         );

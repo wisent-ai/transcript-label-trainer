@@ -53,7 +53,7 @@ fn run(raw: &str) -> std::result::Result<Value, (bool, String)> {
     let backend = text("model").map_err(|_| {
         refused(format!("model is required: {} or a HuggingFace model id", jobs::SKLEARN_MODEL))
     })?;
-    let eval_split = jobs::eval_split(&body).map_err(|error| refused(error.to_string()))?;
+    let eval_split = jobs::eval_split(&body, aspect).map_err(|error| refused(error.to_string()))?;
     let settings = match jobs::get(&body, "training") {
         Some(serde_yaml::Value::Mapping(settings)) => settings,
         _ => return Err(refused("training is required: the backend's settings, one text per key".to_string())),

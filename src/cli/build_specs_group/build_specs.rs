@@ -31,6 +31,15 @@ fn training_specs() -> Vec<Spec> {
                 "aspect name, e.g. reviewed".to_string(),
             ),
             option(
+                "--eval-split",
+                "PRESET",
+                Kind::Text,
+                "the frozen holdout from a preset instead of a stated fraction and seed: \
+                 scikit-learn (train_test_split's documented test share 0.25, seeded by the \
+                 aspect's name); refused beside --eval-split-fraction or --eval-split-seed"
+                    .to_string(),
+            ),
+            option(
                 "--model",
                 "HF_MODEL_ID",
                 Kind::Text,

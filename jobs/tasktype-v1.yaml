@@ -14,13 +14,10 @@ evaluator: brama:codex/gpt-5.6-sol
 model: tfidf-logreg
 scope:
   aspect: tasktype
-# The holdout share (between 0 and 1) and seed are the operator's to state;
-# `run` refuses this job until they are filled in. A job that already ran keeps
-# the frozen split in $TLT_HOME/models/tasktype-v1/eval-split.json, whose
-# fraction and seed are the values to write here.
-eval_split:
-  fraction:
-  seed:
+# The holdout: scikit-learn's documented test share, seeded by the job's name.
+# A job that already ran keeps the frozen split in
+# $TLT_HOME/models/tasktype-v1/eval-split.json, which wins over this line.
+eval_split: scikit-learn
 # The tfidf-logreg settings: scikit-learn's documented defaults, each value
 # and its document listed in docs/guide/training.md.
 training: scikit-learn

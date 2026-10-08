@@ -1,9 +1,10 @@
 use super::*;
 
 /// Validate the eval_split section. It is required: a mapping with both
-/// `fraction` and `seed`, or `false` to train on every labeled session. The
-/// holdout is the job's to state; nothing here chooses its size or seed.
-pub(crate) fn eval_split(raw: &serde_yaml::Mapping) -> Result<EvalSplit> {
+/// `fraction` and `seed`, the preset `scikit-learn` (its documented test
+/// share, seeded by `split_name`), or `false` to train on every labeled
+/// session. Nothing here chooses a size or seed of its own.
+pub(crate) fn eval_split(raw: &serde_yaml::Mapping, split_name: &str) -> Result<EvalSplit> {
     let value = match get_raw(raw, "eval_split") {
         Some(Yaml::Bool(false)) => {
             return Ok(EvalSplit {
@@ -12,11 +13,15 @@ pub(crate) fn eval_split(raw: &serde_yaml::Mapping) -> Result<EvalSplit> {
                 seed: None,
             })
         }
+        Some(Yaml::String(name)) if name == super::presets::EVAL_SPLIT_PRESET => {
+            return Ok(super::presets::eval_split_preset(split_name))
+        }
         Some(Yaml::Mapping(mapping)) => mapping,
         _ => bail!(
-            "'eval_split' is required: a mapping with 'fraction' and 'seed', or false \
-             to train on every labeled session; the job states its holdout, \
-             transcript-label-trainer chooses none"
+            "'eval_split' is required: a mapping with 'fraction' and 'seed', the preset {}, \
+             or false to train on every labeled session; the job states its holdout, \
+             transcript-label-trainer chooses none",
+            super::presets::EVAL_SPLIT_PRESET
         ),
     };
     let unknown = unknown_keys(value, &EVAL_SPLIT_KEYS);
@@ -217,6 +222,7 @@ pub fn load(path: &str) -> Result<Job> {
     };
 
     let stated_training = training(&raw, &model)?;
+    let stated_eval_split = eval_split(&raw, &name)?;
     Ok(Job {
         name,
         task,
@@ -229,7 +235,7 @@ pub fn load(path: &str) -> Result<Job> {
             values: string_list(scope, "values")?,
             min_text_chars,
         },
-        eval_split: eval_split(&raw)?,
+        eval_split: stated_eval_split,
         judge: judge(&raw)?,
         training: stated_training,
     })

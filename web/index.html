@@ -106,6 +106,7 @@
         </label>
         <label id="train-model-id-label" hidden>HuggingFace model id <input id="train-model-id" type="text"></label>
         <label><input id="train-no-holdout" type="checkbox"> Train on every labeled session (no frozen holdout)</label>
+        <label><input id="train-holdout-preset" type="checkbox"> scikit-learn holdout: train_test_split's documented test share 0.25, seeded by the aspect's name</label>
         <label>Holdout share <input id="train-fraction" type="text"></label>
         <label>Holdout seed <input id="train-seed" type="number" min="0" step="1"></label>
         <fieldset id="train-settings"><legend>Training settings</legend></fieldset>

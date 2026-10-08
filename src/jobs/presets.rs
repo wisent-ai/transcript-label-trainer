@@ -113,3 +113,21 @@ pub(crate) fn ster_preset(name: &str) -> Option<String> {
         )
     })
 }
+
+/// The holdout preset (`eval_split: scikit-learn`, `train --eval-split
+/// scikit-learn`): scikit-learn's documented test share, and a seed taken
+/// from the split's own name so every run of the same job or aspect freezes
+/// the same sessions without anyone choosing a number.
+pub(crate) const EVAL_SPLIT_PRESET: &str = SCIKIT_LEARN;
+
+// train_test_split test_size: "If train_size is also None, it will be set to 0.25",
+// https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
+const TEST_SIZE: f64 = 0.25;
+
+/// The holdout `eval_split: scikit-learn` states for the split named `name`.
+pub(crate) fn eval_split_preset(name: &str) -> EvalSplit {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(name.as_bytes());
+    let leading = digest.first_chunk().map(|bytes| i64::from_be_bytes(*bytes));
+    EvalSplit { enabled: true, fraction: Some(TEST_SIZE), seed: leading.map(i64::saturating_abs) }
+}

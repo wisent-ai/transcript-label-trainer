@@ -130,9 +130,10 @@ scope:
   since: "2026-07-01"              # optional; label ts must be on/after this
   values: [bugfix, feature, chore] # optional; restrict to these values
   min_text_chars: 200              # optional; skip shorter session texts
-eval_split:                        # required: fraction and seed, or false
-  fraction: F                      # share (between 0 and 1) frozen out of training
-  seed: N                          # makes the first run's pick reproducible
+eval_split: scikit-learn           # required: the preset, fraction and seed, or false
+# eval_split:
+#   fraction: F                    # share (between 0 and 1) frozen out of training
+#   seed: N                        # makes the first run's pick reproducible
 judge:                             # optional; ON by default, shown with its default
   model: best                      # the Brama alias `evaluate` asks
 training: scikit-learn             # required: a preset, or every tfidf-logreg setting:
@@ -176,10 +177,16 @@ copy of the spec (`job.yaml`), and `metrics.json` carries the job metadata.
 
 Comparing two models over time only means something when both were scored on
 the same untouched sessions. So every job and every `train` states a holdout —
-`eval_split` with a `fraction` and `seed` (flags `--eval-split-fraction` and
-`--eval-split-seed` for `train`), or `eval_split: false` / `--no-eval-split` to
-train on everything; the trainer chooses neither number — and the chosen
-session ids are written once to `<training root>/models/<name>/eval-split.json`:
+`eval_split: scikit-learn` (flag `--eval-split scikit-learn`; the Train panel's
+scikit-learn holdout box), `eval_split` with a `fraction` and `seed` (flags
+`--eval-split-fraction` and `--eval-split-seed`), or `eval_split: false` /
+`--no-eval-split` to train on everything. The preset's share is the 0.25
+[scikit-learn's `train_test_split`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html)
+documents as its test size; its seed is the first eight bytes of the SHA-256 of
+the split's name (the job's name, or the aspect for `train`) read as a
+non-negative integer, so reruns freeze the same sessions and nobody picks a
+number. The chosen session ids are written once to
+`<training root>/models/<name>/eval-split.json`:
 
 ```json
 {

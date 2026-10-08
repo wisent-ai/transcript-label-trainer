@@ -152,16 +152,33 @@ pub fn run(args: Vec<String>) -> Result<i32> {
 // ---------------------------------------------------------------- commands
 
 pub(crate) fn cmd_train(args: &Parsed) -> Result<i32> {
+    let stated_fraction_or_seed = args.float("--eval-split-fraction").is_some() || args.int("--eval-split-seed").is_some();
     let eval_split = if args.flag("--no-eval-split") {
         serde_json::json!({"enabled": false, "fraction": Value::Null, "seed": Value::Null})
+    } else if let Some(preset) = args.text("--eval-split") {
+        if stated_fraction_or_seed {
+            return Err(Error(format!(
+                "--eval-split {preset} states the fraction and seed; --eval-split-fraction and --eval-split-seed cannot be given beside it"
+            )));
+        }
+        if preset != jobs::EVAL_SPLIT_PRESET {
+            return Err(Error(format!(
+                "unknown --eval-split preset {preset:?}: the preset is {}",
+                jobs::EVAL_SPLIT_PRESET
+            )));
+        }
+        let Some(aspect) = args.text("--aspect") else {
+            return Err(Error("--eval-split needs --aspect, whose name seeds the holdout".to_string()));
+        };
+        serde_json::to_value(jobs::eval_split_preset(aspect))?
     } else {
         let (Some(fraction), Some(seed)) = (
             args.float("--eval-split-fraction"),
             args.int("--eval-split-seed"),
         ) else {
             return Err(Error(
-                "train needs --eval-split-fraction F and --eval-split-seed N, or \
-                 --no-eval-split; transcript-label-trainer chooses no holdout"
+                "train needs --eval-split-fraction F and --eval-split-seed N, --eval-split \
+                 scikit-learn, or --no-eval-split; transcript-label-trainer chooses no holdout"
                     .to_string(),
             ));
         };

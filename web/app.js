@@ -229,9 +229,12 @@ trainButton.addEventListener("click", async () => {
   settingsBox.querySelectorAll("input[data-key]").forEach((input) => {
     if (input.value.trim() !== "") training[input.dataset.key] = input.value.trim();
   });
+  const holdoutPreset = document.getElementById("train-holdout-preset").checked;
   const evalSplit = document.getElementById("train-no-holdout").checked
     ? false
-    : { fraction: Number(value("train-fraction")), seed: Number(value("train-seed")) };
+    : holdoutPreset
+      ? "scikit-learn"
+      : { fraction: Number(value("train-fraction")), seed: Number(value("train-seed")) };
   const body = {
     aspect: value("train-aspect"),
     model: backendSelect.value === "huggingface" ? value("train-model-id") : backendSelect.value,

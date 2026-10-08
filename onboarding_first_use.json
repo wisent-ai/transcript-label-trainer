@@ -109,7 +109,7 @@
         "renderer": "first_action",
         "title": "Train one aspect from the labels you already made",
         "body": "One classifier per aspect, TF-IDF and logistic regression by default, trains locally. It needs real labeled sessions over at least two values; the trainer never pads the corpus with sample rows. State every TF-IDF and solver setting (or the scikit-learn preset) and the frozen holdout yourself: its share of the sessions and its seed, or --no-eval-split to train on every labeled session. This step is satisfied only once a trained artifact exists under the training root.",
-        "command": "transcript-label-trainer train --aspect reviewed --training scikit-learn --eval-split-fraction F --eval-split-seed N"
+        "command": "transcript-label-trainer train --aspect reviewed --training scikit-learn --eval-split scikit-learn"
       }
     },
     {
