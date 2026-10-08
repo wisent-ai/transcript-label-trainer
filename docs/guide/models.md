@@ -70,7 +70,7 @@ Replace `TARGET` below with the registered Stado GPU target selected for trainin
 ```sh
 transcript-label-trainer goal-model \
   --compute-target TARGET \
-  --limit N --workers N --audit-workers N \
+  --limit N \
   --ster-options trl
 ```
 
@@ -181,10 +181,10 @@ JSONL outputs:
 ```sh
 transcript-label-trainer lifecycle-review path/to/train.jsonl \
   --output ~/.transcript-label-trainer/lifecycle-model/reviewed-train.jsonl \
-  --split train --brama-model=best --workers N
+  --split train --brama-model=best
 transcript-label-trainer lifecycle-review path/to/eval.jsonl \
   --output ~/.transcript-label-trainer/lifecycle-model/reviewed-eval.jsonl \
-  --split eval --brama-model=best --workers N
+  --split eval --brama-model=best
 ```
 
 When the decision semantics change, prior source rows are reviewed again rather
