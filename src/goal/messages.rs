@@ -26,25 +26,11 @@ pub(crate) fn parse_goal(answer: &str) -> Option<ParsedGoal> {
         .join(" ")
         .trim_end_matches('.')
         .to_string();
-    if !(3..=7).contains(&goal.split_whitespace().count()) || goal.chars().count() > 100 {
+    // Jeden displays 3–7 word task goals (docs/guide/models.md, the goal-model contract).
+    if !(3..=7).contains(&goal.split_whitespace().count()) {
         return None;
     }
     Some(ParsedGoal::Task(goal))
-}
-
-pub(crate) fn generic_goal(goal: &str) -> bool {
-    [
-        "continue the requested task",
-        "complete the requested fix",
-        "fix the issue",
-        "complete the requested change",
-        "continue the task",
-        "add the requested change",
-        "identify the problem",
-        "select option 1",
-        "answer yes or no",
-    ]
-    .contains(&goal.to_lowercase().as_str())
 }
 
 pub(crate) fn review_goal(client: &BramaClient, message: &str, goal: Option<&str>) -> Result<bool> {
@@ -70,10 +56,6 @@ pub(crate) fn process_candidate(
     client: &BramaClient,
     teacher_model: &str,
 ) -> Result<Option<Candidate>> {
-    if candidate.row.goal_source.as_deref() == Some("contract:no-task-v1") {
-        candidate.row.reviewed_by = Some("contract:no-task-v1".to_string());
-        return Ok(Some(candidate));
-    }
     let parsed = match candidate.row.goal.take() {
         Some(goal) => parse_goal(&format!("<goal>{goal}</goal>")),
         None => {
@@ -89,12 +71,7 @@ pub(crate) fn process_candidate(
     };
     let goal = match parsed {
         ParsedGoal::NoTask => None,
-        ParsedGoal::Task(goal) => {
-            if generic_goal(&goal) {
-                return Ok(None);
-            }
-            Some(goal)
-        }
+        ParsedGoal::Task(goal) => Some(goal),
     };
     if !review_goal(client, &candidate.row.message, goal.as_deref())? {
         return Ok(None);
@@ -112,7 +89,6 @@ pub(crate) fn process_candidate(
 /// two routes' allowances as Brama measured them.
 pub fn build_dataset(
     output: &Path,
-    limit: usize,
     teacher_model: Option<&str>,
 ) -> Result<Value> {
     let teacher_model = teacher_model
@@ -120,19 +96,11 @@ pub fn build_dataset(
         .unwrap_or(DEFAULT_MODEL);
     let mut seen = HashSet::new();
     let mut candidates = Vec::new();
-    for row in gold_rows()? {
+    // Gold rows first, then every other user message the lake holds; no count
+    // is stated, so none is taken short. The teacher decides which messages
+    // carry a task and the reviewer checks each answer.
+    for row in gold_rows()?.into_iter().chain(unlabeled_rows()?) {
         if seen.insert(normalized_digest(&row.message)) {
-            candidates.push(row);
-        }
-    }
-    let gold_candidates = candidates.len();
-    for row in unlabeled_rows(limit)? {
-        if candidates.len().saturating_sub(gold_candidates) >= limit {
-            break;
-        }
-        if row.goal_source.as_deref() == Some("contract:no-task-v1")
-            || seen.insert(normalized_digest(&row.message))
-        {
             candidates.push(row);
         }
     }

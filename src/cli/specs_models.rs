@@ -59,8 +59,8 @@ pub(crate) fn model_specs() -> Vec<Spec> {
         name: "goal-model",
         help: "build and train the reviewed Jeden goal model on Stado".to_string(),
         description: Some(
-            "Read only privacy-masked Transcript Lake events, use a Brama teacher \
-             to label task goals, require an independent Brama best review, then \
+            "Read every privacy-masked Transcript Lake user message (no count is taken \
+             short), use a Brama teacher to label task goals, require an independent Brama best review, then \
              train the served model with ster tune sft on the named exclusive Stado \
              GPU target (the reviewed rows as goal-examples, every training setting \
              from --ster-options). The held-out gold rows are asked of the quantized \
@@ -75,12 +75,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 "COMPUTE_TARGET",
                 Kind::Text,
                 "canonical Stado GPU target that trains and exports the model".to_string(),
-            ),
-            required(
-                "--limit",
-                "LIMIT",
-                Kind::Int,
-                "most teacher-labeled candidates".to_string(),
             ),
             option(
                 "--teacher-model",

@@ -70,7 +70,6 @@ Replace `TARGET` below with the registered Stado GPU target selected for trainin
 ```sh
 transcript-label-trainer goal-model \
   --compute-target TARGET \
-  --limit N \
   --ster-options trl
 ```
 

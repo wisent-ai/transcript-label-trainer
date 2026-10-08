@@ -35,7 +35,7 @@ Goal models (fine-tunes trained on a Stado GPU target, gated before publish):
 
 | command | does |
 |---|---|
-| `goal-model` | curate masked lake messages, teacher-label task goals through Brama, require an independent `best` review, train the served model with `ster tune sft` on the named exclusive Stado GPU target with exactly the `--ster-options` given (required; an empty value is refused as `--ster-options cannot be empty`), ask the quantized model for every held-out gold row with `goal-evaluate-gguf`, and publish GGUF artifacts only after those served predictions pass a second `best` audit. `--limit N` (most teacher-labeled candidates) is required, at least 1; the teacher and audit calls run as many at once as Brama measured each route to carry (see [Concurrency](#concurrency)) |
+| `goal-model` | curate every masked lake user message (no count is taken short; the teacher decides which carry a task, the goal must be the 3–7 words Jeden displays), teacher-label task goals through Brama, require an independent `best` review, train the served model with `ster tune sft` on the named exclusive Stado GPU target with exactly the `--ster-options` given (required; an empty value is refused as `--ster-options cannot be empty`), ask the quantized model for every held-out gold row with `goal-evaluate-gguf`, and publish GGUF artifacts only after those served predictions pass a second `best` audit. The teacher and audit calls run as many at once as Brama measured each route to carry (see [Concurrency](#concurrency)) |
 | `goal-examples` | write `--rows` (reviewed goal JSONL) to `--output` as the Ster example set `ster tune sft` trains on: every row not marked gold, the goal system prompt as its `system`, `<user>message</user>` as its `prompt` and `<goal>…</goal>` or `<goal/>` as its `completion`; answers the example and held-out counts, and refuses a file without a row or whose every row is gold |
 | `goal-evaluate-gguf` | start `llama-server` (`--server`) on the quantized `--model` on a system-assigned loopback port, sized by llama-server itself (slots `--parallel -1` auto, context loaded from the model and fitted to device memory, `--gpu-layers auto`, its documented defaults), wait for its health answer, ask every gold row of `--dataset` the way Jeden serves it with decoding constrained to `<goal/>` or one `<goal>…</goal>` line, and write `--predictions` (what `goal-audit` reads) and the exact-match share to `--metrics`; a failed request fails the run naming its session; the server log goes to `--server-log` |
 | `goal-audit` | independently audit student goal predictions (JSONL of message, reference goal, student output) with as many parallel Brama calls as Brama measured the route to carry, and write the complete audit record |
@@ -62,7 +62,7 @@ The goal path in three commands. Replace `TARGET` with a registered Stado GPU ta
 
 ```sh
 # 1. Title model: curate, teacher-label, review, train, audit, publish GGUF.
-transcript-label-trainer goal-model --compute-target TARGET --limit N \
+transcript-label-trainer goal-model --compute-target TARGET \
   --ster-options trl
 
 # 2. Lifecycle datasets: review masked envelopes into immutable splits.
