@@ -33,4 +33,4 @@ mod presets;
 pub use source_pattern::*;
 pub use eval_split::*;
 pub use training::*;
-pub(crate) use presets::{presets_json, PRESETS};
+pub(crate) use presets::{presets_json, ster_preset, PRESETS, TRL};

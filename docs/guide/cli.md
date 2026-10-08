@@ -63,7 +63,7 @@ The goal path in three commands. Replace `TARGET` with a registered Stado GPU ta
 ```sh
 # 1. Title model: curate, teacher-label, review, train, audit, publish GGUF.
 transcript-label-trainer goal-model --compute-target TARGET --limit N --workers N --audit-workers N \
-  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S'
+  --ster-options trl
 
 # 2. Lifecycle datasets: review masked envelopes into immutable splits.
 transcript-label-trainer lifecycle-review envelopes.jsonl \
@@ -74,7 +74,7 @@ transcript-label-trainer lifecycle-review held-out.jsonl \
 # 3. Lifecycle model: train, audit every held-out decision, gate, publish.
 transcript-label-trainer lifecycle-model reviewed-train.jsonl reviewed-eval.jsonl \
   --compute-target TARGET --brama-url <the Brama address the job dials> \
-  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S' \
+  --ster-options trl \
   --audit-workers N --audit-max-wrong-share F
 ```
 

@@ -79,3 +79,37 @@ pub(crate) fn presets_json() -> Result<serde_json::Value> {
     }
     Ok(serde_json::json!({ (SKLEARN_MODEL): by_name }))
 }
+
+/// The `ster tune sft` preset the model jobs accept as `--ster-options trl`:
+/// the documented defaults of Hugging Face's own LoRA fine-tuning stack (PEFT
+/// for the adapter, TRL's SFTConfig over Transformers' TrainingArguments for
+/// the run), each cited where it is read.
+pub(crate) const TRL: &str = "trl";
+
+// PEFT LoraConfig r=8: https://github.com/huggingface/peft/blob/main/src/peft/tuners/lora/config.py
+const LORA_RANK: usize = 8;
+// PEFT LoraConfig lora_alpha=8: https://github.com/huggingface/peft/blob/main/src/peft/tuners/lora/config.py
+const LORA_ALPHA: usize = 8;
+// Transformers TrainingArguments num_train_epochs=3.0: https://github.com/huggingface/transformers/blob/main/src/transformers/training_args.py
+const EPOCHS: usize = 3;
+// TRL SFTConfig learning_rate=2e-5: https://github.com/huggingface/trl/blob/main/trl/trainer/sft_config.py
+const LEARNING_RATE: f64 = 2e-5;
+// Transformers TrainingArguments gradient_accumulation_steps=1: https://github.com/huggingface/transformers/blob/main/src/transformers/training_args.py
+const ACCUMULATION: usize = 1;
+// TRL SFTConfig max_length=1024: https://github.com/huggingface/trl/blob/main/trl/trainer/sft_config.py
+const MAX_SEQUENCE: usize = 1024;
+// Transformers TrainingArguments per_device_train_batch_size=8: https://github.com/huggingface/transformers/blob/main/src/transformers/training_args.py
+const BATCH_SIZE: usize = 8;
+// Transformers TrainingArguments seed=42: https://github.com/huggingface/transformers/blob/main/src/transformers/training_args.py
+const SEED: u64 = 42;
+
+/// The `ster tune sft` options a preset name stands for, or None when the
+/// text is not a preset name (the job then passes it to Ster as written).
+pub(crate) fn ster_preset(name: &str) -> Option<String> {
+    (name == TRL).then(|| {
+        format!(
+            "--rank {LORA_RANK} --alpha {LORA_ALPHA} --epochs {EPOCHS} --learning-rate {LEARNING_RATE} \
+             --accumulation {ACCUMULATION} --max-sequence {MAX_SEQUENCE} --batch-size {BATCH_SIZE} --seed {SEED}"
+        )
+    })
+}

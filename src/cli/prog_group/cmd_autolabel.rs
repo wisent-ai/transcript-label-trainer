@@ -88,7 +88,7 @@ pub(crate) fn cmd_goal_model(args: &Parsed) -> Result<i32> {
         &dataset,
         args.text("--compute-target").unwrap_or_default(),
         stated_count(args, "--audit-workers")?,
-        ster_options,
+        &ster_options,
     )?;
     outln!("Stado job: {}", job.job_id);
     outln!("model artifact: {}", job.output_uri);

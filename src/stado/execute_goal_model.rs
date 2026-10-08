@@ -30,7 +30,7 @@ pub fn execute_goal_model(
          \"$stado\" storage get '{dataset_uri}' \"$work/reviewed-goals.jsonl\"; \
          export GOAL_MODEL_WORK_DIR=\"$work\"; export GOAL_STER_OPTIONS={}; \
          GOAL_AUDIT_WORKERS={audit_workers} ./training/goal-model/run.sh \"$work/reviewed-goals.jsonl\"",
-        shell_quote(ster_options),
+        shell_quote(&ster_options),
     );
     // The same data, settings and source revision is the same run: Stado
     // answers a repeated submission with the job it already holds.
@@ -83,14 +83,22 @@ pub fn execute_goal_model(
     })
 }
 
-/// The `ster tune sft` settings a model job trains with, refused when empty:
-/// the job states every setting it trains with and assumes none.
-pub(crate) fn stated_ster_options(ster_options: &str) -> Result<&str> {
+/// The `ster tune sft` settings a model job trains with: a preset name
+/// (`trl`, the documented PEFT/TRL/Transformers defaults) expanded into its
+/// options, or the options as written. Empty is refused: the job states every
+/// setting it trains with and assumes none.
+pub(crate) fn stated_ster_options(ster_options: &str) -> Result<String> {
     let ster_options = ster_options.trim();
     if ster_options.is_empty() {
-        return Err(Error("--ster-options cannot be empty: the job trains with ster tune sft, which states every setting it trains with".to_string()));
+        return Err(Error(format!(
+            "--ster-options cannot be empty: the job trains with ster tune sft, which states every setting it trains with; name the preset {} or write the options",
+            crate::jobs::TRL
+        )));
     }
-    Ok(ster_options)
+    Ok(match crate::jobs::ster_preset(ster_options) {
+        Some(expanded) => expanded,
+        None => ster_options.to_string(),
+    })
 }
 
 /// The final audit the lifecycle job runs: its Brama concurrency and the
@@ -137,7 +145,7 @@ pub fn execute_lifecycle_model(
     // directory a rerun resumes from and the output it publishes to are keyed
     // by both, so other settings never resume or overwrite this model.
     let run_key = digest(format!("{key}\nster={ster_options}\n").as_bytes());
-    let ster_options = shell_quote(ster_options);
+    let ster_options = shell_quote(&ster_options);
     let output_uri = format!("stado://probierz/artifacts/models/oko/lifecycle-qwen3-4b/{run_key}");
     let stado = stado_bin();
     upload(&stado, &train_uri, train_path, "application/x-ndjson")?;
@@ -283,7 +291,7 @@ pub fn execute_humanizer_model(
         minimums.length.max,
         minimums.held_out.test,
         minimums.held_out.validation,
-        shell_quote(ster_options),
+        shell_quote(&ster_options),
     );
     let run_id = format!("echo-humanizer-{run_key}-{source_ref}");
     let args = vec![

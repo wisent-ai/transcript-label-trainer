@@ -71,7 +71,7 @@ Replace `TARGET` below with the registered Stado GPU target selected for trainin
 transcript-label-trainer goal-model \
   --compute-target TARGET \
   --limit 1500 --workers N --audit-workers N \
-  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S'
+  --ster-options trl
 ```
 
 The command generates task and no-task labels with a Brama teacher, then requires
@@ -88,6 +88,18 @@ as its `completion`. `ster tune sft` fits an adapter to pinned
 `--ster-options` given (an empty value is refused before anything is uploaded),
 `ster tune merge` folds it in, and llama.cpp's converter exports and quantizes it to
 Q4_K_M. Gold rows never enter training.
+
+`--ster-options trl` stands for the documented defaults of Hugging Face's LoRA
+fine-tuning stack, written out before anything is uploaded:
+
+| Ster option | value | source |
+|---|---|---|
+| `--rank`, `--alpha` | 8, 8 | [PEFT `LoraConfig`](https://github.com/huggingface/peft/blob/main/src/peft/tuners/lora/config.py) `r=8`, `lora_alpha=8` |
+| `--epochs`, `--accumulation`, `--batch-size`, `--seed` | 3, 1, 8, 42 | [Transformers `TrainingArguments`](https://github.com/huggingface/transformers/blob/main/src/transformers/training_args.py) `num_train_epochs=3.0`, `gradient_accumulation_steps=1`, `per_device_train_batch_size=8`, `seed=42` |
+| `--learning-rate`, `--max-sequence` | 2e-5, 1024 | [TRL `SFTConfig`](https://github.com/huggingface/trl/blob/main/trl/trainer/sft_config.py) `learning_rate=2e-5`, `max_length=1024` |
+
+Any other text is passed to Ster as written. The job's output is keyed by the expanded
+options, so the preset and the same options written out are the same run.
 
 `transcript-label-trainer goal-evaluate-gguf` then asks that quantized model for every
 gold row the way Jeden serves it: `llama-server` on a loopback port the system assigns,
@@ -244,7 +256,7 @@ transcript-label-trainer lifecycle-model \
   ~/.transcript-label-trainer/lifecycle-model/reviewed-train.jsonl \
   ~/.transcript-label-trainer/lifecycle-model/reviewed-eval.jsonl \
   --compute-target TARGET --brama-url <the Brama address the job dials> \
-  --ster-options '--rank R --alpha A --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S'
+  --ster-options trl
 ```
 
 The job trains with Ster on the GPU host, which must have `ster` installed (`stado

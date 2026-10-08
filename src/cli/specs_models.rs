@@ -104,9 +104,11 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 "--ster-options",
                 "OPTIONS",
                 Kind::Text,
-                "the ster tune sft settings the job trains with, e.g. '--rank R --alpha A --epochs E \
-                 --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S'; Ster \
-                 refuses a run that leaves one of its required settings out"
+                "the ster tune sft settings the job trains with: 'trl' for the documented PEFT, TRL and \
+                 Transformers defaults (rank 8, alpha 8, 3 epochs, learning rate 2e-5, accumulation 1, \
+                 1024 tokens, batch 8, seed 42), or the options written out, e.g. '--rank R --alpha A \
+                 --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S'; \
+                 Ster refuses a run that leaves one of its required settings out"
                     .to_string(),
             ),
         ],
@@ -238,9 +240,11 @@ pub(crate) fn model_specs() -> Vec<Spec> {
                 "--ster-options",
                 "OPTIONS",
                 Kind::Text,
-                "the ster tune sft settings the job trains with, e.g. '--rank R --alpha A --epochs E \
-                 --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S'; Ster \
-                 refuses a run that leaves one of its required settings out"
+                "the ster tune sft settings the job trains with: 'trl' for the documented PEFT, TRL and \
+                 Transformers defaults (rank 8, alpha 8, 3 epochs, learning rate 2e-5, accumulation 1, \
+                 1024 tokens, batch 8, seed 42), or the options written out, e.g. '--rank R --alpha A \
+                 --epochs E --learning-rate L --accumulation N --max-sequence T --batch-size B --seed S'; \
+                 Ster refuses a run that leaves one of its required settings out"
                     .to_string(),
             ),
             required("--audit-workers", "N", Kind::Int, "concurrent Brama calls of the final audit; the route's own concurrency allowance".to_string()),
