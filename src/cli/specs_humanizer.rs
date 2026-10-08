@@ -59,39 +59,6 @@ pub(crate) fn stated_gate(args: &Parsed) -> Result<crate::humanizer::AuditGate> 
     })
 }
 
-/// What preparation holds the teacher's pairs and splits to, the caller's to
-/// state for `humanizer-prepare` and the job that runs it: the fewest accepted
-/// rows each split needs and how long a generated source may be.
-pub(crate) fn minimum_options() -> Vec<Opt> {
-    let minimum = |flag: &'static str, help: &str| required(flag, "N", Kind::Int, help.to_string());
-    let ratio = |flag: &'static str, help: &str| required(flag, "F", Kind::Float, help.to_string());
-    vec![
-        minimum("--min-train-rows", "fewest accepted rows the train split needs"),
-        minimum("--min-validation-rows", "fewest accepted rows the validation split needs"),
-        minimum("--min-test-rows", "fewest accepted rows the test split needs"),
-        ratio("--min-length-ratio", "shortest generated source accepted, as a share of its target's characters"),
-        ratio("--max-length-ratio", "longest generated source accepted, as a multiple of its target's characters"),
-        ratio("--test-share", "share of sessions held out for the test split"),
-        ratio("--validation-share", "share of sessions held out for the validation split"),
-    ]
-}
-
-pub(crate) fn stated_minimums(args: &Parsed) -> Result<crate::humanizer::PreparationBounds> {
-    Ok(crate::humanizer::PreparationBounds {
-        train: stated_count(args, "--min-train-rows")?,
-        validation: stated_count(args, "--min-validation-rows")?,
-        test: stated_count(args, "--min-test-rows")?,
-        length: crate::humanizer::LengthRatio {
-            min: stated_bound(args, "--min-length-ratio")?,
-            max: stated_bound(args, "--max-length-ratio")?,
-        },
-        held_out: crate::humanizer::HeldOut {
-            test: stated_bound(args, "--test-share")?,
-            validation: stated_bound(args, "--validation-share")?,
-        },
-    })
-}
-
 pub(crate) fn humanizer_specs() -> Vec<Spec> {
     let teacher = brama::DEFAULT_MODEL;
     let best = brama::BEST_MODEL;
@@ -100,10 +67,10 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
         help: "build the humanizer's inverse style-transfer splits through Brama".to_string(),
         description: Some(
             "Have a Brama teacher rewrite every masked authored target as generic AI prose, \
-             refuse rewrites that drop a URL, e-mail address or number or change the length \
-             too much, keep only pairs an independent Brama review calls usable, and write \
-             session-separated train.jsonl, validation.jsonl, test.jsonl and preparation.json. \
-             Nothing is written unless each split reaches its minimum."
+             refuse rewrites that drop a URL, e-mail address or number, keep only pairs an \
+             independent Brama review calls usable, and write session-separated train.jsonl, \
+             test.jsonl and preparation.json; a session lands in test below scikit-learn's \
+             documented test share. Nothing is written unless both splits hold a row."
                 .to_string(),
         ),
         positionals: vec![Positional {
@@ -133,7 +100,6 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
         ]
         .into_iter()
         .chain(count_options())
-        .chain(minimum_options())
         .collect(),
     };
     let audit = Spec {
@@ -203,7 +169,6 @@ pub(crate) fn cmd_humanizer_prepare(args: &Parsed) -> Result<i32> {
         reviewer,
         stated_count(args, "--workers")?,
         stated_count(args, "--attempts")?,
-        &stated_minimums(args)?,
     )?;
     outln!("{}", dumps(&report));
     Ok(0)

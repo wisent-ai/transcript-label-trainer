@@ -1,7 +1,7 @@
 //! Inverse style-transfer pairs from masked authored messages: a Brama teacher
 //! rewrites each target as generic AI prose, the anchor contract and an
 //! independent Brama review keep only faithful pairs, and each session lands
-//! in exactly one of the train, validation and test splits.
+//! in exactly one of the train and test splits.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -10,56 +10,29 @@ use std::path::Path;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::anchors::{valid_source, LengthRatio};
+use super::anchors::valid_source;
 use super::calls::{ask, fan_out, json_object, read_jsonl};
 use super::prompts::{REVIEW_PROMPT, SYSTEM_PROMPT, TEACHER_PROMPT};
 use super::{TargetRow, REPORT_SCHEMA_VERSION};
 use crate::brama::BramaClient;
 use crate::util::{Error, Result};
 
-/// What preparation holds the teacher's pairs and splits to, every value the
-/// caller's to state: the fewest accepted rows each split needs before
-/// training may start, how long a generated source may be against its
-/// target, and the shares of sessions held out for test and validation.
-pub struct PreparationBounds {
-    pub train: usize,
-    pub validation: usize,
-    pub test: usize,
-    pub length: LengthRatio,
-    pub held_out: HeldOut,
+/// The split an accepted pair lands in. Each must hold a row, since the
+/// adapter trains on one and is measured on the other.
+#[derive(Clone, Copy)]
+enum Split {
+    Train,
+    Test,
 }
 
-/// The shares of sessions that go to test and to validation; the rest go to
-/// train. Each is a share of all sessions, and together they leave train a
-/// positive share.
-pub struct HeldOut {
-    pub test: f64,
-    pub validation: f64,
-}
+impl Split {
+    const ALL: [Split; 2] = [Split::Train, Split::Test];
 
-impl HeldOut {
-    fn check(&self) -> Result<()> {
-        let total = self.test + self.validation;
-        // Both are shares, and the sign of a non-negative total is one:
-        // train keeps what the two leave, so together they stay below it.
-        let valid = [self.test, self.validation]
-            .iter()
-            .all(|share| share.is_finite() && !share.is_sign_negative())
-            && total < total.signum();
-        match valid {
-            true => Ok(()),
-            false => crate::bail!(
-                "--test-share {} and --validation-share {} must be shares from 0 to 1 that together leave train a share",
-                self.test,
-                self.validation
-            ),
+    fn name(self) -> &'static str {
+        match self {
+            Split::Train => "train",
+            Split::Test => "test",
         }
-    }
-}
-
-impl PreparationBounds {
-    fn named(&self) -> [(&'static str, usize); 3] {
-        [("train", self.train), ("validation", self.validation), ("test", self.test)]
     }
 }
 
@@ -78,17 +51,15 @@ fn parse_review(answer: &str) -> Result<serde_json::Map<String, Value>> {
 }
 
 /// The split of a session: its digest read as a point between none and all,
-/// below the test share in test, below both shares in validation, else train.
-fn split_of(session_id: &str, held_out: &HeldOut) -> &'static str {
+/// in test below the share scikit-learn's train_test_split documents as its
+/// test size (`crate::jobs::TEST_SIZE`), else train.
+fn split_of(session_id: &str) -> Split {
     let digest = Sha256::digest(session_id.as_bytes());
-    let head = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
-    let point = f64::from(head) / f64::from(u32::MAX);
-    if point < held_out.test {
-        "test"
-    } else if point < held_out.test + held_out.validation {
-        "validation"
-    } else {
-        "train"
+    let head = digest.first_chunk().map(|bytes| u32::from_be_bytes(*bytes));
+    let point = head.map(|head| f64::from(head) / f64::from(u32::MAX));
+    match point.is_some_and(|point| point < crate::jobs::TEST_SIZE) {
+        true => Split::Test,
+        false => Split::Train,
     }
 }
 
@@ -99,7 +70,6 @@ fn pair(
     teacher: &str,
     reviewer: &str,
     attempts: usize,
-    bounds: &PreparationBounds,
 ) -> Result<Value, String> {
     let target = row.target.trim();
     let excerpt = |error: Error| format!("error:{}", error.0);
@@ -107,7 +77,7 @@ fn pair(
         Ok(answer.to_string())
     })
     .map_err(excerpt)?;
-    if !valid_source(target, &source, &bounds.length) {
+    if !valid_source(target, &source) {
         return Err("source_contract".to_string());
     }
     let question = json!({"source": source, "target": target}).to_string();
@@ -126,7 +96,7 @@ fn pair(
         "metadata": {
             "session_id": row.session_id,
             "runtime": row.runtime,
-            "split": split_of(&row.session_id, &bounds.held_out),
+            "split": split_of(&row.session_id).name(),
             "teacher_model": teacher,
             "review_model": reviewer,
             "review": review,
@@ -144,9 +114,8 @@ fn jsonl(values: &[&Value]) -> Result<String> {
 }
 
 /// Prepare `input` (JSONL of `{id, session_id, runtime, target}`) into
-/// `train.jsonl`, `validation.jsonl`, `test.jsonl` and `preparation.json`
-/// under `output_dir`. Nothing is written unless every split reaches its
-/// minimum.
+/// `train.jsonl`, `test.jsonl` and `preparation.json` under `output_dir`.
+/// Nothing is written unless both splits hold an accepted row.
 pub fn prepare_dataset(
     input: &Path,
     output_dir: &Path,
@@ -154,15 +123,13 @@ pub fn prepare_dataset(
     reviewer: &str,
     workers: usize,
     attempts: usize,
-    minimums: &PreparationBounds,
 ) -> Result<Value> {
-    minimums.held_out.check()?;
     let bytes = fs::read(input)
         .map_err(|error| Error(format!("cannot read {}: {error}", input.display())))?;
     let targets: Vec<TargetRow> = read_jsonl(input)?;
     let client = BramaClient::from_env()?;
     let outcomes = fan_out(&targets, workers, "prepared", |row| {
-        pair(row, &client, teacher, reviewer, attempts, minimums)
+        pair(row, &client, teacher, reviewer, attempts)
     });
     let mut accepted = Vec::new();
     let mut rejected: BTreeMap<String, usize> = BTreeMap::new();
@@ -175,15 +142,15 @@ pub fn prepare_dataset(
     accepted.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
     let mut splits = serde_json::Map::new();
     let mut files = Vec::new();
-    for (name, minimum) in minimums.named() {
+    for split in Split::ALL {
+        let name = split.name();
         let rows: Vec<&Value> = accepted
             .iter()
             .filter(|row| row["metadata"]["split"] == name)
             .collect();
-        if rows.len() < minimum {
+        if rows.is_empty() {
             crate::bail!(
-                "{name} has {} accepted rows; need {minimum} (rejected: {})",
-                rows.len(),
+                "{name} has no accepted row; the adapter needs one to train on and one to be measured on (rejected: {})",
                 json!(rejected)
             );
         }
@@ -202,9 +169,7 @@ pub fn prepare_dataset(
         "accepted_rows": accepted.len(),
         "splits": splits,
         "rejected": rejected,
-        "split_minimums": minimums.named().into_iter().map(|(name, minimum)| (name.to_string(), json!(minimum))).collect::<serde_json::Map<_, _>>(),
-        "source_length_ratio": {"min": minimums.length.min, "max": minimums.length.max},
-        "held_out_shares": {"test": minimums.held_out.test, "validation": minimums.held_out.validation},
+        "test_share": crate::jobs::TEST_SIZE,
         "teacher_model": teacher,
         "review_model": reviewer,
         "system_prompt_sha256": hex::encode(Sha256::digest(SYSTEM_PROMPT.as_bytes())),

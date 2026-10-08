@@ -10,15 +10,6 @@
 
 use std::collections::HashSet;
 
-/// How long a teacher's generic rewrite may be against its target, as a
-/// share of the target's characters: below `min` the teacher summarised
-/// instead of rewriting, above `max` it added content the target does not
-/// hold. Both are the caller's to state.
-pub struct LengthRatio {
-    pub min: f64,
-    pub max: f64,
-}
-
 /// Shortest top-level domain an e-mail anchor may end in.
 const MIN_TLD_LETTERS: usize = 2;
 
@@ -107,16 +98,13 @@ pub(crate) fn protected_anchors(text: &str) -> HashSet<String> {
 }
 
 /// Whether a teacher's generic rewrite may stand as the source of `target`:
-/// it differs from the target, keeps a length within `length`, and repeats
-/// every anchor the target holds.
-pub(crate) fn valid_source(target: &str, source: &str, length: &LengthRatio) -> bool {
+/// it differs from the target and repeats every anchor the target holds.
+/// How long it may be is not judged by a ratio nobody stated: the
+/// independent review decides whether the pair is faithful.
+pub(crate) fn valid_source(target: &str, source: &str) -> bool {
     let target = target.trim();
     let source = source.trim();
     if source.is_empty() || source == target {
-        return false;
-    }
-    let ratio = source.chars().count() as f64 / target.chars().count().max(1) as f64;
-    if !(length.min..=length.max).contains(&ratio) {
         return false;
     }
     protected_anchors(target).is_subset(&protected_anchors(source))

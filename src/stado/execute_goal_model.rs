@@ -224,10 +224,8 @@ pub struct HumanizerTraining {
 /// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
 /// `workers` and `attempts` are the caller's counts for the job's Brama
 /// preparation and audit, `gate` the quality gate its audit holds the
-/// adapter to, `minimums` the split minimums and source length bounds of
-/// its preparation and `training` how it trains and measures the adapter;
-/// the job is refused without them.
-#[allow(clippy::too_many_arguments)]
+/// adapter to and `training` how it trains the adapter; the job is refused
+/// without them.
 pub fn execute_humanizer_model(
     targets_path: &Path,
     compute_target: &str,
@@ -235,7 +233,6 @@ pub fn execute_humanizer_model(
     workers: usize,
     attempts: usize,
     gate: &crate::humanizer::AuditGate,
-    minimums: &crate::humanizer::PreparationBounds,
     training: &HumanizerTraining,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
@@ -273,9 +270,6 @@ pub fn execute_humanizer_model(
          HUMANIZER_MIN_SEMANTIC_FIDELITY={} HUMANIZER_MIN_VOICE_MATCH={} \
          HUMANIZER_MIN_PASS_RATE={} HUMANIZER_MAX_BOILERPLATE_RATE={} \
          HUMANIZER_MIN_VOICE_GAIN={} HUMANIZER_MIN_SEMANTIC_DELTA={} \
-         HUMANIZER_MIN_TRAIN_ROWS={} HUMANIZER_MIN_VALIDATION_ROWS={} HUMANIZER_MIN_TEST_ROWS={} \
-         HUMANIZER_MIN_LENGTH_RATIO={} HUMANIZER_MAX_LENGTH_RATIO={} \
-         HUMANIZER_TEST_SHARE={} HUMANIZER_VALIDATION_SHARE={} \
          HUMANIZER_STER_OPTIONS={} \
          ./training/humanizer-model/run.sh \"$work/targets.jsonl\"",
         gate.min_semantic_fidelity,
@@ -284,13 +278,6 @@ pub fn execute_humanizer_model(
         gate.max_boilerplate_rate,
         gate.min_voice_gain,
         gate.min_semantic_delta,
-        minimums.train,
-        minimums.validation,
-        minimums.test,
-        minimums.length.min,
-        minimums.length.max,
-        minimums.held_out.test,
-        minimums.held_out.validation,
         shell_quote(&ster_options),
     );
     let run_id = format!("echo-humanizer-{run_key}-{source_ref}");

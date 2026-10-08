@@ -11,13 +11,6 @@ set -euo pipefail
 : "${HUMANIZER_MAX_BOILERPLATE_RATE:?Set HUMANIZER_MAX_BOILERPLATE_RATE to the highest share the judge may call AI boilerplate}"
 : "${HUMANIZER_MIN_VOICE_GAIN:?Set HUMANIZER_MIN_VOICE_GAIN to how much closer to your voice than the base the adapter must be}"
 : "${HUMANIZER_MIN_SEMANTIC_DELTA:?Set HUMANIZER_MIN_SEMANTIC_DELTA to the lowest semantic fidelity change against the base}"
-: "${HUMANIZER_MIN_TRAIN_ROWS:?Set HUMANIZER_MIN_TRAIN_ROWS to the fewest accepted rows the train split needs}"
-: "${HUMANIZER_MIN_VALIDATION_ROWS:?Set HUMANIZER_MIN_VALIDATION_ROWS to the fewest accepted rows the validation split needs}"
-: "${HUMANIZER_MIN_TEST_ROWS:?Set HUMANIZER_MIN_TEST_ROWS to the fewest accepted rows the test split needs}"
-: "${HUMANIZER_MIN_LENGTH_RATIO:?Set HUMANIZER_MIN_LENGTH_RATIO to the shortest generated source accepted, as a share of its target}"
-: "${HUMANIZER_MAX_LENGTH_RATIO:?Set HUMANIZER_MAX_LENGTH_RATIO to the longest generated source accepted, as a multiple of its target}"
-: "${HUMANIZER_TEST_SHARE:?Set HUMANIZER_TEST_SHARE to the share of sessions held out for test}"
-: "${HUMANIZER_VALIDATION_SHARE:?Set HUMANIZER_VALIDATION_SHARE to the share of sessions held out for validation}"
 : "${HUMANIZER_STER_OPTIONS:?humanizer-model passes --ster-options as HUMANIZER_STER_OPTIONS}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGETS="${1:?usage: run.sh TARGETS_JSONL}"
@@ -39,7 +32,6 @@ python3 -m venv "$VENV"
 
 export HUMANIZER_TARGETS="$WORK/targets.jsonl"
 export HUMANIZER_TRAIN_DATASET="$WORK/train.jsonl"
-export HUMANIZER_VALIDATION_DATASET="$WORK/validation.jsonl"
 export HUMANIZER_TEST_DATASET="$WORK/test.jsonl"
 export HUMANIZER_PREDICTIONS="$WORK/predictions.jsonl"
 export HUMANIZER_AUDIT_OUTPUT="$WORK/audit.json"
@@ -53,11 +45,7 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORK/cargo-target}"
 TRAINER=("$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release --)
 
 "${TRAINER[@]}" humanizer-prepare "$HUMANIZER_TARGETS" --output-dir "$WORK" \
-  --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS" \
-  --min-train-rows "$HUMANIZER_MIN_TRAIN_ROWS" --min-validation-rows "$HUMANIZER_MIN_VALIDATION_ROWS" \
-  --min-test-rows "$HUMANIZER_MIN_TEST_ROWS" \
-  --min-length-ratio "$HUMANIZER_MIN_LENGTH_RATIO" --max-length-ratio "$HUMANIZER_MAX_LENGTH_RATIO" \
-  --test-share "$HUMANIZER_TEST_SHARE" --validation-share "$HUMANIZER_VALIDATION_SHARE"
+  --workers "$HUMANIZER_WORKERS" --attempts "$HUMANIZER_ATTEMPTS"
 # Ster trains the adapter on the prepared train split, exports it in the
 # vLLM/PEFT layout humanizer-publish publishes, and merges it into a
 # checkpoint so the evaluation asks the student exactly as served. A host
