@@ -16,11 +16,11 @@ pub(crate) fn teacher_prompt(excerpts: &[(String, String)]) -> Vec<brama::Messag
                       grounded in what the user actually asked for and how the \
                       agent actually answered — recurring behaviors, failure \
                       modes, user reactions. Rules: an aspect must be judgeable \
-                      from a transcript alone; 2-6 mutually exclusive values in \
-                      lowercase-kebab-case; no aspect that would be true of \
-                      every session or of almost none; no restating of obvious \
-                      metadata (language, length, runtime). Answer with strict \
-                      JSON only: an array of at most 4 objects, each \
+                      from a transcript alone; at least two mutually exclusive \
+                      values in lowercase-kebab-case; no aspect that would be \
+                      true of every session or of almost none; no restating of \
+                      obvious metadata (language, length, runtime). Answer with \
+                      strict JSON only: an array of objects, each \
                       {\"aspect\": \"kebab-case-name\", \"values\": [..], \
                       \"description\": \"one sentence\", \
                       \"evidence\": [\"session ids from the input\"]}."
