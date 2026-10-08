@@ -12,21 +12,6 @@ fn count_options() -> [Opt; 2] {
     ]
 }
 
-/// The quality gate the humanizer adapter is held to, by `humanizer-audit`
-/// and by the `humanizer-model` job that runs it: every bound is required,
-/// because what counts as good enough is the operator's call.
-pub(crate) fn gate_options() -> Vec<Opt> {
-    let bound = |flag: &'static str, help: &str| required(flag, "F", Kind::Float, help.to_string());
-    vec![
-        bound("--min-semantic-fidelity", "lowest mean semantic fidelity the adapter may score"),
-        bound("--min-voice-match", "lowest mean voice match the adapter may score"),
-        bound("--min-pass-rate", "lowest share of cases the judge passes"),
-        bound("--max-boilerplate-rate", "highest share of cases the judge calls AI boilerplate"),
-        bound("--min-voice-gain", "how much closer to the author's voice than the base model the adapter must be"),
-        bound("--min-semantic-delta", "the adapter's semantic fidelity less the base's may not fall below this; negative allows a loss"),
-    ]
-}
-
 /// One stated bound: any finite number, refused by its flag's name when
 /// missing or not finite.
 fn stated_bound(args: &Parsed, flag: &str) -> Result<f64> {
@@ -45,18 +30,6 @@ pub(crate) fn stated_share(args: &Parsed, flag: &str) -> Result<f64> {
         true => Ok(value),
         false => Err(Error(format!("{flag} must be a share from none to all of the text, not {value}"))),
     }
-}
-
-/// The six stated bounds, each refused by its flag's name when missing.
-pub(crate) fn stated_gate(args: &Parsed) -> Result<crate::humanizer::AuditGate> {
-    Ok(crate::humanizer::AuditGate {
-        min_semantic_fidelity: stated_bound(args, "--min-semantic-fidelity")?,
-        min_voice_match: stated_bound(args, "--min-voice-match")?,
-        min_pass_rate: stated_bound(args, "--min-pass-rate")?,
-        max_boilerplate_rate: stated_bound(args, "--max-boilerplate-rate")?,
-        min_voice_gain: stated_bound(args, "--min-voice-gain")?,
-        min_semantic_delta: stated_bound(args, "--min-semantic-delta")?,
-    })
 }
 
 pub(crate) fn humanizer_specs() -> Vec<Spec> {
@@ -108,8 +81,9 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
         description: Some(
             "Judge every held-out case for semantic fidelity, voice match and AI boilerplate \
              for both the base model and the trained adapter, write the complete record, and \
-             exit 1 when the adapter misses the quality gate. Any case the judge cannot answer \
-             fails the audit."
+             exit 1 unless the adapter beats the base: higher voice match, semantic fidelity \
+             and pass rate no lower, AI boilerplate rate no higher. Any case the judge cannot \
+             answer fails the audit."
                 .to_string(),
         ),
         positionals: vec![Positional {
@@ -132,7 +106,6 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
         ]
         .into_iter()
         .chain(count_options())
-        .chain(gate_options())
         .collect(),
     };
     let publish = Spec {
@@ -176,14 +149,12 @@ pub(crate) fn cmd_humanizer_prepare(args: &Parsed) -> Result<i32> {
 
 pub(crate) fn cmd_humanizer_audit(args: &Parsed) -> Result<i32> {
     let judge = args.text("--brama-model").unwrap_or(brama::BEST_MODEL);
-    let gate = stated_gate(args)?;
     let summary = crate::humanizer::audit_outputs(
         std::path::Path::new(args.positional(0)),
         std::path::Path::new(args.text("--output").unwrap_or_default()),
         judge,
         stated_count(args, "--workers")?,
         stated_count(args, "--attempts")?,
-        &gate,
     )?;
     outln!("{}", dumps(&summary));
     Ok(i32::from(

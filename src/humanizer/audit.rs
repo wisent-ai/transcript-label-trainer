@@ -20,20 +20,6 @@ const CANDIDATES: [&str; 2] = ["base", "student"];
 const SCORES: [&str; 2] = ["semantic_fidelity", "voice_match"];
 const VERDICTS: [&str; 2] = ["ai_boilerplate", "passed"];
 
-/// The quality gate the trained adapter has to clear on the held-out split.
-/// Every bound is the caller's to state; none is assumed.
-pub struct AuditGate {
-    pub min_semantic_fidelity: f64,
-    pub min_voice_match: f64,
-    pub min_pass_rate: f64,
-    pub max_boilerplate_rate: f64,
-    /// How much closer to the author's voice the student must be than the base.
-    pub min_voice_gain: f64,
-    /// How much meaning the student may gain or lose against the base;
-    /// negative allows a loss.
-    pub min_semantic_delta: f64,
-}
-
 #[derive(Deserialize)]
 struct Prediction {
     id: String,
@@ -115,14 +101,17 @@ fn aggregate(records: &[Value], candidate: &str) -> Value {
 /// Judge every row of `predictions` (JSONL of `{id, source, target, base,
 /// student}`) through `model` and write the full record to `output`. The
 /// returned summary carries `passed`; an incomplete audit is an error and
-/// writes nothing.
+/// writes nothing. The adapter passes when the judge measures it better than
+/// the base it was trained from on the same held-out cases: closer to the
+/// author's voice, no less faithful to the meaning, passed no less often and
+/// called AI boilerplate no more often. The base's own scores are the bound;
+/// nobody states one.
 pub fn audit_outputs(
     predictions: &Path,
     output: &Path,
     model: &str,
     workers: usize,
     attempts: usize,
-    gate: &AuditGate,
 ) -> Result<Value> {
     let rows: Vec<Prediction> = read_jsonl(predictions)?;
     let client = BramaClient::from_env()?;
@@ -150,12 +139,12 @@ pub fn audit_outputs(
     let score = |value: &Value, field: &str| value[field].as_f64().unwrap_or(f64::NAN);
     let voice_gain = score(&student, "voice_match") - score(&base, "voice_match");
     let semantic_delta = score(&student, "semantic_fidelity") - score(&base, "semantic_fidelity");
-    let passed = score(&student, "semantic_fidelity") >= gate.min_semantic_fidelity
-        && score(&student, "voice_match") >= gate.min_voice_match
-        && score(&student, "pass_rate") >= gate.min_pass_rate
-        && score(&student, "ai_boilerplate_rate") <= gate.max_boilerplate_rate
-        && voice_gain >= gate.min_voice_gain
-        && semantic_delta >= gate.min_semantic_delta;
+    let better = |field: &str| score(&student, field) > score(&base, field);
+    let no_worse = |field: &str| score(&student, field) >= score(&base, field);
+    let passed = better("voice_match")
+        && no_worse("semantic_fidelity")
+        && no_worse("pass_rate")
+        && score(&student, "ai_boilerplate_rate") <= score(&base, "ai_boilerplate_rate");
     let mut report = json!({
         "schema_version": REPORT_SCHEMA_VERSION,
         "contract": MODEL_CONTRACT,
@@ -165,14 +154,7 @@ pub fn audit_outputs(
         "student": student,
         "voice_match_gain": voice_gain,
         "semantic_fidelity_delta": semantic_delta,
-        "gate": {
-            "min_semantic_fidelity": gate.min_semantic_fidelity,
-            "min_voice_match": gate.min_voice_match,
-            "min_pass_rate": gate.min_pass_rate,
-            "max_boilerplate_rate": gate.max_boilerplate_rate,
-            "min_voice_gain": gate.min_voice_gain,
-            "min_semantic_delta": gate.min_semantic_delta,
-        },
+        "gate": "student better than base: voice_match higher, semantic_fidelity and pass_rate no lower, ai_boilerplate_rate no higher",
         "passed": passed,
         "records": records,
     });

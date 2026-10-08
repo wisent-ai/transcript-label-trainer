@@ -223,16 +223,15 @@ pub struct HumanizerTraining {
 
 /// Submit the masked personal-voice corpus to one exclusive Stado GPU target.
 /// `workers` and `attempts` are the caller's counts for the job's Brama
-/// preparation and audit, `gate` the quality gate its audit holds the
-/// adapter to and `training` how it trains the adapter; the job is refused
-/// without them.
+/// preparation and audit and `training` how it trains the adapter; the job
+/// is refused without them. Its audit holds the adapter to the base it was
+/// trained from.
 pub fn execute_humanizer_model(
     targets_path: &Path,
     compute_target: &str,
     hf_repo: &str,
     workers: usize,
     attempts: usize,
-    gate: &crate::humanizer::AuditGate,
     training: &HumanizerTraining,
 ) -> Result<GoalModelJob> {
     let compute_target = compute_target.trim();
@@ -267,17 +266,8 @@ pub fn execute_humanizer_model(
          \"$stado\" storage get '{targets_uri}' \"$work/targets.jsonl\"; \
          HUMANIZER_HF_REPO={hf_repo} HUMANIZER_WORK_DIR=\"$work\" \
          HUMANIZER_WORKERS={workers} HUMANIZER_ATTEMPTS={attempts} \
-         HUMANIZER_MIN_SEMANTIC_FIDELITY={} HUMANIZER_MIN_VOICE_MATCH={} \
-         HUMANIZER_MIN_PASS_RATE={} HUMANIZER_MAX_BOILERPLATE_RATE={} \
-         HUMANIZER_MIN_VOICE_GAIN={} HUMANIZER_MIN_SEMANTIC_DELTA={} \
          HUMANIZER_STER_OPTIONS={} \
          ./training/humanizer-model/run.sh \"$work/targets.jsonl\"",
-        gate.min_semantic_fidelity,
-        gate.min_voice_match,
-        gate.min_pass_rate,
-        gate.max_boilerplate_rate,
-        gate.min_voice_gain,
-        gate.min_semantic_delta,
         shell_quote(&ster_options),
     );
     let run_id = format!("echo-humanizer-{run_key}-{source_ref}");

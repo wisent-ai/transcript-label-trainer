@@ -186,7 +186,6 @@ pub(crate) fn cmd_humanizer_model(args: &Parsed) -> Result<i32> {
         &hf_repo,
         stated_count(args, "--workers")?,
         stated_count(args, "--attempts")?,
-        &crate::cli::specs_humanizer::stated_gate(args)?,
         &training,
     )?;
     outln!("Stado job: {}", job.job_id);

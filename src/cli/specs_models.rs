@@ -336,7 +336,6 @@ pub(crate) fn model_specs() -> Vec<Spec> {
             ),
         ]
         .into_iter()
-        .chain(super::specs_humanizer::gate_options())
         .chain(super::specs_humanizer_served::training_options())
         .collect(),
     };
