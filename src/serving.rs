@@ -103,7 +103,20 @@ impl Server {
         return Err(Error(format!("{id} inference failed at {} with {status}: {text}", self.endpoint)));
     }
     let answer: Value = serde_json::from_str(&text).map_err(|error| Error(format!("{id} answered {status} without JSON: {error}; body: {text}")))?;
-    Ok(answer.pointer("/choices/0/message/content").and_then(Value::as_str).ok_or_else(|| Error(format!("{id} answered {status} without a message: {answer}")))?.trim().to_string())
+    if matches!(
+        answer.pointer("/choices/0/finish_reason").and_then(Value::as_str),
+        Some("length" | "max_tokens")
+    ) {
+        return Err(Error(format!("{id} answered {status} with a truncated completion: {answer}")));
+    }
+    let content = answer.pointer("/choices/0/message/content")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error(format!("{id} answered {status} without a message: {answer}")))?
+        .trim();
+    if content.is_empty() {
+        return Err(Error(format!("{id} answered {status} with an empty message: {answer}")));
+    }
+    Ok(content.to_owned())
     }
 }
 

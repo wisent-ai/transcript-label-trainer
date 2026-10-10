@@ -182,6 +182,9 @@ repository's.
   The shared harness's `/props` query requires a successful HTTP response and a
   positive `total_slots`. Refusals and malformed JSON retain endpoint, status,
   complete body and decoding cause; a failed body read names its own cause.
+  Served inference refuses a missing or whitespace-only message and an explicit
+  `length` or `max_tokens` finish reason. These failures retain the request ID,
+  observed status and complete answer instead of evaluating incomplete output.
   HTTP clients and both log destinations are prepared before the server starts.
   An unwritable log names its path and cause without leaving a newly launched
   model server behind.
