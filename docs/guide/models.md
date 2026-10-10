@@ -283,7 +283,10 @@ an answer without a positive one fails the run), each answer constrained to
 evaluation waits for the server's health answer (reading its log between probes;
 a server that exits first fails the run with its status and log path) and for
 every answer; a failed request fails the run naming its row, and nothing is
-retried. It writes `predictions-gguf.jsonl` and `metrics-gguf.json`; a rate with
+retried. Inference refusals include the HTTP status, endpoint and complete response
+body; malformed successful replies include their body and JSON parse cause.
+An error status is never accepted as a prediction even if it contains a message.
+It writes `predictions-gguf.jsonl` and `metrics-gguf.json`; a rate with
 nothing to measure (finish precision when no finish was predicted) is `null`.
 
 Oko asks Brama for this model under the alias `OKO_LIFECYCLE_MODEL_ALIAS`

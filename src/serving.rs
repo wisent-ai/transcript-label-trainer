@@ -98,7 +98,11 @@ impl Server {
     }
     let response = self.client.post(&self.endpoint).json(&body).send().map_err(|error| Error(format!("{id} inference failed: {error}")))?;
     let status = response.status();
-    let answer: Value = response.json().map_err(|error| Error(format!("{id} answered {status} without JSON: {error}")))?;
+    let text = response.text().map_err(|error| Error(format!("{id} answered {status} but its body could not be read: {error}")))?;
+    if !status.is_success() {
+        return Err(Error(format!("{id} inference failed at {} with {status}: {text}", self.endpoint)));
+    }
+    let answer: Value = serde_json::from_str(&text).map_err(|error| Error(format!("{id} answered {status} without JSON: {error}; body: {text}")))?;
     Ok(answer.pointer("/choices/0/message/content").and_then(Value::as_str).ok_or_else(|| Error(format!("{id} answered {status} without a message: {answer}")))?.trim().to_string())
     }
 }
