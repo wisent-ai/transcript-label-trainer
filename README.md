@@ -182,6 +182,9 @@ repository's.
   The shared harness's `/props` query requires a successful HTTP response and a
   positive `total_slots`. Refusals and malformed JSON retain endpoint, status,
   complete body and decoding cause; a failed body read names its own cause.
+  HTTP clients and both log destinations are prepared before the server starts.
+  An unwritable log names its path and cause without leaving a newly launched
+  model server behind.
 - `release-publish SOURCE --model goal|lifecycle` replaces the goal and
   lifecycle `publish-qualified-release` Python scripts; the goal host scripts
   that wrapped `goal-audit` with fixed job paths and printed rejected rows are

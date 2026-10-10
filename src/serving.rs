@@ -54,9 +54,9 @@ impl Server {
                 return Err(Error(format!("the served {what} {} does not exist", path.display())));
             }
         }
+        let client = waiting_client()?;
         let port = free_port()?;
         let mut child = start_server(serving, port)?;
-        let client = waiting_client()?;
         let slots = match served_slots(&client, port) {
             Ok(slots) => slots,
             Err(error) => {
@@ -151,6 +151,14 @@ fn free_port() -> Result<u16> {
 
 /// Start the server and return once its health answer is ready.
 fn start_server(run: &Serving, port: u16) -> Result<Child> {
+    let mut log = fs::File::create(&run.server_log).map_err(|error| {
+        Error(format!("cannot create server stderr log {}: {error}", run.server_log.display()))
+    })?;
+    let stdout_log = run.server_log.with_extension("stdout.log");
+    let mut copy_out = fs::File::create(&stdout_log).map_err(|error| {
+        Error(format!("cannot create server stdout log {}: {error}", stdout_log.display()))
+    })?;
+    let client = waiting_client()?;
     let mut child = Command::new(&run.server)
         .arg("--model")
         .arg(&run.model)
@@ -161,13 +169,10 @@ fn start_server(run: &Serving, port: u16) -> Result<Child> {
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| Error(format!("{} could not start: {error}", run.server.display())))?;
-    let mut log = fs::File::create(&run.server_log)?;
     let stderr = child.stderr.take().ok_or("llama-server has no stderr")?;
     let stdout = child.stdout.take().ok_or("llama-server has no stdout")?;
-    let mut copy_out = fs::File::create(run.server_log.with_extension("stdout.log"))?;
     thread::spawn(move || std::io::copy(&mut BufReader::new(stdout), &mut copy_out));
     let health = format!("http://{}:{port}/health", Ipv4Addr::LOCALHOST);
-    let client = waiting_client()?;
     let mut lines = BufReader::new(stderr).lines();
     loop {
         if client.get(&health).send().map(|response| response.status().is_success()).unwrap_or(false) {
