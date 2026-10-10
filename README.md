@@ -179,6 +179,9 @@ repository's.
   `lifecycle-evaluate-gguf`, all through one llama-server harness) measure the
   served model the audit judges. `model-manifest` writes each job's manifest in
   place of the run scripts' inline Python. The repository tracks no Python.
+  The shared harness's `/props` query requires a successful HTTP response and a
+  positive `total_slots`. Refusals and malformed JSON retain endpoint, status,
+  complete body and decoding cause; a failed body read names its own cause.
 - `release-publish SOURCE --model goal|lifecycle` replaces the goal and
   lifecycle `publish-qualified-release` Python scripts; the goal host scripts
   that wrapped `goal-audit` with fixed job paths and printed rejected rows are

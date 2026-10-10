@@ -110,11 +110,20 @@ impl Server {
 /// The slots the server chose, from its `/props` answer's `total_slots`.
 fn served_slots(client: &reqwest::blocking::Client, port: u16) -> Result<usize> {
     let props = format!("http://{}:{port}/props", Ipv4Addr::LOCALHOST);
-    let answer: Value = client
+    let response = client
         .get(&props)
         .send()
-        .and_then(reqwest::blocking::Response::json)
-        .map_err(|error| Error(format!("llama-server did not answer {props} with JSON: {error}")))?;
+        .map_err(|error| Error(format!("llama-server request to {props} failed: {error}")))?;
+    let status = response.status();
+    let text = response.text().map_err(|error| {
+        Error(format!("llama-server {props} answered {status}, but its body could not be read: {error}"))
+    })?;
+    if !status.is_success() {
+        return Err(Error(format!("llama-server {props} refused with {status}: {text}")));
+    }
+    let answer: Value = serde_json::from_str(&text).map_err(|error| {
+        Error(format!("llama-server {props} answered {status} without valid JSON: {error}; body: {text}"))
+    })?;
     answer
         .get("total_slots")
         .and_then(Value::as_u64)
