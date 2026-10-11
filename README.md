@@ -161,6 +161,9 @@ repository's.
 - `run JOB --compute-target TARGET` now exports a minimal read-only dataset,
   submits the exact trainer commit through Stado, pins execution to the named
   compute target, follows the job, and runs the semantic evaluation there.
+  Its remote workspace uses the same full dataset/specification/source identity
+  as the submitted run, rather than a shortened data key. Repeating that run
+  retains its workspace; changing the trainer revision selects a different one.
 - `autolabel --best` audits proposed labels before writing them;
   `evaluate --best` independently audits both stored labels and the first
   judge's opinions through Brama's `best` route. Both are quality gates with
