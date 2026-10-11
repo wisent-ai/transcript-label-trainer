@@ -55,6 +55,44 @@ same run selects the same staging path; another source revision selects a
 different one. This does not move model artifacts away from the target's
 declared training root or promise filesystem retention after a host is retired.
 
+### Qualify generic remote submission and replay
+
+`cargo test --test run-dispatch` executes real `run --compute-target` jobs.
+Run it on the dedicated training host with the worker's staging filesystem
+visible at the same path. Declare `STADO_BIN`, `TLT_TEST_COMPUTE_TARGET`,
+`TLT_TEST_SOURCE_REVISION` matching the clean checkout, and a different existing
+`TLT_TEST_ALTERNATE_SOURCE_REVISION`; both revisions must be reachable by Stado.
+`TLT_TEST_JOB_SPEC` names a reviewed `tfidf-logreg` job whose evaluator and scope
+select real Transcript Lake labels. The runner changes only its copy's name to
+a unique qualification name, leaving training settings and model gates intact.
+The ordinary lake and Brama credential declarations still apply.
+
+`TLT_TEST_WORKER_TRAINING_ROOT` must match the target's declared
+`training.models_dir`; the journey reads that registry field before submitting.
+`TLT_TEST_WORKER_STAGING_ROOT` names the worker's actual `TMPDIR`, where the
+current generic dispatcher places `tlt-<run-id>`. Supply an existing,
+qualification-owned staging root in the checkout's ignored build area through
+the worker's normal environment declaration, not a fabricated local copy.
+Unavailable worker files fail the journey rather than reducing it to an argv
+check.
+
+The invalid-source case must refuse before a job ID or trained model appears.
+Successful runs must have terminal persisted Stado jobs, byte-identical staged
+specifications, actual trained model files and whole-session metrics. Identical
+replay must return the same job without changing staged data or model, metrics
+and specification checksums. Another source must use a different job and actual
+staging directory, preserve the first staged inputs, and train from the same
+dataset. Model output still uses the target's declared training root; this test
+does not claim source-isolated model output for generic jobs.
+
+Commands, exit statuses, binary/source identities, model checksums and copies of
+metrics and persisted specifications remain in `.build/run-dispatch-<run>/`.
+After successful terminal runs the journey removes only its uniquely named
+model. A failure retains that model path in the report instead of deleting
+files a possibly running job still owns. Remote jobs and their staged inputs
+remain as evidence. This covers generic dispatch, not lifecycle publication or
+the graphical training screen.
+
 ### Qualify lifecycle submission and source-isolated outputs
 
 `cargo test --test lifecycle-dispatch` runs real `lifecycle-model` jobs, not a
