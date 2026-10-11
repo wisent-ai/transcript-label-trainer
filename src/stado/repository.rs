@@ -254,3 +254,21 @@ pub struct GoalModelJob {
     pub output_uri: String,
     pub status: i32,
 }
+
+/// The `ster tune sft` settings a model job trains with: a preset name
+/// (`trl`, the documented PEFT/TRL/Transformers defaults) expanded into its
+/// options, or the options as written. Empty is refused: the job states every
+/// setting it trains with and assumes none.
+pub(crate) fn stated_ster_options(ster_options: &str) -> Result<String> {
+    let ster_options = ster_options.trim();
+    if ster_options.is_empty() {
+        return Err(Error(format!(
+            "--ster-options cannot be empty: the job trains with ster tune sft, which states every setting it trains with; name the preset {} or write the options",
+            crate::jobs::TRL
+        )));
+    }
+    Ok(match crate::jobs::ster_preset(ster_options) {
+        Some(expanded) => expanded,
+        None => ster_options.to_string(),
+    })
+}

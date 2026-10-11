@@ -19,11 +19,11 @@ pub fn execute_goal_model(
     let key = digest(&dataset_bytes);
     let dataset_uri =
         format!("stado://probierz/inputs/transcript-label-trainer/goal-model/{key}.jsonl");
-    let run_key = digest(format!("{key}\nster={ster_options}\n").as_bytes());
+    let source_ref = repo_ref()?;
+    let run_key = digest(format!("{key}\nster={ster_options}\nsource={source_ref}\n").as_bytes());
     let output_uri = format!("stado://probierz/artifacts/models/jeden/goal-qwen3-4b/{run_key}");
     let stado = stado_bin();
     upload(&stado, &dataset_uri, dataset_path, "application/x-ndjson")?;
-    let source_ref = repo_ref()?;
     let command = format!(
         "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/jeden-goal-{run_key}\"; \
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
@@ -83,23 +83,6 @@ pub fn execute_goal_model(
     })
 }
 
-/// The `ster tune sft` settings a model job trains with: a preset name
-/// (`trl`, the documented PEFT/TRL/Transformers defaults) expanded into its
-/// options, or the options as written. Empty is refused: the job states every
-/// setting it trains with and assumes none.
-pub(crate) fn stated_ster_options(ster_options: &str) -> Result<String> {
-    let ster_options = ster_options.trim();
-    if ster_options.is_empty() {
-        return Err(Error(format!(
-            "--ster-options cannot be empty: the job trains with ster tune sft, which states every setting it trains with; name the preset {} or write the options",
-            crate::jobs::TRL
-        )));
-    }
-    Ok(match crate::jobs::ster_preset(ster_options) {
-        Some(expanded) => expanded,
-        None => ster_options.to_string(),
-    })
-}
 
 /// Submit reviewed Oko lifecycle splits to one exclusive Stado GPU target.
 /// `ster_options` are the `ster tune sft` settings the job trains with; its
@@ -135,16 +118,14 @@ pub fn execute_lifecycle_model(
     let base = format!("stado://probierz/inputs/transcript-label-trainer/lifecycle-model/{key}");
     let train_uri = format!("{base}/reviewed-train.jsonl");
     let eval_uri = format!("{base}/reviewed-eval.jsonl");
-    // One model is the data and the settings it was trained with: the work
-    // directory a rerun resumes from and the output it publishes to are keyed
-    // by both, so other settings never resume or overwrite this model.
-    let run_key = digest(format!("{key}\nster={ster_options}\n").as_bytes());
+    // Source, data and settings jointly identify both the workspace and output.
+    let source_ref = repo_ref()?;
+    let run_key = digest(format!("{key}\nster={ster_options}\nsource={source_ref}\n").as_bytes());
     let ster_options = shell_quote(&ster_options);
     let output_uri = format!("stado://probierz/artifacts/models/oko/lifecycle-qwen3-4b/{run_key}");
     let stado = stado_bin();
     upload(&stado, &train_uri, train_path, "application/x-ndjson")?;
     upload(&stado, &eval_uri, eval_path, "application/x-ndjson")?;
-    let source_ref = repo_ref()?;
     let command = format!(
         "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/oko-lifecycle-{run_key}\"; \
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \

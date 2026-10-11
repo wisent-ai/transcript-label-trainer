@@ -130,8 +130,8 @@ A qualified job publishes the Q4_K_M GGUF, Ster's training report (`metrics.json
 served predictions and their `metrics-gguf.json`, the full final audit, canonical prompt,
 the converter's dependency lock, and checksums under the content-addressed URI printed as
 `model artifact: stado://probierz/artifacts/models/jeden/goal-qwen3-4b/<key>`, the key
-being the dataset and the `--ster-options` together, so other settings never resume or
-overwrite a model.
+being the dataset, expanded `--ster-options` and exact trainer source revision together,
+so another source revision or settings cannot resume or overwrite that model.
 
 Stado also retains its canonical `status/<job-id>/output/` copy. All model calls
 use `brama.rs`; the pipeline has no direct provider credentials or second auth
@@ -268,8 +268,8 @@ found`): the reviewed training rows become `lifecycle-examples`, `ster tune sft`
 adapter to the pinned Qwen3-4B base with exactly the `--ster-options` given (an empty value
 is refused before anything is uploaded, and Ster refuses a run missing one of its required
 settings by name), and `ster tune merge` folds it into a checkpoint; Ster's report is kept
-as `metrics.json`. The job's output URI is keyed by the datasets and the options together,
-so other settings never resume or overwrite a model. llama.cpp's own converter then exports
+as `metrics.json`. The job's output URI and workspace are keyed by the datasets, expanded
+options and exact trainer source revision. Source admission precedes upload. llama.cpp's converter then exports
 and quantizes it to Q4_K_M GGUF, the untouched reviewed split is evaluated on that GGUF, and
 an independent Brama `--best` audit judges every held-out prediction. Publication requires
 the passing audit; the served rates are recorded in the manifest beside it.
