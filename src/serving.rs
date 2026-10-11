@@ -184,14 +184,31 @@ fn start_server(run: &Serving, port: u16) -> Result<Child> {
         .map_err(|error| Error(format!("{} could not start: {error}", run.server.display())))?;
     let stderr = child.stderr.take().ok_or("llama-server has no stderr")?;
     let stdout = child.stdout.take().ok_or("llama-server has no stdout")?;
-    thread::spawn(move || std::io::copy(&mut BufReader::new(stdout), &mut copy_out));
+    thread::spawn(move || {
+        if let Err(error) = std::io::copy(&mut BufReader::new(stdout), &mut copy_out) {
+            eprintln!("llama-server's stdout log {} stops here: {error}", stdout_log.display());
+        }
+    });
     let health = format!("http://{}:{port}/health", Ipv4Addr::LOCALHOST);
     let mut lines = BufReader::new(stderr).lines();
     loop {
         if client.get(&health).send().map(|response| response.status().is_success()).unwrap_or(false) {
+            let server_log = run.server_log.clone();
+            // The first failure ends the forwarder and is said: silent, the
+            // log just stopped and the server looked quiet.
             thread::spawn(move || {
-                for line in lines.map_while(std::result::Result::ok) {
-                    let _ = writeln!(log, "{line}");
+                for line in lines {
+                    let line = match line {
+                        Ok(line) => line,
+                        Err(error) => {
+                            eprintln!("llama-server's stderr can no longer be read; {} stops here: {error}", server_log.display());
+                            return;
+                        }
+                    };
+                    if let Err(error) = writeln!(log, "{line}") {
+                        eprintln!("llama-server's log {} can no longer be written: {error}", server_log.display());
+                        return;
+                    }
                 }
             });
             return Ok(child);
