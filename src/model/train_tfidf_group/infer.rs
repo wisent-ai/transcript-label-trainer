@@ -81,8 +81,8 @@ pub fn info() -> Result<Vec<Value>> {
         return Ok(entries);
     }
     // Sorted by file name, because `info` prints these in order.
-    let mut names: Vec<String> = std::fs::read_dir(&root)?
-        .filter_map(|entry| entry.ok())
+    let mut names: Vec<String> = listed(&root)?
+        .into_iter()
         .filter(|entry| entry.path().is_dir())
         .filter_map(|entry| entry.file_name().to_str().map(str::to_string))
         .collect();

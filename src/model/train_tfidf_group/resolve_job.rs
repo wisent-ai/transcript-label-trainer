@@ -102,8 +102,8 @@ pub(crate) fn artifacts(name: &str) -> Result<Vec<Artifact>> {
         // Sorted by file name: std::fs::read_dir yields raw directory order,
         // where Python's glob() was sorted, and this order is observable in
         // `info`.
-        let mut subdirectories: Vec<(String, PathBuf)> = std::fs::read_dir(&base)?
-            .filter_map(|entry| entry.ok())
+        let mut subdirectories: Vec<(String, PathBuf)> = listed(&base)?
+            .into_iter()
             .filter_map(|entry| {
                 let name = entry.file_name().to_str()?.to_string();
                 let path = entry.path();
@@ -124,6 +124,18 @@ pub(crate) fn artifacts(name: &str) -> Result<Vec<Artifact>> {
     }
     found.sort_by(|a, b| trained_at(a).cmp(trained_at(b)));
     Ok(found)
+}
+
+/// Every entry of `dir`. A directory or an entry that cannot be read is an
+/// error naming the directory: skipped, a trained aspect left `info` and a
+/// newer hf-* run left inference, so an older artifact was marked active.
+pub(crate) fn listed(dir: &Path) -> Result<Vec<std::fs::DirEntry>> {
+    let unreadable =
+        |cause: std::io::Error| Error(format!("{} cannot be listed: {cause}", dir.display()));
+    std::fs::read_dir(dir)
+        .map_err(unreadable)?
+        .map(|entry| entry.map_err(unreadable))
+        .collect()
 }
 
 pub(crate) fn trained_at(artifact: &Artifact) -> &str {
