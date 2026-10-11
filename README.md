@@ -163,7 +163,9 @@ repository's.
   compute target, follows the job, and runs the semantic evaluation there.
   Its remote workspace uses the same full dataset/specification/source identity
   as the submitted run, rather than a shortened data key. Repeating that run
-  retains its workspace; changing the trainer revision selects a different one.
+  selects the same workspace path; changing the trainer revision selects a
+  different one. This identity does not guarantee that a retired host retains
+  its filesystem.
 - `autolabel --best` audits proposed labels before writing them;
   `evaluate --best` independently audits both stored labels and the first
   judge's opinions through Brama's `best` route. Both are quality gates with
