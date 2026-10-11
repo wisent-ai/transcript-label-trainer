@@ -48,6 +48,10 @@ path = "tests/training/run_dispatch.rs"
 harness = false
 
 [[test]]
+name = "model-listing"
+path = "tests/training/model_listing.rs"
+
+[[test]]
 name = "brama"
 path = "tests/brama/main.rs"
 
