@@ -101,8 +101,14 @@ pub(crate) fn shell_quote(value: &str) -> String {
 }
 
 pub(crate) fn repo_ref() -> Result<String> {
-    let candidate = std::env::var("TLT_REPO_REF").unwrap_or_default();
-    let candidate = if candidate.trim().is_empty() {
+    let candidate = match std::env::var("TLT_REPO_REF") {
+        Ok(value) => value,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err(Error(
+                "TLT_REPO_REF is not Unicode; set one full lowercase trainer source SHA".to_string(),
+            ));
+        }
+        Err(std::env::VarError::NotPresent) => {
         let output = Command::new("git")
             .args(["-C", env!("CARGO_MANIFEST_DIR"), "rev-parse", "HEAD"])
             .stdin(Stdio::null())
@@ -116,9 +122,9 @@ pub(crate) fn repo_ref() -> Result<String> {
             ));
         }
         String::from_utf8_lossy(&output.stdout).trim().to_string()
-    } else {
-        candidate.trim().to_string()
+        }
     };
+    let candidate = candidate.trim();
     if candidate.len() != 40
         || !candidate
             .bytes()
@@ -128,7 +134,7 @@ pub(crate) fn repo_ref() -> Result<String> {
             "trainer source commit must be one full lowercase SHA, got {candidate:?}; set TLT_REPO_REF"
         )));
     }
-    Ok(candidate)
+    Ok(candidate.to_string())
 }
 
 pub(crate) fn upload(stado: &Path, uri: &str, path: &Path, content_type: &str) -> Result<()> {

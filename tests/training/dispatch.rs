@@ -67,10 +67,12 @@ fn journey(evidence: &mut Evidence) -> Result<()> {
     let args = ["lifecycle-model", train.to_str().ok_or("train path is not UTF-8")?,
         eval.to_str().ok_or("eval path is not UTF-8")?, "--compute-target", &target,
         "--brama-url", &brama, "--ster-options", &options];
-    let (accepted, stdout, stderr) = evidence.run(BINARY, &args, Some("not-a-commit"))?;
-    require(!accepted && stderr.contains("TLT_REPO_REF") && stderr.contains("trainer source commit"),
-        format!("missing source-admission refusal: {stderr}"))?;
-    require(!stdout.contains("Job ID:"), "invalid source was submitted")?;
+    for invalid in ["not-a-commit", "", " \t\n"] {
+        let (accepted, stdout, stderr) = evidence.run(BINARY, &args, Some(invalid))?;
+        require(!accepted && stderr.contains("TLT_REPO_REF") && stderr.contains("trainer source commit"),
+            format!("missing source-admission refusal for {invalid:?}: {stderr}"))?;
+        require(!stdout.contains("Job ID:"), "invalid source was submitted")?;
+    }
     let first = evidence.succeeds(BINARY, &args, Some(&source))?;
     let first = inspect(evidence, &stado, &first, &source, "first")?;
     let replay = evidence.succeeds(BINARY, &args, Some(&source))?;

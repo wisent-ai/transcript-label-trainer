@@ -34,8 +34,10 @@ transcript-label-trainer run jobs/example-topic.yaml \
   --compute-target <training-target>
 ```
 
-The submitter first admits the exact trainer source revision; an invalid
-`TLT_REPO_REF` refuses before dataset export or remote uploads. It then resolves
+The submitter first admits the exact trainer source revision. Only an absent
+`TLT_REPO_REF` selects checkout HEAD; a present blank, non-Unicode or malformed
+value refuses with the variable's name. Generic runs refuse before dataset
+export or remote uploads. The submitter then resolves
 the job against the local Transcript Lake, exports only
 the selected labels and their whole transcript text, and uploads that
 read-only, content-addressed bundle plus the validated YAML through Probierz's
@@ -76,7 +78,8 @@ the worker's normal environment declaration, not a fabricated local copy.
 Unavailable worker files fail the journey rather than reducing it to an argv
 check.
 
-The invalid-source case must refuse before a job ID or trained model appears.
+Malformed, empty and whitespace-only source declarations must refuse before a
+job ID or trained model appears.
 Successful runs must have terminal persisted Stado jobs, byte-identical staged
 specifications, actual trained model files and whole-session metrics. Identical
 replay must return the same job without changing staged data or model, metrics
@@ -103,8 +106,9 @@ Declare `TLT_TEST_COMPUTE_TARGET`, target-reachable `TLT_TEST_BRAMA_URL` and
 `TLT_TEST_STER_OPTIONS`; the normal product credential declarations still apply.
 Both source revisions must be available to the real Stado worker.
 
-The journey refuses an invalid source before submission, then trains and
-qualifies the actual lifecycle model. Repeating identical data, settings and
+The journey refuses malformed, empty and whitespace-only sources before
+submission, then trains and qualifies the actual lifecycle model.
+Repeating identical data, settings and
 source must return the same persisted job and unchanged published manifest.
 Another source must have its own job, workspace identity and output URI.
 It reads terminal Stado state, retrieves both published model manifests and

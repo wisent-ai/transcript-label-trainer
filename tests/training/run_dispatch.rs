@@ -81,10 +81,12 @@ fn journey(evidence: &mut Evidence) -> Result<()> {
     evidence.report["worker_staging_root"] = json!(staging);
     evidence.save()?;
     let args = ["run", spec_path.to_str().ok_or("job path is not UTF-8")?, "--compute-target", &target];
-    let (accepted, stdout, stderr) = evidence.run(BINARY, &args, Some("not-a-commit"))?;
-    require(!accepted && stderr.contains("TLT_REPO_REF") && stderr.contains("trainer source commit"),
-        format!("invalid source did not produce its causal refusal: {stderr}"))?;
-    require(!stdout.contains("Job ID:") && !model.try_exists()?, "refused source started training")?;
+    for invalid in ["not-a-commit", "", " \t\n"] {
+        let (accepted, stdout, stderr) = evidence.run(BINARY, &args, Some(invalid))?;
+        require(!accepted && stderr.contains("TLT_REPO_REF") && stderr.contains("trainer source commit"),
+            format!("invalid source {invalid:?} did not produce its causal refusal: {stderr}"))?;
+        require(!stdout.contains("Job ID:") && !model.try_exists()?, "refused source started training")?;
+    }
     let first = evidence.succeeds(BINARY, &args, Some(&source))?;
     let first = inspect(evidence, &stado, &first, &source, &staging, &model, &spec_path, &name, "first")?;
     evidence.report["observations"]["first"] = first.clone();
