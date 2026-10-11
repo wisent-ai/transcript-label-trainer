@@ -53,6 +53,33 @@ same run selects the same staging path; another source revision selects a
 different one. This does not move model artifacts away from the target's
 declared training root or promise filesystem retention after a host is retired.
 
+### Qualify lifecycle submission and source-isolated outputs
+
+`cargo test --test lifecycle-dispatch` runs real `lifecycle-model` jobs, not a
+dispatch simulation. It needs `STADO_BIN`, `TLT_TEST_SOURCE_REVISION` matching
+the clean checkout, another existing full `TLT_TEST_ALTERNATE_SOURCE_REVISION`,
+and readable reviewed `TLT_TEST_TRAIN_DATASET` / `TLT_TEST_EVAL_DATASET` files.
+Declare `TLT_TEST_COMPUTE_TARGET`, target-reachable `TLT_TEST_BRAMA_URL` and
+`TLT_TEST_STER_OPTIONS`; the normal product credential declarations still apply.
+Both source revisions must be available to the real Stado worker.
+
+The journey refuses an invalid source before submission, then trains and
+qualifies the actual lifecycle model. Repeating identical data, settings and
+source must return the same persisted job and unchanged published manifest.
+Another source must have its own job, workspace identity and output URI.
+It reads terminal Stado state, retrieves both published model manifests and
+checks the downloaded final-judge and training/served-metrics files against
+their declared byte counts and checksums. A failed model gate is a failed
+journey, not permission to omit that model run.
+
+Commands, exit statuses, output, source revisions, binary checksum and downloaded
+evidence remain under `.build/lifecycle-dispatch-<run>/`. Immutable remote jobs
+and qualified model artifacts remain available under their recorded identities;
+the runner neither deletes shared jobs nor changes its input datasets. This
+qualifies lifecycle dispatch/publication, not generic `run` placement or GUI
+rendering, and does not prove that a retired host retains staging files.
+
+
 ### Resolution order
 
 Each root is resolved independently, strongest layer first:

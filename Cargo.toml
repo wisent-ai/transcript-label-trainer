@@ -37,6 +37,11 @@ path = "tests/humanizer/main.rs"
 name = "training"
 path = "tests/training/main.rs"
 
+[[test]]
+name = "lifecycle-dispatch"
+path = "tests/training/dispatch.rs"
+harness = false
+
 [features]
 # The HuggingFace fine-tune backend. Off by default: it pulls candle and
 # tokenizers, which the tfidf-logreg path does not need.
