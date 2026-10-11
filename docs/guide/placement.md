@@ -47,6 +47,12 @@ enabled, it immediately runs `evaluate <name> --best`, so nonsensical labels
 or final judge opinions fail the Stado job rather than becoming a successful
 artifact.
 
+The input-staging workspace is keyed by the full submitted run identity:
+dataset, job specification and exact trainer source revision. Repeating the
+same run selects the same staging path; another source revision selects a
+different one. This does not move model artifacts away from the target's
+declared training root or promise filesystem retention after a host is retired.
+
 ### Resolution order
 
 Each root is resolved independently, strongest layer first:
