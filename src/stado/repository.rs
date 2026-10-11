@@ -186,6 +186,7 @@ pub fn execute(job_path: &str, job: &Job, compute_target: &str) -> Result<i32> {
         return Err(Error("--compute-target cannot be empty".to_string()));
     }
 
+    let source_ref = repo_ref()?;
     let resolved = model::resolve_job(job)?;
     let temporary = TempDir::create()?;
     let dataset_path = temporary.0.join("dataset.json");
@@ -203,7 +204,6 @@ pub fn execute(job_path: &str, job: &Job, compute_target: &str) -> Result<i32> {
     upload(&stado, &dataset_uri, &dataset_path, "application/json")?;
     upload(&stado, &spec_uri, &spec_path, "application/yaml")?;
 
-    let source_ref = repo_ref()?;
     // The same dataset, spec and source revision is the same run: Stado
     // answers a repeated submission with the job it already holds.
     let run_id = format!("tlt-run-{key}-{source_ref}");

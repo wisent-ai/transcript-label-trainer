@@ -34,7 +34,9 @@ transcript-label-trainer run jobs/example-topic.yaml \
   --compute-target <training-target>
 ```
 
-The submitter resolves the job against the local Transcript Lake, exports only
+The submitter first admits the exact trainer source revision; an invalid
+`TLT_REPO_REF` refuses before dataset export or remote uploads. It then resolves
+the job against the local Transcript Lake, exports only
 the selected labels and their whole transcript text, and uploads that
 read-only, content-addressed bundle plus the validated YAML through Probierz's
 `inputs/transcript-label-trainer/` object boundary. Stado then clones this
