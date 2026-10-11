@@ -29,72 +29,75 @@ impl Message {
     }
 }
 
-/// Run a child process, capture stdout and drain stderr. It ends when the
-/// child exits; `None` means it could not be started or waited on.
+/// What a finished child process answered: whether it succeeded, and both
+/// streams, so a refusal can be reported with the child's own reason.
+pub(crate) struct Captured {
+    pub(crate) success: bool,
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
+}
+
+/// Run a child process to its end and capture both streams, saying on
+/// stderr what is waited for. A child that cannot be run is an error naming
+/// the program and the cause.
 pub(crate) fn run_capture(
     program: &str,
     args: &[&str],
     extra_env: &[(&str, String)],
-) -> Option<(bool, String)> {
+) -> Result<Captured> {
     let mut command = Command::new(program);
-    command
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    command.args(args).stdin(Stdio::null());
     for (key, value) in extra_env {
         command.env(key, value);
     }
-    let mut child = command.spawn().ok()?;
-    let mut stdout = child.stdout.take()?;
-    let mut stderr = child.stderr.take()?;
-    let collect = thread::spawn(move || {
-        let mut buffer = String::new();
-        let _ = stdout.read_to_string(&mut buffer);
-        buffer
-    });
-    // Drained so a chatty child cannot deadlock on a full stderr pipe.
-    thread::spawn(move || {
-        let mut sink = Vec::new();
-        let _ = stderr.read_to_end(&mut sink);
-    });
-    let status = child.wait().ok()?;
-    Some((status.success(), collect.join().ok()?))
+    let output = stado_wait::output(&mut command)
+        .map_err(|cause| Error(format!("{program} could not be run: {cause}")))?;
+    Ok(Captured {
+        success: output.status.success(),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
 }
 
 pub(crate) fn env_trimmed(key: &str) -> String {
     std::env::var(key).unwrap_or_default().trim().to_string()
 }
 
-/// Where Stado says Brama is actually placed, or an empty string.
+/// Where Stado says Brama is actually placed.
 ///
 /// `stado service directory connect brama` derives the address from the
 /// placement rather than from a name someone wrote down, and verifies that
-/// something answers there before reporting it.
-pub(crate) fn stado_url() -> String {
+/// something answers there before reporting it. Every way the answer fails
+/// is an error with its cause: stado not run, Stado's refusal with its
+/// reason, a reply that is not JSON, a reply without a url.
+pub(crate) fn stado_url() -> Result<String> {
     let stado = match env_trimmed("TLT_STADO_BIN") {
         value if value.is_empty() => DEFAULT_STADO_BIN.to_string(),
         value => value,
     };
-    let Some((ok, stdout)) = run_capture(
+    let command = format!("{stado} service directory connect --json brama");
+    let captured = run_capture(
         &stado,
         &["service", "directory", "connect", "--json", "brama"],
         &[],
-    ) else {
-        return String::new();
-    };
-    if !ok {
-        return String::new();
+    )?;
+    if !captured.success {
+        bail!("`{command}` was refused: {}", captured.stderr.trim())
     }
-    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout) else {
-        return String::new();
-    };
-    parsed
+    let reply = captured.stdout.trim();
+    let parsed: serde_json::Value = serde_json::from_str(reply).map_err(|cause| {
+        Error(format!(
+            "`{command}` answered a reply that is not JSON: {cause}; reply: {reply}"
+        ))
+    })?;
+    match parsed
         .get("url")
-        .and_then(|url| url.as_str())
-        .unwrap_or_default()
-        .trim()
-        .to_string()
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+    {
+        Some(url) if !url.is_empty() => Ok(url.to_string()),
+        _ => bail!("`{command}` answered no url: {reply}"),
+    }
 }
 
 pub(crate) fn resolve_url() -> Result<String> {
@@ -105,8 +108,8 @@ pub(crate) fn resolve_url() -> Result<String> {
         }
     }
     let jeden_env = home_dir().join(".jeden").join(".env");
-    if jeden_env.is_file() {
-        if let Ok(contents) = std::fs::read_to_string(&jeden_env) {
+    match std::fs::read_to_string(&jeden_env) {
+        Ok(contents) => {
             for line in contents.lines() {
                 if let Some(value) = line.strip_prefix("BRAMA_URL=") {
                     let value = value.trim();
@@ -116,20 +119,23 @@ pub(crate) fn resolve_url() -> Result<String> {
                 }
             }
         }
+        Err(cause) if cause.kind() == std::io::ErrorKind::NotFound => {}
+        Err(cause) => bail!(
+            "{} cannot be read for BRAMA_URL: {cause}",
+            jeden_env.display()
+        ),
     }
     // There used to be a public default here, `https://brama.wisent.com`. That
     // hostname resolves to the company website, so every call that reached this
     // line got a 404 page from Vercel and a parse error blaming Brama. The
     // fleet keeps the real placement in Stado's service directory, which is
     // also the one answer that follows the gateway when it moves.
-    let url = stado_url();
-    if !url.is_empty() {
-        return Ok(url);
+    match stado_url() {
+        Ok(url) => Ok(url),
+        Err(cause) => {
+            bail!("no Brama endpoint: BRAMA_URL is unset and Stado could not place Brama: {cause}")
+        }
     }
-    bail!(
-        "no Brama endpoint: set BRAMA_URL, or make `stado service directory \
-         connect brama` resolve (it reports where the gateway is placed)"
-    )
 }
 
 /// The vault role and field an environment variable declares as `ROLE#FIELD`.
@@ -162,21 +168,27 @@ pub(crate) fn read_role(variable: &str, holds: &str) -> Result<String> {
         value => value,
     };
     let command = format!("{stado} credentials get --role {role} --field {field}");
-    match run_capture(
+    let captured = run_capture(
         &stado,
         &["credentials", "get", "--role", &role, "--field", &field],
         &[],
-    ) {
-        Some((true, stdout)) if !stdout.trim().is_empty() => Ok(stdout.trim().to_string()),
-        Some((true, _)) => bail!("{variable}: `{command}` answered an empty value"),
-        Some((false, _)) => bail!(
-            "{variable}: `{command}` was refused; run it to read Stado's reason (no item plays \
-             the role, several do, or this consumer is not granted it)"
-        ),
-        None => bail!(
-            "{variable}: {stado} could not be started; set TLT_STADO_BIN to the stado executable"
-        ),
+    )
+    .map_err(|cause| {
+        Error(format!(
+            "{variable}: {cause}; TLT_STADO_BIN names the stado executable"
+        ))
+    })?;
+    if !captured.success {
+        bail!(
+            "{variable}: `{command}` was refused: {}",
+            captured.stderr.trim()
+        )
     }
+    let value = captured.stdout.trim();
+    if value.is_empty() {
+        bail!("{variable}: `{command}` answered an empty value")
+    }
+    Ok(value.to_string())
 }
 
 #[derive(Clone)]

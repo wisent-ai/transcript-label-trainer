@@ -24,9 +24,7 @@
 //! line of jeden's own config (~/.jeden/.env — the same value jeden uses), then
 //! Stado's service directory, which derives the address from where the gateway
 //! is placed.
-use std::io::Read;
 use std::process::{Command, Stdio};
-use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};

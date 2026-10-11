@@ -66,6 +66,9 @@ hex = "0.4"
 rand = "0.9"
 rand_chacha = "0.9"
 tiny_http = "0.12"
+# The one way a Wisent program waits on a child process: it says on stderr
+# what it waits for, where and since when, and how it ended.
+stado-wait = { git = "https://github.com/wisent-ai/stado", rev = "692c0438d24117735c61373c0c178f1c1e21b080" }
 
 candle-core = { version = "0.9", optional = true }
 candle-nn = { version = "0.9", optional = true }
