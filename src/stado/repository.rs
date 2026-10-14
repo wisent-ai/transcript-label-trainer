@@ -105,23 +105,26 @@ pub(crate) fn repo_ref() -> Result<String> {
         Ok(value) => value,
         Err(std::env::VarError::NotUnicode(_)) => {
             return Err(Error(
-                "TLT_REPO_REF is not Unicode; set one full lowercase trainer source SHA".to_string(),
+                "TLT_REPO_REF is not Unicode; set one full lowercase trainer source SHA"
+                    .to_string(),
             ));
         }
         Err(std::env::VarError::NotPresent) => {
-        let output = Command::new("git")
-            .args(["-C", env!("CARGO_MANIFEST_DIR"), "rev-parse", "HEAD"])
-            .stdin(Stdio::null())
-            .output()
-            .map_err(|error| Error(format!("could not resolve trainer source commit: {error}")))?;
-        if !output.status.success() {
-            return Err(command_error(
-                Path::new("git"),
-                "resolving trainer source commit",
-                &output,
-            ));
-        }
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
+            let output = Command::new("git")
+                .args(["-C", env!("CARGO_MANIFEST_DIR"), "rev-parse", "HEAD"])
+                .stdin(Stdio::null())
+                .output()
+                .map_err(|error| {
+                    Error(format!("could not resolve trainer source commit: {error}"))
+                })?;
+            if !output.status.success() {
+                return Err(command_error(
+                    Path::new("git"),
+                    "resolving trainer source commit",
+                    &output,
+                ));
+            }
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
         }
     };
     let candidate = candidate.trim();
@@ -248,11 +251,23 @@ pub fn execute(job_path: &str, job: &Job, compute_target: &str) -> Result<i32> {
     let stdout = String::from_utf8_lossy(&submitted.stdout);
     let id = job_id(&stdout)
         .ok_or_else(|| Error("Stado accepted the job but did not report its job id".to_string()))?;
-    let status = Command::new(&stado)
+    follow(&stado, id)
+}
+
+/// Follow Stado job `id` to its end and answer the job's exit code. A watch
+/// ended by a signal says nothing about the job; it is the error, not a job
+/// exit code of 1 nobody returned.
+pub(super) fn follow(stado: &Path, id: &str) -> Result<i32> {
+    let status = Command::new(stado)
         .args(["job", "watch", id, "--follow"])
         .status()
         .map_err(|error| Error(format!("could not follow Stado job {id}: {error}")))?;
-    Ok(status.code().unwrap_or(1))
+    match status.code() {
+        Some(code) => Ok(code),
+        None => Err(Error(format!(
+            "stado job watch {id} ended without an exit code ({status}), so the job's outcome was not read"
+        ))),
+    }
 }
 
 pub struct GoalModelJob {

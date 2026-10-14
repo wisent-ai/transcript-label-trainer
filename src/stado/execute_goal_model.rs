@@ -72,17 +72,13 @@ pub fn execute_goal_model(
     let id = job_id(&stdout)
         .ok_or_else(|| Error("Stado accepted the goal-model job but reported no id".to_string()))?
         .to_string();
-    let status = Command::new(&stado)
-        .args(["job", "watch", &id, "--follow"])
-        .status()
-        .map_err(|error| Error(format!("could not follow Stado job {id}: {error}")))?;
+    let status = super::repository::follow(&stado, &id)?;
     Ok(GoalModelJob {
         job_id: id,
         output_uri,
-        status: status.code().unwrap_or(1),
+        status,
     })
 }
-
 
 /// Submit reviewed Oko lifecycle splits to one exclusive Stado GPU target.
 /// `ster_options` are the `ster tune sft` settings the job trains with; its
@@ -175,14 +171,11 @@ pub fn execute_lifecycle_model(
             Error("Stado accepted the lifecycle-model job but reported no id".to_string())
         })?
         .to_string();
-    let status = Command::new(&stado)
-        .args(["job", "watch", &id, "--follow"])
-        .status()
-        .map_err(|error| Error(format!("could not follow Stado job {id}: {error}")))?;
+    let status = super::repository::follow(&stado, &id)?;
     Ok(GoalModelJob {
         job_id: id,
         output_uri,
-        status: status.code().unwrap_or(1),
+        status,
     })
 }
 
@@ -218,8 +211,9 @@ pub fn execute_humanizer_model(
     );
     let ster_options = stated_ster_options(&training.ster_options)?;
     let run_key = digest(format!("{key}\nster={ster_options}\n").as_bytes());
-    let output_uri =
-        format!("stado://probierz/artifacts/models/echo/lukasz-humanizer-cydonia-24b-lora/{run_key}");
+    let output_uri = format!(
+        "stado://probierz/artifacts/models/echo/lukasz-humanizer-cydonia-24b-lora/{run_key}"
+    );
     let stado = stado_bin();
     upload(&stado, &targets_uri, targets_path, "application/x-ndjson")?;
     let source_ref = repo_ref()?;
@@ -278,13 +272,10 @@ pub fn execute_humanizer_model(
     let id = job_id(&stdout).ok_or_else(|| {
         Error("Stado accepted the humanizer-model job but reported no id".to_string())
     })?;
-    let status = Command::new(&stado)
-        .args(["job", "watch", id, "--follow"])
-        .status()
-        .map_err(|error| Error(format!("could not follow Stado job {id}: {error}")))?;
+    let status = super::repository::follow(&stado, id)?;
     Ok(GoalModelJob {
         job_id: id.to_string(),
         output_uri,
-        status: status.code().unwrap_or(1),
+        status,
     })
 }
