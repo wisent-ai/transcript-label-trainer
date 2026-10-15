@@ -8,9 +8,11 @@ use std::path::{Path, PathBuf};
 use super::{Error, Result};
 
 /// The sibling `output` is written through before it is renamed into place.
+/// It carries this process's id, so two runs writing the same output never
+/// write through, or rename away, each other's file.
 fn sibling(output: &Path) -> PathBuf {
     let mut temporary = OsString::from(output.as_os_str());
-    temporary.push(".tmp");
+    temporary.push(format!(".tmp-{}", std::process::id()));
     PathBuf::from(temporary)
 }
 

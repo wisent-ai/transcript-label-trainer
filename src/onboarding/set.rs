@@ -50,7 +50,18 @@ pub(crate) fn read_state(definition: &Value) -> Result<Option<Value>> {
     if !path.exists() {
         return Ok(None);
     }
-    let existing: Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+    let text = fs::read_to_string(&path).map_err(|error| {
+        Error(format!(
+            "cannot read onboarding progress {}: {error}",
+            path.display()
+        ))
+    })?;
+    let existing: Value = serde_json::from_str(&text).map_err(|error| {
+        Error(format!(
+            "onboarding progress {} is not JSON ({error}); use --reset to replace it",
+            path.display()
+        ))
+    })?;
     if existing.get("schema").and_then(Value::as_str) != Some(STATE_SCHEMA)
         || existing.get("product_id").and_then(Value::as_str) != Some(PRODUCT_ID)
         || existing.get("journey_id").and_then(Value::as_str) != Some(JOURNEY_ID)
@@ -79,14 +90,10 @@ pub(crate) fn recorded_state(definition: &Value) -> Result<Value> {
 }
 
 pub(crate) fn save_state(state: &Value) -> Result<()> {
-    let path = state_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temporary = PathBuf::from(format!("{}.tmp-{}", path.display(), std::process::id()));
-    fs::write(&temporary, format!("{}\n", serde_json::to_string(state)?))?;
-    fs::rename(&temporary, &path)?;
-    Ok(())
+    crate::util::write_whole(
+        &state_path()?,
+        format!("{}\n", serde_json::to_string(state)?).as_bytes(),
+    )
 }
 
 /// Progress belongs to this operator on this machine, not to a training root:
