@@ -50,32 +50,12 @@ pub(crate) fn audit_result(
     })
 }
 
-/// Write the audit result through a temporary file beside `output`, so a
-/// reader never sees half of it. Each failure names the path it failed on.
+/// Write the audit result whole, so a reader never sees half of it.
 pub(crate) fn write_audit_result(output: &Path, result: &Value) -> Result<()> {
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            Error(format!(
-                "cannot create {} for the audit result: {error}",
-                parent.display()
-            ))
-        })?;
-    }
-    let temporary = output.with_extension("tmp");
-    fs::write(&temporary, serde_json::to_string_pretty(result)? + "\n").map_err(|error| {
-        Error(format!(
-            "cannot write the audit result to {}: {error}",
-            temporary.display()
-        ))
-    })?;
-    fs::rename(&temporary, output).map_err(|error| {
-        Error(format!(
-            "cannot move the audit result from {} to {}: {error}",
-            temporary.display(),
-            output.display()
-        ))
-    })?;
-    Ok(())
+    crate::util::write_whole(
+        output,
+        (serde_json::to_string_pretty(result)? + "\n").as_bytes(),
+    )
 }
 
 /// The audit so far: verdicts by the prediction's position in the input, and
