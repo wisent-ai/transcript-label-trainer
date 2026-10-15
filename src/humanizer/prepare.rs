@@ -4,7 +4,6 @@
 //! in exactly one of the train and test splits.
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::Path;
 
 use serde_json::{json, Value};
@@ -26,7 +25,7 @@ enum Split {
 }
 
 impl Split {
-    const ALL: [Split; 2] = [Split::Train, Split::Test];
+    const ALL: &[Split] = &[Split::Train, Split::Test];
 
     fn name(self) -> &'static str {
         match self {
@@ -121,8 +120,7 @@ pub fn prepare_dataset(
     teacher: &str,
     reviewer: &str,
 ) -> Result<Value> {
-    let bytes = fs::read(input)
-        .map_err(|error| Error(format!("cannot read {}: {error}", input.display())))?;
+    let bytes = crate::util::read_bytes(input)?;
     let targets: Vec<TargetRow> = read_jsonl(input)?;
     let client = BramaClient::from_env()?;
     // Each target is asked of the teacher and then reviewed, one after the
@@ -132,17 +130,25 @@ pub fn prepare_dataset(
         pair(row, &client, teacher, reviewer)
     });
     let mut accepted = Vec::new();
-    let mut rejected: BTreeMap<String, usize> = BTreeMap::new();
+    let mut reasons = Vec::new();
     for outcome in outcomes {
         match outcome {
             Ok(value) => accepted.push(value),
-            Err(reason) => *rejected.entry(reason).or_default() += 1,
+            Err(reason) => reasons.push(reason),
+        }
+    }
+    // How many pairs each reason rejected is the size of its group.
+    reasons.sort();
+    let mut rejected: BTreeMap<String, usize> = BTreeMap::new();
+    for group in reasons.chunk_by(|left, right| left == right) {
+        if let Some(reason) = group.first() {
+            rejected.insert(reason.clone(), group.len());
         }
     }
     accepted.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
     let mut splits = serde_json::Map::new();
     let mut files = Vec::new();
-    for split in Split::ALL {
+    for split in Split::ALL.iter().copied() {
         let name = split.name();
         let rows: Vec<&Value> = accepted
             .iter()
@@ -157,10 +163,8 @@ pub fn prepare_dataset(
         splits.insert(name.to_string(), json!(rows.len()));
         files.push((output_dir.join(format!("{name}.jsonl")), jsonl(&rows)?));
     }
-    fs::create_dir_all(output_dir)?;
     for (path, text) in files {
-        fs::write(&path, text)
-            .map_err(|error| Error(format!("cannot write {}: {error}", path.display())))?;
+        crate::util::write_whole(&path, text.as_bytes())?;
     }
     let report = json!({
         "schema_version": REPORT_SCHEMA_VERSION,
@@ -176,7 +180,9 @@ pub fn prepare_dataset(
         "input_sha256": hex::encode(Sha256::digest(&bytes)),
     });
     let path = output_dir.join("preparation.json");
-    fs::write(&path, serde_json::to_string_pretty(&report)? + "\n")
-        .map_err(|error| Error(format!("cannot write {}: {error}", path.display())))?;
+    crate::util::write_whole(
+        &path,
+        (serde_json::to_string_pretty(&report)? + "\n").as_bytes(),
+    )?;
     Ok(report)
 }
