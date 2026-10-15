@@ -202,7 +202,7 @@ pub fn evaluate(
         )));
     }
 
-    let [acceptable_verdict, _] = JUDGE_VALUES;
+    let acceptable_verdict = ACCEPTABLE;
     let acceptable = records
         .iter()
         .filter(|record| record.get("verdict").and_then(Value::as_str) == Some(acceptable_verdict))

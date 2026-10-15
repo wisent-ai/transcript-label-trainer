@@ -3,22 +3,19 @@ use super::*;
 /// What each judge verdict means, offered with the question so the answer is
 /// one of them by construction.
 fn judge_labels() -> Vec<(&'static str, &'static str)> {
-    let [acceptable, unacceptable] = JUDGE_VALUES;
     vec![
-        (acceptable, "the predicted label is a defensible reading of the transcript on the aspect, including when it differs from the recorded label but the session genuinely supports it"),
-        (unacceptable, "the predicted label is not a defensible reading of the transcript on the aspect"),
+        (ACCEPTABLE, "the predicted label is a defensible reading of the transcript on the aspect, including when it differs from the recorded label but the session genuinely supports it"),
+        (UNACCEPTABLE, "the predicted label is not a defensible reading of the transcript on the aspect"),
     ]
 }
 
 /// What each final-review outcome means.
 fn best_review_labels() -> Vec<(&'static str, &'static str)> {
-    let [both_sensible, label_nonsensical, judge_nonsensical, both_nonsensical] =
-        BEST_REVIEW_VALUES;
     vec![
-        (both_sensible, "the recorded label is a sensible reading of the transcript and the earlier verdict is sound"),
-        (label_nonsensical, "only the recorded label is unsound"),
-        (judge_nonsensical, "only the earlier judge verdict is unsound"),
-        (both_nonsensical, "neither the recorded label nor the earlier verdict is sound"),
+        (BOTH_SENSIBLE, "the recorded label is a sensible reading of the transcript and the earlier verdict is sound"),
+        (LABEL_NONSENSICAL, "only the recorded label is unsound"),
+        (JUDGE_NONSENSICAL, "only the earlier judge verdict is unsound"),
+        (BOTH_NONSENSICAL, "neither the recorded label nor the earlier verdict is sound"),
     ]
 }
 
@@ -172,8 +169,6 @@ pub(crate) fn record_best_review(
     failures: &[Value],
     result: &mut Map<String, Value>,
 ) -> Result<()> {
-    let [both_sensible, label_nonsensical, judge_nonsensical, both_nonsensical] =
-        BEST_REVIEW_VALUES;
     let review_failures = best_review_sessions(client, aspect, task, records, texts);
     let reviews: Vec<String> = records
         .iter()
@@ -197,7 +192,7 @@ pub(crate) fn record_best_review(
             .filter(|review| wanted.contains(&review.as_str()))
             .count()
     };
-    let both_sensible_count = count(&[both_sensible]);
+    let both_sensible_count = count(&[BOTH_SENSIBLE]);
     let sensible =
         failures.is_empty() && review_failures.is_empty() && both_sensible_count == records.len();
     result.insert(
@@ -207,8 +202,8 @@ pub(crate) fn record_best_review(
             "model": brama::BEST_DECISION_MODEL,
             "reviewed": reviews.len(),
             "both_sensible": both_sensible_count,
-            "label_nonsensical": count(&[label_nonsensical, both_nonsensical]),
-            "judge_nonsensical": count(&[judge_nonsensical, both_nonsensical]),
+            "label_nonsensical": count(&[LABEL_NONSENSICAL, BOTH_NONSENSICAL]),
+            "judge_nonsensical": count(&[JUDGE_NONSENSICAL, BOTH_NONSENSICAL]),
             "failed": review_failures.len(),
             "sensible": sensible,
         }),
