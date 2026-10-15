@@ -237,11 +237,8 @@ pub fn evaluate(
     result.insert("failures".to_string(), Value::Array(failures));
 
     let path = judge_path(name)?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
     let body = serde_json::to_string_pretty(&Value::Object(result.clone()))?;
-    std::fs::write(&path, body + "\n")?;
+    crate::util::write_whole(&path, (body + "\n").as_bytes())?;
     result.insert(
         "judge_path".to_string(),
         Value::String(path.to_string_lossy().into_owned()),
