@@ -122,8 +122,15 @@ pub(crate) fn artifacts(name: &str) -> Result<Vec<Artifact>> {
             }
         }
     }
-    found.sort_by(|a, b| trained_at(a).cmp(trained_at(b)));
-    Ok(found)
+    // The newest artifact is the active one, so artifacts are ordered by when
+    // they were trained; one whose metrics do not say cannot be placed in
+    // that order and is refused naming it.
+    let mut dated = found
+        .into_iter()
+        .map(|artifact| Ok((trained_at(&artifact)?.to_owned(), artifact)))
+        .collect::<Result<Vec<_>>>()?;
+    dated.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(dated.into_iter().map(|(_, artifact)| artifact).collect())
 }
 
 /// Every entry of `dir`. A directory or an entry that cannot be read is an
@@ -138,12 +145,17 @@ pub(crate) fn listed(dir: &Path) -> Result<Vec<std::fs::DirEntry>> {
         .collect()
 }
 
-pub(crate) fn trained_at(artifact: &Artifact) -> &str {
+pub(crate) fn trained_at(artifact: &Artifact) -> Result<&str> {
     artifact
         .metrics
         .get("trained_at")
         .and_then(Value::as_str)
-        .unwrap_or("")
+        .ok_or_else(|| {
+            Error(format!(
+                "the artifact in {} records no trained_at, so it cannot be ordered among its aspect's artifacts",
+                artifact.dir.display()
+            ))
+        })
 }
 
 pub(crate) fn read_metrics(path: &Path) -> Result<Value> {
@@ -185,7 +197,9 @@ pub fn labels_for_artifact(metrics: &Value) -> Result<Vec<lake::SessionLabel>> {
     let evaluator = job_meta
         .get("evaluator")
         .and_then(Value::as_str)
-        .unwrap_or_default();
+        .ok_or_else(|| {
+            Error("artifact metrics carry a 'job' without an 'evaluator'".to_string())
+        })?;
     select_labels(evaluator, &scope)
 }
 
@@ -193,17 +207,12 @@ pub(crate) fn infer_tfidf(artifact: &Artifact, texts: &[String]) -> Result<Vec<(
     let path = artifact.dir.join(MODEL_FILE);
     if !path.is_file() {
         if artifact.dir.join(LEGACY_MODEL_FILE).is_file() {
-            let name = artifact
-                .dir
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("<name>");
             crate::bail!(
                 "the artifact in {} holds {LEGACY_MODEL_FILE}, a pickle written by the \
-                 Python build that this binary cannot read; retrain it with \
-                 'transcript-label-trainer train --aspect {name}' or \
+                 Python build that this binary cannot read; retrain it with {} or \
                  'transcript-label-trainer run <job.yaml>' to produce {MODEL_FILE}",
-                artifact.dir.display()
+                artifact.dir.display(),
+                retrain_command(artifact)
             );
         }
         crate::bail!("no {MODEL_FILE} in {}", artifact.dir.display());
@@ -264,21 +273,25 @@ pub fn loadable(backend: &str) -> bool {
 /// refused with the command that retrains it.
 pub fn predict(artifact: &Artifact, texts: &[String]) -> Result<Vec<(String, f64)>> {
     if artifact.metrics.get("session_text").and_then(Value::as_str) != Some(SESSION_TEXT_WHOLE) {
-        let aspect = artifact
-            .metrics
-            .get("aspect")
-            .and_then(Value::as_str)
-            .unwrap_or("ASPECT");
         return Err(Error(format!(
             "artifact {} was trained on session text cut to a fixed length; this trainer reads \
-             whole sessions, so retrain it with 'transcript-label-trainer train --aspect {aspect}' \
-             or 'transcript-label-trainer run <job.yaml>'",
-            artifact.dir.display()
+             whole sessions, so retrain it with {} or 'transcript-label-trainer run <job.yaml>'",
+            artifact.dir.display(),
+            retrain_command(artifact)
         )));
     }
     if artifact.backend == TFIDF_BACKEND {
         infer_tfidf(artifact, texts)
     } else {
         infer_hf(artifact, texts)
+    }
+}
+
+/// The command that retrains `artifact`'s aspect, naming the aspect when its
+/// metrics record one.
+fn retrain_command(artifact: &Artifact) -> String {
+    match artifact.metrics.get("aspect").and_then(Value::as_str) {
+        Some(aspect) => format!("'transcript-label-trainer train --aspect {aspect}'"),
+        None => "'transcript-label-trainer train --aspect <aspect>'".to_string(),
     }
 }
