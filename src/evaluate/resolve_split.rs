@@ -121,8 +121,8 @@ pub fn resolve_split(
     }
 
     if !reused {
-        let directory = model::aspect_dir(&job.name)?;
-        std::fs::create_dir_all(&directory).map_err(Error::from)?;
+        // The holdout is frozen in the job's own directory, which the writer
+        // creates, and written whole so a reused split is never half of one.
         let mut record = Map::new();
         record.insert(
             "fraction".to_string(),
@@ -138,7 +138,7 @@ pub fn resolve_split(
             Value::Array(holdout_ids.iter().cloned().map(Value::String).collect()),
         );
         let body = serde_json::to_string_pretty(&Value::Object(record)).map_err(Error::from)?;
-        std::fs::write(&path, body + "\n").map_err(Error::from)?;
+        crate::util::write_whole(&path, (body + "\n").as_bytes())?;
     }
 
     let mut split = Split {

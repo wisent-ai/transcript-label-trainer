@@ -66,7 +66,7 @@ pub fn run_job(job: &jobs::Job, plan: &Plan) -> Result<Value, TrainFailure> {
     };
     spec_copy.insert("model".to_string(), json!(job.model));
     let yaml = serde_yaml::to_string(&Value::Object(spec_copy)).map_err(Error::from)?;
-    std::fs::write(aspect_dir(&job.name)?.join("job.yaml"), yaml).map_err(Error::from)?;
+    crate::util::write_whole(&aspect_dir(&job.name)?.join("job.yaml"), yaml.as_bytes())?;
     Ok(metrics)
 }
 
