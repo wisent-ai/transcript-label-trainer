@@ -15,7 +15,7 @@ pub fn execute_goal_model(
         return Err(Error("--compute-target cannot be empty".to_string()));
     }
     let ster_options = stated_ster_options(ster_options)?;
-    let dataset_bytes = std::fs::read(dataset_path)?;
+    let dataset_bytes = crate::util::read_bytes(dataset_path)?;
     let key = digest(&dataset_bytes);
     let dataset_uri =
         format!("stado://probierz/inputs/transcript-label-trainer/goal-model/{key}.jsonl");
@@ -101,8 +101,8 @@ pub fn execute_lifecycle_model(
     }
     let ster_options = stated_ster_options(ster_options)?;
     let brama_url = shell_quote(brama_url);
-    let train_bytes = std::fs::read(train_path)?;
-    let eval_bytes = std::fs::read(eval_path)?;
+    let train_bytes = crate::util::read_bytes(train_path)?;
+    let eval_bytes = crate::util::read_bytes(eval_path)?;
     let key = digest(
         format!(
             "train={}\neval={}\n",
@@ -204,7 +204,7 @@ pub fn execute_humanizer_model(
     if hf_repo.is_empty() {
         return Err(Error("HUMANIZER_HF_REPO cannot be empty".to_string()));
     }
-    let targets_bytes = std::fs::read(targets_path)?;
+    let targets_bytes = crate::util::read_bytes(targets_path)?;
     let key = digest(&targets_bytes);
     let targets_uri = format!(
         "stado://probierz/inputs/transcript-label-trainer/humanizer-model/{key}/targets.jsonl"

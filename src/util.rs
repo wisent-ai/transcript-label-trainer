@@ -3,8 +3,10 @@
 use std::fmt;
 use std::path::PathBuf;
 
+mod read;
 mod whole;
 
+pub(crate) use read::{read_bytes, read_text};
 pub(crate) use whole::write_whole;
 
 #[derive(Debug)]

@@ -159,7 +159,7 @@ pub(crate) fn trained_at(artifact: &Artifact) -> Result<&str> {
 }
 
 pub(crate) fn read_metrics(path: &Path) -> Result<Value> {
-    let text = std::fs::read_to_string(path)?;
+    let text = crate::util::read_text(path)?;
     serde_json::from_str(&text).map_err(|error| Error(format!("{}: {error}", path.display())))
 }
 
@@ -217,7 +217,7 @@ pub(crate) fn infer_tfidf(artifact: &Artifact, texts: &[String]) -> Result<Vec<(
         }
         crate::bail!("no {MODEL_FILE} in {}", artifact.dir.display());
     }
-    let file: ModelFile = serde_json::from_str(&std::fs::read_to_string(&path)?)
+    let file: ModelFile = serde_json::from_str(&crate::util::read_text(&path)?)
         .map_err(|error| Error(format!("{}: {error}", path.display())))?;
     Ok(TfidfModel::from_file(file)?.predict(texts))
 }

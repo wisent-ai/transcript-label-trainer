@@ -46,7 +46,7 @@ pub(crate) struct DatasetBundle {
 
 pub(crate) fn read_bundle_at(path: &Path) -> Result<DatasetBundle> {
     let bundle: DatasetBundle =
-        serde_json::from_slice(&std::fs::read(path)?).map_err(|error| {
+        serde_json::from_slice(&crate::util::read_bytes(path)?).map_err(|error| {
             Error(format!(
                 "invalid dataset bundle {}: {error}",
                 path.display()
@@ -183,7 +183,7 @@ pub fn load_labels(aspect: &str) -> Result<Vec<SessionLabel>> {
 
     for name in names {
         let file = labels_dir.join(&name);
-        let text = std::fs::read_to_string(&file)?;
+        let text = crate::util::read_text(&file)?;
         for line in text.lines() {
             let line = line.trim();
             if line.is_empty() {

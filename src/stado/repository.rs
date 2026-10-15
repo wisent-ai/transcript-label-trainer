@@ -197,10 +197,15 @@ pub fn execute(job_path: &str, job: &Job, compute_target: &str) -> Result<i32> {
     let dataset_path = temporary.0.join("dataset.json");
     lake::export_bundle(&job.scope.aspect, &resolved.labels, &dataset_path)?;
     let spec_path = temporary.0.join("job.yaml");
-    std::fs::copy(job_path, &spec_path)?;
+    std::fs::copy(job_path, &spec_path).map_err(|error| {
+        Error(format!(
+            "cannot copy the job spec {job_path} to {}: {error}",
+            spec_path.display()
+        ))
+    })?;
 
-    let dataset_bytes = std::fs::read(&dataset_path)?;
-    let spec_bytes = std::fs::read(&spec_path)?;
+    let dataset_bytes = crate::util::read_bytes(&dataset_path)?;
+    let spec_bytes = crate::util::read_bytes(&spec_path)?;
     let key = digest(&[dataset_bytes.as_slice(), spec_bytes.as_slice()].concat());
     let base = format!("stado://probierz/inputs/transcript-label-trainer/{key}");
     let dataset_uri = format!("{base}/dataset.json");
