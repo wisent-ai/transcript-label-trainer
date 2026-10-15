@@ -69,13 +69,14 @@ pub(crate) fn stado_bin() -> PathBuf {
 }
 
 pub(crate) fn run(program: &Path, args: &[OsString]) -> Result<Output> {
-    Command::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|error| Error(format!("could not run {}: {error}", program.display())))
+    stado_wait::output(
+        Command::new(program)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped()),
+    )
+    .map_err(|error| Error(format!("could not run {}: {error}", program.display())))
 }
 
 pub(crate) fn command_error(program: &Path, action: &str, output: &Output) -> Error {
@@ -110,13 +111,12 @@ pub(crate) fn repo_ref() -> Result<String> {
             ));
         }
         Err(std::env::VarError::NotPresent) => {
-            let output = Command::new("git")
-                .args(["-C", env!("CARGO_MANIFEST_DIR"), "rev-parse", "HEAD"])
-                .stdin(Stdio::null())
-                .output()
-                .map_err(|error| {
-                    Error(format!("could not resolve trainer source commit: {error}"))
-                })?;
+            let output = stado_wait::output(
+                Command::new("git")
+                    .args(["-C", env!("CARGO_MANIFEST_DIR"), "rev-parse", "HEAD"])
+                    .stdin(Stdio::null()),
+            )
+            .map_err(|error| Error(format!("could not resolve trainer source commit: {error}")))?;
             if !output.status.success() {
                 return Err(command_error(
                     Path::new("git"),
@@ -128,7 +128,7 @@ pub(crate) fn repo_ref() -> Result<String> {
         }
     };
     let candidate = candidate.trim();
-    if candidate.len() != 40
+    if candidate.len() != 40 // a full SHA-1 object name: https://git-scm.com/docs/gitglossary#def_object_name
         || !candidate
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
