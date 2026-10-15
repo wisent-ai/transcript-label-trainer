@@ -16,6 +16,7 @@ use serde_json::json;
 
 use super::*;
 use crate::serving::{Server, Serving};
+use crate::util::write_whole;
 
 /// The two answers the model may give, as a llama.cpp grammar: no task, or one
 /// goal on one line.
@@ -46,19 +47,6 @@ fn reviewed_rows(path: &Path) -> Result<Vec<GoalRow>> {
         return Err(Error(format!("{} holds no reviewed row", path.display())));
     }
     Ok(rows)
-}
-
-/// Write `bytes` to `output` whole, through a sibling file renamed into place.
-fn write_whole(output: &Path, bytes: &[u8]) -> Result<()> {
-    if let Some(parent) = output.parent().filter(|parent| !parent.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)?;
-    }
-    let mut temporary = output.as_os_str().to_owned();
-    temporary.push(".tmp");
-    let temporary = PathBuf::from(temporary);
-    fs::write(&temporary, bytes)?;
-    fs::rename(&temporary, output)?;
-    Ok(())
 }
 
 /// Write the reviewed teacher rows of `rows` (every row not marked gold) as

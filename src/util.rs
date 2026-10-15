@@ -3,6 +3,10 @@
 use std::fmt;
 use std::path::PathBuf;
 
+mod whole;
+
+pub(crate) use whole::write_whole;
+
 #[derive(Debug)]
 pub struct Error(pub String);
 

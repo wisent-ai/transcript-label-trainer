@@ -114,15 +114,11 @@ fn reviewed_rows(rows: &Path) -> Result<Vec<TrainingRow>> {
 /// Write `{"examples": examples}` to `output` whole, through a sibling file
 /// renamed into place, and answer the count.
 fn write_examples(output: &Path, examples: Vec<Value>) -> Result<Value> {
-    if let Some(parent) = output.parent().filter(|parent| !parent.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)?;
-    }
-    let mut temporary = output.as_os_str().to_owned();
-    temporary.push(".tmp");
-    let temporary = std::path::PathBuf::from(temporary);
     let count = examples.len();
-    fs::write(&temporary, serde_json::to_vec_pretty(&json!({ "examples": examples }))?)?;
-    fs::rename(&temporary, output)?;
+    crate::util::write_whole(
+        output,
+        &serde_json::to_vec_pretty(&json!({ "examples": examples }))?,
+    )?;
     Ok(json!({ "examples": count, "output": output.display().to_string() }))
 }
 
