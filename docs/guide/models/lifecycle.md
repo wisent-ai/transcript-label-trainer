@@ -114,8 +114,10 @@ The quantized model is measured the way production serves it, by
 `transcript-label-trainer lifecycle-evaluate-gguf`: `llama-server` on a loopback
 port the system assigns, sized by llama-server itself as for the goal model, asked
 on as many concurrent requests as the slots it chose (its `/props` `total_slots`;
-an answer without a positive one fails the run), each answer decoded greedily, as
-Oko asks the model, and constrained to `lifecycle-output-schema.json` narrowed to
+an answer without a positive one fails the run), each answer sampled with thinking off
+as Oko asks the model — temperature 0.7, top-p 0.8, top-k 20 and min-p 0, the setting
+the [Qwen3-4B model card](https://huggingface.co/Qwen/Qwen3-4B/blob/main/README.md)
+states for non-thinking mode — and constrained to `lifecycle-output-schema.json` narrowed to
 the row's candidate references. The evaluation waits for the server's health
 answer (reading its log between probes; a server that exits first fails the run
 with its status and log path) and for every answer; a failed request fails the run

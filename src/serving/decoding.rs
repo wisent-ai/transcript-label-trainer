@@ -7,22 +7,28 @@ use serde_json::{json, Value};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Decoding {
-    /// The most likely token at every step: Jeden Desktop runs the goal model
-    /// with llama-cli --temp 0, and Oko asks the lifecycle model at
-    /// temperature zero.
-    Greedy,
+    /// The sampling Qwen3's model card states for non-thinking mode, the mode
+    /// Jeden Desktop runs the goal model in (llama-cli --reasoning off) and
+    /// Oko asks the lifecycle model in (enable_thinking false). Both models
+    /// are fine-tunes of Qwen3-4B, whose card warns against greedy decoding.
+    Qwen3NonThinking,
     /// The server's own sampling: no sampling field is sent. Echo asks the
     /// humanizer without one.
     ServerDefault,
 }
 
 impl Decoding {
-    /// The request field that selects this decoding on llama-server's chat
-    /// route, when one has to be sent.
-    pub(crate) fn field(self) -> Option<(&'static str, Value)> {
+    /// The request fields that select this decoding on llama-server's chat
+    /// route; none when the server's own sampling is meant.
+    pub(crate) fn fields(self) -> Vec<(&'static str, Value)> {
         match self {
-            Decoding::Greedy => Some(("temperature", json!(0))), // llama.cpp samples greedily at temperature 0: https://github.com/ggml-org/llama.cpp/issues/9904
-            Decoding::ServerDefault => None,
+            Decoding::Qwen3NonThinking => vec![
+                ("temperature", json!(0.7)), // https://huggingface.co/Qwen/Qwen3-4B/blob/main/README.md "For non-thinking mode, we suggest using Temperature=0.7, TopP=0.8, TopK=20, and MinP=0."
+                ("top_p", json!(0.8)), // https://huggingface.co/Qwen/Qwen3-4B/blob/main/README.md "For non-thinking mode, we suggest using Temperature=0.7, TopP=0.8, TopK=20, and MinP=0."
+                ("top_k", json!(20)), // https://huggingface.co/Qwen/Qwen3-4B/blob/main/README.md "For non-thinking mode, we suggest using Temperature=0.7, TopP=0.8, TopK=20, and MinP=0."
+                ("min_p", json!(0.0)), // https://huggingface.co/Qwen/Qwen3-4B/blob/main/README.md "For non-thinking mode, we suggest using Temperature=0.7, TopP=0.8, TopK=20, and MinP=0."
+            ],
+            Decoding::ServerDefault => Vec::new(),
         }
     }
 }

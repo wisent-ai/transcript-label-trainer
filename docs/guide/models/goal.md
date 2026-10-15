@@ -54,9 +54,11 @@ sized by llama-server itself from the model and the device — its documented de
 `--parallel -1` (auto slots), `--ctx-size 0` (the model's context, fitted to device
 memory by `--fit on`) and `--gpu-layers auto`
 ([llama-server options](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)),
-so the job states none of them — the same system prompt and user turn, decoded greedily
-as Jeden Desktop runs the model, constrained to `<goal/>` or one `<goal>…</goal>` line.
-It writes `predictions.jsonl` and the exact-match
+so the job states none of them — the same system prompt and user turn with thinking off,
+sampled as Jeden Desktop runs the model: temperature 0.7, top-p 0.8, top-k 20 and min-p 0,
+the setting the [Qwen3-4B model card](https://huggingface.co/Qwen/Qwen3-4B/blob/main/README.md)
+states for non-thinking mode (the card warns against greedy decoding), constrained to
+`<goal/>` or one `<goal>…</goal>` line. It writes `predictions.jsonl` and the exact-match
 share in `metrics-gguf.json`; a server that exits before it is ready fails with its
 status and log, and a failed request fails the run naming its session. Every one of
 those served predictions must receive `both-sensible` from a final Brama `--best` audit,

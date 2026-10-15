@@ -97,7 +97,7 @@ impl Server {
             "stream": false,
             "chat_template_kwargs": { "enable_thinking": false },
         });
-        if let Some((field, value)) = self.decoding.field() {
+        for (field, value) in self.decoding.fields() {
             body[field] = value;
         }
         if let Some((field, value)) = constraint {

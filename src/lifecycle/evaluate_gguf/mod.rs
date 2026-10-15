@@ -30,8 +30,8 @@ impl GgufEvaluation {
             server: self.server.clone(),
             model: self.model.clone(),
             server_log: self.server_log.clone(),
-            // Oko asks the lifecycle model greedily.
-            decoding: crate::serving::Decoding::Greedy,
+            // Oko asks the lifecycle model with thinking off.
+            decoding: crate::serving::Decoding::Qwen3NonThinking,
         }
     }
 }

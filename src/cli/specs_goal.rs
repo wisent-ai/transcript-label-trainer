@@ -67,8 +67,8 @@ pub(crate) fn cmd_goal_evaluate_gguf(args: &Parsed) -> Result<i32> {
             server: required_path(args, "--server")?,
             model: required_path(args, "--model")?,
             server_log: required_path(args, "--server-log")?,
-            // Jeden Desktop asks the goal model greedily.
-            decoding: crate::serving::Decoding::Greedy,
+            // Jeden Desktop asks the goal model with thinking off.
+            decoding: crate::serving::Decoding::Qwen3NonThinking,
         },
         dataset: required_path(args, "--dataset")?,
         predictions: required_path(args, "--predictions")?,
