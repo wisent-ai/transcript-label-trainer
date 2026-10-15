@@ -3,7 +3,7 @@ use super::*;
 impl BramaClient {
     pub fn new(url: &str, agent_id: String, secret: String, token: Option<String>) -> Result<Self> {
         // No clock on a request: it ends with Brama's answer or a transport
-        // error, and reqwest's built-in 30 s limit is switched off.
+        // error, and reqwest's built-in cut-off is switched off.
         let http = reqwest::blocking::Client::builder()
             .timeout(None)
             .build()
@@ -12,38 +12,39 @@ impl BramaClient {
             url: url.trim_end_matches('/').to_string(),
             agent_id,
             secret,
-            token: token.filter(|value| !value.is_empty()),
+            token,
             http,
         })
     }
 
     /// The signing identity and the two secrets come from the environment or
     /// from the vault roles the environment declares; nothing names an agent
-    /// or an item here.
+    /// or an item here. A variable that is set but empty is refused by name.
     pub fn from_env() -> Result<Self> {
-        let agent_id = env_trimmed("WISENT_APP_AGENT_ID");
-        if agent_id.is_empty() {
-            bail!("WISENT_APP_AGENT_ID is required: the agent identity Brama verifies the signature against")
-        }
-        let mut secret = env_trimmed("WISENT_APP_AGENT_AUTH_SECRET");
-        if secret.is_empty() {
-            secret = read_role("TLT_BRAMA_AGENT_ROLE", "the agent's signing secret")?;
-        }
-        let mut token = env_trimmed("BRAMA_TOKEN");
-        if token.is_empty() {
-            token = read_role("TLT_BRAMA_TOKEN_ROLE", "the Brama bearer")?;
-        }
+        let agent_id = env_value("WISENT_APP_AGENT_ID")?.ok_or_else(|| {
+            Error("WISENT_APP_AGENT_ID is required: the agent identity Brama verifies the signature against".to_string())
+        })?;
+        let secret = match env_value("WISENT_APP_AGENT_AUTH_SECRET")? {
+            Some(secret) => secret,
+            None => read_role("TLT_BRAMA_AGENT_ROLE", "the agent's signing secret")?,
+        };
+        let token = match env_value("BRAMA_TOKEN")? {
+            Some(token) => token,
+            None => read_role("TLT_BRAMA_TOKEN_ROLE", "the Brama bearer")?,
+        };
         let url = resolve_url()?;
         Self::new(&url, agent_id, secret, Some(token))
     }
 
     /// The identity headers jeden signs with: the canonical string is
-    /// `"{agent_id}:{timestamp}:{body_hash}"`, keyed by the shared secret.
-    pub(crate) fn auth_headers(&self, body: &str) -> Vec<(&'static str, String)> {
+    /// `"{agent_id}:{timestamp}:{body_hash}"`, keyed by the shared secret. A
+    /// clock set before the Unix epoch cannot sign a timestamp Brama accepts
+    /// and is refused with the clock's own error.
+    pub(crate) fn auth_headers(&self, body: &str) -> Result<Vec<(&'static str, String)>> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|since| since.as_secs())
-            .unwrap_or(0)
+            .map_err(|error| Error(format!("this host's clock is before the Unix epoch, so no request can be signed: {error}")))?
+            .as_secs()
             .to_string();
         let body_hash = if body.is_empty() {
             String::new()
@@ -51,7 +52,7 @@ impl BramaClient {
             hex::encode(Sha256::digest(body.as_bytes()))
         };
         let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(self.secret.as_bytes())
-            .expect("HMAC accepts a key of any length");
+            .map_err(|error| Error(format!("the agent's signing secret cannot key an HMAC: {error}")))?;
         mac.update(format!("{}:{timestamp}:{body_hash}", self.agent_id).as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
         let mut headers = vec![
@@ -64,12 +65,13 @@ impl BramaClient {
         if let Some(token) = &self.token {
             headers.push(("authorization", format!("Bearer {token}")));
         }
-        headers
+        Ok(headers)
     }
 
     /// One non-streaming chat completion; returns the message content. No
-    /// output budget is sent: how long an answer may be is the routed model's
-    /// own limit, which Brama's route carries, not a count chosen here.
+    /// output budget and no sampling setting is sent: how long an answer may
+    /// be and how the routed model samples are its own, which Brama's route
+    /// carries, not values chosen here.
     pub fn chat(&self, model: &str, messages: &[Message]) -> Result<String> {
         match self.answer(model, messages)? {
             ChatAnswer::Content(content) => Ok(content),
@@ -84,51 +86,46 @@ impl BramaClient {
         let body = serde_json::to_string(&serde_json::json!({
             "model": model,
             "messages": messages,
-            "temperature": 0,
         }))?;
         let mut request = self.http.post(format!("{}/v1/chat/completions", self.url));
-        for (name, value) in self.auth_headers(&body) {
+        for (name, value) in self.auth_headers(&body)? {
             request = request.header(name, value);
         }
-        let response = match request.body(body).send() {
-            Ok(response) => response,
-            Err(error) => bail!("Brama unreachable at {}: {error}", self.url),
-        };
+        let response = stado_wait::request_blocking(request.body(body))
+            .map_err(|error| Error(format!("Brama unreachable at {}: {error}", self.url)))?;
         let status = response.status();
-        let text = response.text().unwrap_or_default();
-        if status.as_u16() != 200 {
+        let text = response.text().map_err(|error| {
+            Error(format!("Brama answered HTTP {status} but its body could not be read: {error}"))
+        })?;
+        if status != reqwest::StatusCode::OK {
             let detail = text.trim();
             let detail = if detail.is_empty() {
                 "(empty body)"
             } else {
                 detail
             };
-            let code = serde_json::from_str::<serde_json::Value>(detail)
-                .ok()
-                .and_then(|payload| payload.pointer("/error/code")?.as_str().map(str::to_string));
-            if code.as_deref() == Some("context_length_exceeded") {
-                return Ok(ChatAnswer::DoesNotFit(detail.to_string()));
+            // Brama states a prompt the route cannot take as error.code; a
+            // body that is not JSON or names no code is reported whole below.
+            if let Ok(payload) = serde_json::from_str::<serde_json::Value>(detail) {
+                if payload.pointer("/error/code").and_then(serde_json::Value::as_str)
+                    == Some("context_length_exceeded")
+                {
+                    return Ok(ChatAnswer::DoesNotFit(detail.to_string()));
+                }
             }
-            bail!("Brama answered HTTP {}: {detail}", status.as_u16())
+            bail!("Brama answered HTTP {status}: {detail}")
         }
-        let content = serde_json::from_str::<serde_json::Value>(&text)
-            .ok()
-            .and_then(|payload| {
-                payload
-                    .get("choices")?
-                    .get(0)?
-                    .get("message")?
-                    .get("content")?
-                    .as_str()
-                    .map(str::to_string)
-            });
-        match content {
-            Some(content) => Ok(ChatAnswer::Content(content.trim().to_string())),
-            None => bail!(
-                "Brama response was not an OpenAI chat completion: {}",
-                text.trim()
-            ),
-        }
+        let payload: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
+            Error(format!("Brama answered HTTP {status} with a body that is not JSON ({error}): {}", text.trim()))
+        })?;
+        let content = payload
+            .get("choices")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|choices| choices.first())
+            .and_then(|choice| choice.pointer("/message/content"))
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error(format!("Brama response was not an OpenAI chat completion: {}", text.trim())))?;
+        Ok(ChatAnswer::Content(content.trim().to_string()))
     }
 }
 

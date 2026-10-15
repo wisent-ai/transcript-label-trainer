@@ -48,12 +48,15 @@ impl BramaClient {
     /// The calls at once this command may send to `model`.
     pub fn allowance(&self, model: &str) -> Result<NonZeroUsize> {
         let mut request = self.http.get(format!("{}/v1/aliases", self.url));
-        for (name, value) in self.auth_headers("") {
+        for (name, value) in self.auth_headers("")? {
             request = request.header(name, value);
         }
-        let response = match request.send() {
+        let response = match stado_wait::request_blocking(request) {
             Ok(response) => response,
-            Err(error) => bail!("Brama unreachable at {} reading its measured concurrency: {error}", self.url),
+            Err(error) => bail!(
+                "Brama unreachable at {} reading its measured concurrency: {error}",
+                self.url
+            ),
         };
         let status = response.status();
         let text = match response.text() {
@@ -61,11 +64,18 @@ impl BramaClient {
             Err(error) => bail!("Brama's GET /v1/aliases body could not be read: {error}"),
         };
         if !status.is_success() {
-            bail!("Brama answered GET /v1/aliases with HTTP {}: {}", status.as_u16(), text.trim())
+            bail!(
+                "Brama answered GET /v1/aliases with HTTP {}: {}",
+                status.as_u16(),
+                text.trim()
+            )
         }
         let listing: Listing = match serde_json::from_str(&text) {
             Ok(listing) => listing,
-            Err(error) => bail!("Brama's GET /v1/aliases is not the alias listing ({error}): {}", text.trim()),
+            Err(error) => bail!(
+                "Brama's GET /v1/aliases is not the alias listing ({error}): {}",
+                text.trim()
+            ),
         };
         Ok(granted(listing.measured_concurrency.get(model)))
     }

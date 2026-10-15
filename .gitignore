@@ -1,6 +1,6 @@
 .DS_Store
 target/
-models/
+/models/
 .work/
 .wisent-output/
 .build/

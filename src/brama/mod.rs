@@ -18,15 +18,13 @@
 //! `TLT_BRAMA_AGENT_ROLE` and `TLT_BRAMA_TOKEN_ROLE`, each `ROLE#FIELD`, read
 //! with `stado credentials get --role`. No item and no agent is named in
 //! code. Secret values are only ever held in memory — never printed, never
-//! logged.
+//! logged. A variable that is set but empty is refused by name, never read
+//! as unset.
 //!
-//! Endpoint resolution: BRAMA_URL, then JEDEN_BRAMA_URL, then the BRAMA_URL
-//! line of jeden's own config (~/.jeden/.env — the same value jeden uses), then
-//! Stado's service directory, which derives the address from where the gateway
-//! is placed. An absent ~/.jeden/.env is passed over; one that cannot be read
-//! is refused with its path and cause, and when Stado cannot place Brama the
-//! refusal carries why (stado not run, Stado's own reason, a reply that is not
-//! JSON or names no url).
+//! Endpoint resolution: BRAMA_URL when the caller names it, otherwise Stado's
+//! service directory, which derives the address from where the gateway is
+//! placed; when Stado cannot place Brama the refusal carries why (stado not
+//! run, Stado's own reason, a reply that is not JSON or names no url).
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -35,7 +33,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::bail;
-use crate::util::{home_dir, Error, Result};
+use crate::util::{Error, Result};
 
 mod allowance;
 mod default_stado_bin;

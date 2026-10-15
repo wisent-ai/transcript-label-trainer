@@ -1,11 +1,11 @@
 //! Every command that reaches Brama first resolves where Brama is and reads
 //! its signing secret. The real executable runs `humanizer-audit` with an
-//! isolated HOME and no BRAMA_URL, and each way that resolution fails must be
-//! refused with its own cause: an unreadable ~/.jeden/.env names the file, a
-//! stado that cannot run names the program, and the real Stado's refusal of
-//! the placement or of a credential role is carried in the answer, not
-//! replaced by a generic "no Brama endpoint". Every command, its exit status
-//! and output go to the case's report.json under `.build/`.
+//! isolated HOME, and each way that resolution fails must be refused with
+//! its own cause: a BRAMA_URL set but empty is named instead of being read as
+//! unset, a stado that cannot run names the program, and the real Stado's
+//! refusal of the placement or of a credential role is carried in the
+//! answer, not replaced by a generic "no Brama endpoint". Every command, its
+//! exit status and output go to the case's report.json under `.build/`.
 //!
 //! TLT_TEST_STADO names the real stado executable; it is required.
 use std::fs;
@@ -50,8 +50,7 @@ impl Run {
             .args(&args)
             .env("HOME", &self.home)
             .env("WISENT_APP_AGENT_ID", "transcript-label-trainer-test")
-            .env_remove("BRAMA_URL")
-            .env_remove("JEDEN_BRAMA_URL");
+            .env_remove("BRAMA_URL");
         for name in without {
             command.env_remove(name);
         }
@@ -94,16 +93,16 @@ fn refusal(answer: &Output) -> String {
 }
 
 #[test]
-fn an_unreadable_jeden_env_is_named_with_its_cause() {
-    let mut run = Run::start("jeden-env");
-    let env_file = run.home.join(".jeden").join(".env");
-    fs::create_dir_all(&env_file).unwrap();
-    let stderr = refusal(&run.audit(&secrets(), &[]));
+fn an_empty_brama_url_is_refused_by_name() {
+    let mut run = Run::start("empty-brama-url");
+    let mut env = secrets();
+    env.push(("BRAMA_URL", String::new()));
+    let stderr = refusal(&run.audit(&env, &[]));
     assert!(
-        stderr.contains(&format!("{} cannot be read for BRAMA_URL", env_file.display())),
-        "the refusal must name the unreadable file: {stderr}"
+        stderr.contains("BRAMA_URL is set but empty"),
+        "the refusal must name the empty variable: {stderr}"
     );
-    assert!(!stderr.contains("no Brama endpoint"), "an unreadable file is not an absent endpoint: {stderr}");
+    assert!(!stderr.contains("no Brama endpoint"), "an empty variable is not an absent endpoint: {stderr}");
     run.passed();
 }
 

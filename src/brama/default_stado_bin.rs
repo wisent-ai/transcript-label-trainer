@@ -59,8 +59,25 @@ pub(crate) fn run_capture(
     })
 }
 
-pub(crate) fn env_trimmed(key: &str) -> String {
-    std::env::var(key).unwrap_or_default().trim().to_string()
+/// The value an environment variable holds, trimmed; `None` only when it is
+/// unset. A set but empty value, or one that is not UTF-8, is refused by
+/// name: read as unset, it would send the command to another source.
+pub(crate) fn env_value(key: &str) -> Result<Option<String>> {
+    match std::env::var(key) {
+        Ok(value) if value.trim().is_empty() => bail!("{key} is set but empty; set it or unset it"),
+        Ok(value) => Ok(Some(value.trim().to_string())),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => bail!("{key} is set but is not UTF-8"),
+    }
+}
+
+/// The stado executable: `TLT_STADO_BIN` when it names one, otherwise the
+/// program named stado, found on PATH when it runs.
+fn stado_bin() -> Result<String> {
+    Ok(match env_value("TLT_STADO_BIN")? {
+        Some(stado) => stado,
+        None => DEFAULT_STADO_BIN.to_string(),
+    })
 }
 
 /// Where Stado says Brama is actually placed.
@@ -71,10 +88,7 @@ pub(crate) fn env_trimmed(key: &str) -> String {
 /// is an error with its cause: stado not run, Stado's refusal with its
 /// reason, a reply that is not JSON, a reply without a url.
 pub(crate) fn stado_url() -> Result<String> {
-    let stado = match env_trimmed("TLT_STADO_BIN") {
-        value if value.is_empty() => DEFAULT_STADO_BIN.to_string(),
-        value => value,
-    };
+    let stado = stado_bin()?;
     let command = format!("{stado} service directory connect --json brama");
     let captured = run_capture(
         &stado,
@@ -100,42 +114,16 @@ pub(crate) fn stado_url() -> Result<String> {
     }
 }
 
+/// Where Brama is: `BRAMA_URL` when the caller names it, otherwise where
+/// Stado's service directory places the gateway, the one record that follows
+/// it when it moves.
 pub(crate) fn resolve_url() -> Result<String> {
-    for var in ["BRAMA_URL", "JEDEN_BRAMA_URL"] {
-        let value = env_trimmed(var);
-        if !value.is_empty() {
-            return Ok(value);
-        }
+    if let Some(url) = env_value("BRAMA_URL")? {
+        return Ok(url);
     }
-    let jeden_env = home_dir().join(".jeden").join(".env");
-    match std::fs::read_to_string(&jeden_env) {
-        Ok(contents) => {
-            for line in contents.lines() {
-                if let Some(value) = line.strip_prefix("BRAMA_URL=") {
-                    let value = value.trim();
-                    if !value.is_empty() {
-                        return Ok(value.to_string());
-                    }
-                }
-            }
-        }
-        Err(cause) if cause.kind() == std::io::ErrorKind::NotFound => {}
-        Err(cause) => bail!(
-            "{} cannot be read for BRAMA_URL: {cause}",
-            jeden_env.display()
-        ),
-    }
-    // There used to be a public default here, `https://brama.wisent.com`. That
-    // hostname resolves to the company website, so every call that reached this
-    // line got a 404 page from Vercel and a parse error blaming Brama. The
-    // fleet keeps the real placement in Stado's service directory, which is
-    // also the one answer that follows the gateway when it moves.
-    match stado_url() {
-        Ok(url) => Ok(url),
-        Err(cause) => {
-            bail!("no Brama endpoint: BRAMA_URL is unset and Stado could not place Brama: {cause}")
-        }
-    }
+    stado_url().map_err(|cause| {
+        Error(format!("no Brama endpoint: BRAMA_URL is unset and Stado could not place Brama: {cause}"))
+    })
 }
 
 /// The vault role and field an environment variable declares as `ROLE#FIELD`.
@@ -143,7 +131,11 @@ pub(crate) fn resolve_url() -> Result<String> {
 /// without anything here changing. `holds` says what the value is for, so the
 /// refusal tells the operator what to declare.
 pub(crate) fn role_reference(variable: &str, holds: &str) -> Result<(String, String)> {
-    let reference = env_trimmed(variable);
+    let reference = env_value(variable)?.ok_or_else(|| {
+        Error(format!(
+            "{variable} is not set: declare the vault role holding {holds} and its field as ROLE#FIELD"
+        ))
+    })?;
     match reference.split_once('#') {
         Some((role, field)) if !role.is_empty() && !field.is_empty() => {
             Ok((role.to_string(), field.to_string()))
@@ -163,10 +155,7 @@ pub(crate) fn role_reference(variable: &str, holds: &str) -> Result<(String, Str
 /// consumer override is taken here.
 pub(crate) fn read_role(variable: &str, holds: &str) -> Result<String> {
     let (role, field) = role_reference(variable, holds)?;
-    let stado = match env_trimmed("TLT_STADO_BIN") {
-        value if value.is_empty() => DEFAULT_STADO_BIN.to_string(),
-        value => value,
-    };
+    let stado = stado_bin()?;
     let command = format!("{stado} credentials get --role {role} --field {field}");
     let captured = run_capture(
         &stado,
