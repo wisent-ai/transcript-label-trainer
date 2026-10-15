@@ -25,8 +25,19 @@ mod util;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match cli::run(std::env::args().skip(1).collect()) {
-        Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+    let mut arguments = std::env::args();
+    // The first argument is the program's own name, not an argument to it.
+    arguments.next();
+    match cli::run(arguments.collect()) {
+        Ok(code) => match u8::try_from(code) {
+            Ok(status) => ExitCode::from(status),
+            Err(error) => {
+                eprintln!(
+                    "error: the command answered exit status {code}, which a process cannot exit with: {error}"
+                );
+                ExitCode::FAILURE
+            }
+        },
         Err(error) => {
             eprintln!("error: {error}");
             ExitCode::FAILURE
