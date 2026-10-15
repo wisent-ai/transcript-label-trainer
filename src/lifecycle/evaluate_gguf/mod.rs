@@ -30,6 +30,8 @@ impl GgufEvaluation {
             server: self.server.clone(),
             model: self.model.clone(),
             server_log: self.server_log.clone(),
+            // Oko asks the lifecycle model greedily.
+            decoding: crate::serving::Decoding::Greedy,
         }
     }
 }
@@ -55,44 +57,74 @@ fn narrowed(schema: &Value, refs: &[String]) -> Result<Value> {
 /// The candidate references of `row` the schema's pattern variants may name:
 /// every candidate except the references the schema itself fixes (a new goal).
 fn existing_refs(row: &TrainingRow, schema: &Value) -> Result<Vec<String>> {
-    let fixed: Vec<&str> = schema["oneOf"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let variants = schema["oneOf"].as_array().ok_or("the output schema has no oneOf")?;
+    let fixed: Vec<&str> = variants
+        .iter()
         .filter_map(|variant| variant.pointer("/properties/goal_ref/const").and_then(Value::as_str))
         .collect();
     let envelope = input_envelope(row)?;
     let candidates = envelope["candidates"].as_array().ok_or_else(|| Error(format!("{} has no candidates", row.id)))?;
-    Ok(candidates
-        .iter()
-        .filter_map(|candidate| candidate["ref"].as_str())
-        .filter(|reference| !fixed.contains(reference))
-        .map(str::to_string)
-        .collect())
-}
-
-/// Whether `value` satisfies one narrowed variant: exactly its required
-/// string properties, each matching its `const` or `enum`.
-fn satisfies(value: &Map<String, Value>, variant: &Value) -> bool {
-    let Some(properties) = variant["properties"].as_object() else { return false };
-    if value.len() != properties.len() || !value.keys().all(|key| properties.contains_key(key)) {
-        return false;
-    }
-    properties.iter().all(|(key, rule)| {
-        let Some(actual) = value.get(key) else { return false };
-        if !actual.is_string() || rule.get("pattern").is_some() {
-            return false;
+    let mut references = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let reference = candidate["ref"]
+            .as_str()
+            .ok_or_else(|| Error(format!("{} has a candidate without a text ref: {candidate}", row.id)))?;
+        if !fixed.contains(&reference) {
+            references.push(reference.to_string());
         }
-        rule.get("const").map_or(true, |constant| constant == actual)
-            && rule.get("enum").and_then(Value::as_array).map_or(true, |allowed| allowed.contains(actual))
-    })
+    }
+    Ok(references)
 }
 
-/// The decision in `text` when it satisfies one variant of `schema`.
-fn decision(text: &str, schema: &Value) -> Option<Decision> {
-    let value = parse_json_object(text).ok()?;
-    let object = value.as_object()?;
-    schema["oneOf"].as_array()?.iter().any(|variant| satisfies(object, variant)).then(|| serde_json::from_value(value.clone()).ok())?
+/// Whether `value` satisfies one narrowed variant, or why not: exactly its
+/// properties, each a string matching its `const` or `enum` when the variant
+/// states one.
+fn satisfies(value: &Map<String, Value>, variant: &Value) -> std::result::Result<(), String> {
+    let properties = variant["properties"].as_object().ok_or("a schema variant states no properties")?;
+    if value.len() != properties.len() || !value.keys().all(|key| properties.contains_key(key)) {
+        let expected: Vec<&String> = properties.keys().collect();
+        return Err(format!("its keys are not the variant's {expected:?}"));
+    }
+    for (key, rule) in properties {
+        let actual = value.get(key).ok_or_else(|| format!("{key} is missing"))?;
+        if !actual.is_string() {
+            return Err(format!("{key} is not a string"));
+        }
+        if rule.get("pattern").is_some() {
+            return Err(format!("{key} is still a pattern in the narrowed schema"));
+        }
+        if let Some(constant) = rule.get("const") {
+            if constant != actual {
+                return Err(format!("{key} is {actual}, not {constant}"));
+            }
+        }
+        if let Some(allowed) = rule.get("enum") {
+            let allowed = allowed.as_array().ok_or_else(|| format!("{key}'s enum is not a list"))?;
+            if !allowed.contains(actual) {
+                return Err(format!("{key} is {actual}, none of {allowed:?}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The decision in `text`, or why it is not one: not a JSON object, in no
+/// variant of `schema`, or not a decision.
+fn decision(text: &str, schema: &Value) -> std::result::Result<Decision, String> {
+    let value = parse_json_object(text).map_err(|error| error.to_string())?;
+    let object = value.as_object().ok_or("the answer is not a JSON object")?;
+    let variants = schema["oneOf"].as_array().ok_or("the output schema has no oneOf")?;
+    let mut refusals = Vec::with_capacity(variants.len());
+    for variant in variants {
+        match satisfies(object, variant) {
+            Ok(()) => {
+                return serde_json::from_value(value.clone())
+                    .map_err(|error| format!("it satisfies the schema but is not a decision: {error}"));
+            }
+            Err(why) => refusals.push(why),
+        }
+    }
+    Err(format!("it satisfies no variant: {}", refusals.join("; ")))
 }
 
 /// The reference decision of `row`, its title blanked: titles belong to Oko's title model.
@@ -100,16 +132,25 @@ fn target(row: &TrainingRow, schema: &Value) -> Result<Decision> {
     let content = &row.messages.iter().find(|message| message.role == "assistant").ok_or_else(|| Error(format!("{} has no assistant message", row.id)))?.content;
     let mut value = parse_json_object(content)?;
     value["title"] = json!("");
-    decision(&value.to_string(), schema).ok_or_else(|| Error(format!("{} has a reference decision outside the output schema", row.id)))
+    decision(&value.to_string(), schema)
+        .map_err(|why| Error(format!("{} has a reference decision outside the output schema: {why}", row.id)))
 }
 
-/// Ask the server for `row`'s decision; `(raw answer, decision when it satisfies the schema)`.
+/// Ask the server for `row`'s decision; `(raw answer, decision when it
+/// satisfies the schema)`. An answer outside the schema is scored as invalid
+/// and its reason written on stderr beside the row.
 fn classify(server: &crate::serving::Server, schema: &Value, row: &TrainingRow) -> Result<(String, Option<Decision>)> {
     let user = &row.messages.iter().find(|message| message.role == "user").ok_or_else(|| Error(format!("{} has no user message", row.id)))?.content;
     let narrowed = narrowed(schema, &existing_refs(row, schema)?)?;
     let constraint = json!({ "type": "json_schema", "json_schema": { "name": "oko_goal_lifecycle", "strict": true, "schema": narrowed } });
     let raw = server.answer(&row.id, SYSTEM_PROMPT.trim(), user, Some(("response_format", constraint)))?;
-    let parsed = decision(&raw, &narrowed);
+    let parsed = match decision(&raw, &narrowed) {
+        Ok(decision) => Some(decision),
+        Err(why) => {
+            eprintln!("transcript-label-trainer: {} answered outside the output schema: {why}", row.id);
+            None
+        }
+    };
     Ok((raw, parsed))
 }
 

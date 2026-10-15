@@ -69,27 +69,37 @@ pub(crate) fn humanizer_served_specs() -> Vec<Spec> {
     vec![examples, evaluate]
 }
 
+/// A text option the command cannot run without, refused by name when absent.
+fn required_text<'a>(args: &'a Parsed, flag: &str) -> Result<&'a str> {
+    args.text(flag).ok_or_else(|| Error(format!("{flag} is required")))
+}
+
 pub(crate) fn cmd_humanizer_examples(args: &Parsed) -> Result<i32> {
-    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
-    printed(&crate::humanizer::export_examples(&path("--rows"), &path("--output"))?)
+    printed(&crate::humanizer::export_examples(
+        std::path::Path::new(required_text(args, "--rows")?),
+        std::path::Path::new(required_text(args, "--output")?),
+    )?)
 }
 
 pub(crate) fn cmd_humanizer_evaluate_gguf(args: &Parsed) -> Result<i32> {
-    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
-    let serving = |model: &str, log: std::path::PathBuf| crate::serving::Serving {
-        server: path("--server"),
-        model: path(model),
-        server_log: log,
+    let path = |flag: &str| required_text(args, flag).map(std::path::PathBuf::from);
+    let server = path("--server")?;
+    let log = path("--server-log")?;
+    let serving = |model: std::path::PathBuf, server_log: std::path::PathBuf| crate::serving::Serving {
+        server: server.clone(),
+        model,
+        server_log,
+        // Echo asks the humanizer without a sampling setting of its own.
+        decoding: crate::serving::Decoding::ServerDefault,
     };
-    let log = path("--server-log");
     let run = crate::humanizer::HumanizerEvaluation {
-        base: serving("--base", log.clone()),
-        student: serving("--student", log.with_extension("student.log")),
-        dataset: path("--dataset"),
-        predictions: path("--predictions"),
-        metrics: path("--metrics"),
-        base_model: args.text("--base-model").unwrap_or_default().to_string(),
-        base_revision: args.text("--base-revision").unwrap_or_default().to_string(),
+        base: serving(path("--base")?, log.clone()),
+        student: serving(path("--student")?, log.with_extension("student.log")),
+        dataset: path("--dataset")?,
+        predictions: path("--predictions")?,
+        metrics: path("--metrics")?,
+        base_model: required_text(args, "--base-model")?.to_string(),
+        base_revision: required_text(args, "--base-revision")?.to_string(),
     };
     printed(&crate::humanizer::evaluate_gguf(&run)?)
 }

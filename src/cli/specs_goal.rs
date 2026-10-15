@@ -47,22 +47,32 @@ pub(crate) fn goal_served_specs() -> Vec<Spec> {
     vec![examples, evaluate]
 }
 
+/// A path option the command cannot run without, refused by name when absent.
+fn required_path(args: &Parsed, flag: &str) -> Result<std::path::PathBuf> {
+    args.text(flag)
+        .map(std::path::PathBuf::from)
+        .ok_or_else(|| Error(format!("{flag} is required")))
+}
+
 pub(crate) fn cmd_goal_examples(args: &Parsed) -> Result<i32> {
-    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
-    printed(&crate::goal::export_examples(&path("--rows"), &path("--output"))?)
+    printed(&crate::goal::export_examples(
+        &required_path(args, "--rows")?,
+        &required_path(args, "--output")?,
+    )?)
 }
 
 pub(crate) fn cmd_goal_evaluate_gguf(args: &Parsed) -> Result<i32> {
-    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
     let run = crate::goal::GoalEvaluation {
         serving: crate::serving::Serving {
-            server: path("--server"),
-            model: path("--model"),
-            server_log: path("--server-log"),
+            server: required_path(args, "--server")?,
+            model: required_path(args, "--model")?,
+            server_log: required_path(args, "--server-log")?,
+            // Jeden Desktop asks the goal model greedily.
+            decoding: crate::serving::Decoding::Greedy,
         },
-        dataset: path("--dataset"),
-        predictions: path("--predictions"),
-        metrics: path("--metrics"),
+        dataset: required_path(args, "--dataset")?,
+        predictions: required_path(args, "--predictions")?,
+        metrics: required_path(args, "--metrics")?,
     };
     printed(&crate::goal::evaluate_gguf(&run)?)
 }
