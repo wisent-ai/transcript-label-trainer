@@ -5,26 +5,56 @@
 
 use super::*;
 
-pub(crate) fn corpus_change(request: Request, route: &str, post: bool, origin: &str, token: &str) -> Result<()> {
+pub(crate) fn corpus_change(
+    request: Request,
+    route: &str,
+    post: bool,
+    origin: &str,
+    token: &str,
+) -> Result<()> {
     if !authorized(&request, token) {
         return unauthorized(request);
     }
     if header(&request, "Origin") != Some(origin) {
-        return respond_json(request, 403, &json!({"ok": false, "error": "mutation Origin does not match the GUI listener"}));
+        return respond_json(
+            request,
+            Status::FORBIDDEN,
+            &json!({"ok": false, "error": "mutation Origin does not match the GUI listener"}),
+        );
     }
-    let rest = &route["/api/corpora/".len()..];
+    let Some(rest) = route.strip_prefix("/api/corpora/") else {
+        return respond_json(
+            request,
+            Status::NOT_FOUND,
+            &json!({"ok": false, "error": "not found"}),
+        );
+    };
     let (encoded, select) = match (post, rest.strip_suffix("/select")) {
         (true, Some(id)) => (id, true),
         (false, None) => (rest, false),
-        _ => return respond_json(request, 404, &json!({"ok": false, "error": "not found"})),
+        _ => {
+            return respond_json(
+                request,
+                Status::NOT_FOUND,
+                &json!({"ok": false, "error": "not found"}),
+            )
+        }
     };
     let outcome = match percent_decode(encoded) {
         Ok(id) if select => corpus::select(&id),
         Ok(id) => corpus::remove(&id),
-        Err(error) => Err(Error(error.to_string())),
+        Err(error) => Err(error),
     };
     match outcome {
-        Ok(retained) => respond_json(request, 200, &json!({"ok": true, "corpus": retained})),
-        Err(error) => respond_json(request, 422, &json!({"ok": false, "error": error.to_string()})),
+        Ok(retained) => respond_json(
+            request,
+            Status::OK,
+            &json!({"ok": true, "corpus": retained}),
+        ),
+        Err(error) => respond_json(
+            request,
+            Status::UNPROCESSABLE_ENTITY,
+            &json!({"ok": false, "error": error.to_string()}),
+        ),
     }
 }

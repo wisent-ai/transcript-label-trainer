@@ -10,8 +10,6 @@
 
 use super::*;
 
-use reqwest::StatusCode as Status;
-
 use crate::{jobs, model};
 
 pub(crate) fn train(mut request: Request, origin: &str, token: &str) -> Result<()> {
@@ -21,17 +19,21 @@ pub(crate) fn train(mut request: Request, origin: &str, token: &str) -> Result<(
     if header(&request, "Origin") != Some(origin) {
         return respond_json(
             request,
-            Status::FORBIDDEN.as_u16(),
+            Status::FORBIDDEN,
             &json!({"ok": false, "error": "mutation Origin does not match the GUI listener"}),
         );
     }
     let mut raw = String::new();
     request.as_reader().read_to_string(&mut raw)?;
     match run(&raw) {
-        Ok(metrics) => respond_json(request, Status::OK.as_u16(), &json!({"ok": true, "metrics": metrics})),
+        Ok(metrics) => respond_json(
+            request,
+            Status::OK,
+            &json!({"ok": true, "metrics": metrics}),
+        ),
         Err((not_enough_data, error)) => respond_json(
             request,
-            Status::UNPROCESSABLE_ENTITY.as_u16(),
+            Status::UNPROCESSABLE_ENTITY,
             &json!({"ok": false, "not_enough_data": not_enough_data, "error": error}),
         ),
     }
@@ -51,19 +53,28 @@ fn run(raw: &str) -> std::result::Result<Value, (bool, String)> {
     };
     let aspect = text("aspect")?;
     let backend = text("model").map_err(|_| {
-        refused(format!("model is required: {} or a HuggingFace model id", jobs::SKLEARN_MODEL))
+        refused(format!(
+            "model is required: {} or a HuggingFace model id",
+            jobs::SKLEARN_MODEL
+        ))
     })?;
     let eval_split = jobs::eval_split(&body, aspect).map_err(|error| refused(error.to_string()))?;
     let settings = match jobs::get(&body, "training") {
         Some(serde_yaml::Value::Mapping(settings)) => settings,
-        _ => return Err(refused("training is required: the backend's settings, one text per key".to_string())),
+        _ => {
+            return Err(refused(
+                "training is required: the backend's settings, one text per key".to_string(),
+            ))
+        }
     };
     let typed = |flag: &str| {
         let key = flag.trim_start_matches('-').replace('-', "_");
         jobs::get(settings, &key).and_then(serde_yaml::Value::as_str)
     };
-    let training = jobs::training_from_flags(backend, typed).map_err(|error| refused(error.to_string()))?;
-    let eval_split = serde_json::to_value(&eval_split).map_err(|error| refused(error.to_string()))?;
+    let training =
+        jobs::training_from_flags(backend, typed).map_err(|error| refused(error.to_string()))?;
+    let eval_split =
+        serde_json::to_value(&eval_split).map_err(|error| refused(error.to_string()))?;
     let model_id = (backend != jobs::SKLEARN_MODEL).then_some(backend);
     model::train(aspect, model_id, &training, &eval_split).map_err(|failure| {
         let not_enough_data = matches!(failure, crate::util::TrainFailure::NotEnoughData(_));

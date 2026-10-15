@@ -18,14 +18,16 @@ Launch the product-owned browser workspace:
 transcript-label-trainer gui
 ```
 
-The command binds an available port on `127.0.0.1`, prints a session-token URL
+The command binds a port the system chooses on the IPv4 loopback address, prints a session-token URL
 and the documentation URL, and waits; it does not open a browser. Copy the
 printed **Corpus importer** URL into a local browser, select a real schema-v1
 dataset-bundle JSON, and import. The frontend is compiled into the installed
 binary and calls the same atomic Rust adoption engine as `corpus-adopt`. It
-shows the resolved training and storage roots, all imported/unchanged/
-conflicting/rejected counts, the stable source identity, and the registry state
-read back from disk.
+shows the resolved training and storage roots, the imported/unchanged/
+conflicting/rejected counts an adoption reports (a refused upload gives only its
+conflicting or rejected count), the stable source identity, and the registry state
+read back from disk. A window opened without the printed URL has no session token
+and says so instead of sending requests the GUI would refuse.
 
 Choose roots before the command and optionally pin the listener:
 
@@ -33,11 +35,11 @@ Choose roots before the command and optionally pin the listener:
 transcript-label-trainer \
   --training-root /srv/wisent/trainer \
   --storage-root /srv/wisent/lake \
-  gui --bind 127.0.0.1 --port 8765
+  gui --bind <loopback IP> --port <port>
 ```
 
-Only loopback IPs are accepted (`127.0.0.1` by default; `::1` is supported);
-port `0` selects an available port. Requests require the exact listener host,
+Only loopback IP addresses are accepted (IPv4 or IPv6, decided from the address
+itself); without `--port` the system chooses an available port. Requests require the exact listener host,
 API calls require the per-session token, and mutation also requires the exact
 origin. An upload is read whole before JSON parsing. Importing never starts
 training, evaluation, inference, teacher/judge work, or a fleet job. Open the

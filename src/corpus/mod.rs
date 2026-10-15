@@ -19,7 +19,9 @@ use crate::util::{now_iso, Error, Result};
 mod bundle_schema;
 mod manage;
 mod read_registry;
+mod validate;
 
 pub use bundle_schema::*;
 pub use manage::*;
 pub use read_registry::*;
+pub use validate::*;

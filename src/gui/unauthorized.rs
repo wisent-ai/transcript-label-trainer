@@ -3,13 +3,13 @@ use super::*;
 pub(crate) fn unauthorized(request: Request) -> Result<()> {
     respond_json(
         request,
-        401,
+        Status::UNAUTHORIZED,
         &json!({"ok": false, "error": "missing or invalid GUI session token"}),
     )
 }
 
 pub(crate) fn redirect(request: Request, location: &str) -> Result<()> {
-    let response = Response::empty(StatusCode(308))
+    let response = Response::empty(StatusCode(Status::PERMANENT_REDIRECT.as_u16()))
         .with_header(header_from("Location", location))
         .with_header(header_from("Cache-Control", "no-store"));
     request
@@ -17,11 +17,11 @@ pub(crate) fn redirect(request: Request, location: &str) -> Result<()> {
         .map_err(|error| Error(format!("could not send GUI response: {error}")))
 }
 
-pub(crate) fn respond_json(request: Request, status: u16, value: &Value) -> Result<()> {
+pub(crate) fn respond_json(request: Request, status: Status, value: &Value) -> Result<()> {
     let body = serde_json::to_vec(value)?;
     let length = body.len();
     let response = Response::new(
-        StatusCode(status),
+        StatusCode(status.as_u16()),
         response_headers("application/json; charset=utf-8"),
         Cursor::new(body),
         Some(length),
@@ -34,12 +34,11 @@ pub(crate) fn respond_json(request: Request, status: u16, value: &Value) -> Resu
 
 pub(crate) fn respond_static(
     request: Request,
-    status: u16,
     content_type: &str,
     body: &'static [u8],
 ) -> Result<()> {
     let response = Response::new(
-        StatusCode(status),
+        StatusCode(Status::OK.as_u16()),
         response_headers(content_type),
         Cursor::new(body),
         Some(body.len()),
@@ -64,7 +63,11 @@ pub(crate) fn response_headers(content_type: &str) -> Vec<Header> {
     ]
 }
 
+/// A response header from the GUI's own names and values; the only values
+/// that do not come from this file are paths it routes, which are ASCII.
 pub(crate) fn header_from(name: &str, value: &str) -> Header {
-    Header::from_bytes(name.as_bytes(), value.as_bytes())
-        .expect("static and validated response header")
+    match Header::from_bytes(name.as_bytes(), value.as_bytes()) {
+        Ok(header) => header,
+        Err(()) => panic!("the GUI built a response header tiny_http refuses: {name}: {value}"),
+    }
 }

@@ -8,6 +8,7 @@
 use std::io::{Cursor, Read};
 use std::net::{IpAddr, SocketAddr};
 
+use reqwest::StatusCode as Status;
 use serde_json::{json, Value};
 use tiny_http::{Header, Method, Request, Response, StatusCode};
 

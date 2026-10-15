@@ -80,8 +80,8 @@ transcript-label-trainer \
     <dl class="refusals">
       <dt>Imported</dt><dd>Records in a valid canonical corpus whose content-addressed file was newly retained.</dd>
       <dt>Unchanged</dt><dd>Records in an identical corpus already retained. The operation is idempotent and selects that corpus again.</dd>
-      <dt>Conflicting</dt><dd>An existing file at the computed identity path did not contain the canonical bytes. The engine refuses to overwrite it and changes no registry state.</dd>
-      <dt>Rejected</dt><dd>The complete upload was refused before selection. The GUI reports one rejected source; the diagnostic identifies the first violated contract.</dd>
+      <dt>Conflicting</dt><dd>An existing file at the computed identity path did not contain the canonical bytes. The engine refuses to overwrite it and changes no registry state. The GUI counts the one upload as conflicting from the engine's refusal itself, not from its wording.</dd>
+      <dt>Rejected</dt><dd>The complete upload was refused before selection. The GUI reports one rejected source; the diagnostic identifies the first violated contract. A refused upload gives no imported or unchanged count, and the GUI shows those as not given (—). When the retained corpora cannot be read after a refusal, the GUI says why beside the refusal.</dd>
     </dl>
     <p>A different valid corpus never overwrites the prior corpus. Both remain in the registry, and the newly imported identity becomes selected. There is no merge, per-row overwrite, or drop-invalid-rows mode.</p>
 
@@ -91,8 +91,8 @@ transcript-label-trainer \
       <dt><code>unsupported dataset bundle schema …; expected 1</code></dt><dd>The top-level <code>schema_version</code> is not supported by this binary.</dd>
       <dt><code>invalid aspect name '…': use lowercase letters, digits, '-' and '_'</code></dt><dd>The aspect is empty, starts with punctuation or an uppercase letter, or contains a character that cannot safely name a trainer artifact directory.</dd>
       <dt><code>dataset bundle … contains no label records</code></dt><dd>The <code>labels</code> array is empty.</dd>
-      <dt><code>requires nonempty session_id, value, source, and text</code></dt><dd>At least one required row value is empty or whitespace.</dd>
-      <dt><code>has invalid RFC 3339 ts</code></dt><dd>A row timestamp cannot be parsed as RFC 3339.</dd>
+      <dt><code>requires nonempty session_id, value, source, and text</code></dt><dd>At least one required row value is empty or whitespace. The record is named by its session_id when it has one.</dd>
+      <dt><code>has invalid RFC 3339 ts</code></dt><dd>A row timestamp cannot be parsed as RFC 3339; the diagnostic quotes the value and the parser's reason.</dd>
       <dt><code>has an empty runtime; use null when unknown</code></dt><dd>An optional runtime was supplied as an empty string rather than <code>null</code>.</dd>
       <dt><code>repeats native session_id …</code></dt><dd>Two rows claim the same native session identity. The whole file is refused.</dd>
       <dt><code>corpus identity conflict …; no corpus state was changed</code></dt><dd>The content-addressed retained file was modified or replaced. Restore or investigate the retained store; the importer will not overwrite evidence.</dd>

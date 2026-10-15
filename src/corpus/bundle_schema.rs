@@ -1,8 +1,10 @@
 use super::*;
 
-pub(crate) const BUNDLE_SCHEMA: u32 = 1;
+/// The dataset-bundle format this binary reads and writes.
+pub(crate) const BUNDLE_SCHEMA: u32 = 1; // https://github.com/wisent-ai/transcript-label-trainer/blob/main/docs/corpus-import.html "schema_version must be 1"
 
-pub(crate) const REGISTRY_SCHEMA: u32 = 1;
+/// The corpus registry format this binary reads and writes.
+pub(crate) const REGISTRY_SCHEMA: u32 = 1; // https://github.com/wisent-ai/transcript-label-trainer/blob/main/docs/corpus-import.html "unsupported corpus registry schema"
 
 pub(crate) const CORPORA_DIR: &str = "corpora";
 
@@ -39,7 +41,11 @@ pub struct AdoptedCorpus {
     pub source_path: PathBuf,
     #[serde(rename = "adoptedAt")]
     pub adopted_at: String,
-    #[serde(rename = "sourceName", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "sourceName",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub source_name: Option<String>,
 }
 
@@ -54,7 +60,10 @@ pub(crate) struct CorpusRegistry {
 
 pub fn adopt(path: &Path) -> Result<Value> {
     let source_path = fs::canonicalize(path).map_err(|error| {
-        Error(format!("could not resolve corpus {}: {error}", path.display()))
+        Error(format!(
+            "could not resolve corpus {}: {error}",
+            path.display()
+        ))
     })?;
     if !source_path.is_file() {
         return Err(Error(format!(
@@ -63,13 +72,13 @@ pub fn adopt(path: &Path) -> Result<Value> {
         )));
     }
     let raw = fs::read(&source_path)?;
-    adopt_raw(&raw, source_path, None)
+    Ok(adopt_raw(&raw, source_path, None)?)
 }
 
 /// Adopt bytes selected in the browser without staging them in a temporary
 /// directory. The raw-content identity is stable across GUI sessions and the
 /// canonical bundle is retained by the same operation the path-based CLI uses.
-pub fn adopt_upload(file_name: &str, raw: &[u8]) -> Result<Value> {
+pub fn adopt_upload(file_name: &str, raw: &[u8]) -> std::result::Result<Value, AdoptRefusal> {
     validate_upload_name(file_name)?;
     let source_sha256 = format!("{:x}", Sha256::digest(raw));
     let source_identity = PathBuf::from(format!("browser-upload:sha256:{source_sha256}"));
@@ -80,7 +89,7 @@ pub(crate) fn adopt_raw(
     raw: &[u8],
     source_identity: PathBuf,
     source_name: Option<String>,
-) -> Result<Value> {
+) -> std::result::Result<Value, AdoptRefusal> {
     let bundle: CorpusBundle = serde_json::from_slice(raw).map_err(|error| {
         Error(format!(
             "invalid dataset bundle {}: {error}; no corpus state was changed",
@@ -94,19 +103,23 @@ pub(crate) fn adopt_raw(
     let id = format!("dataset-bundle:{sha256}");
     let root = corpora_root();
     let registry_path = root.join(REGISTRY_FILE);
-    let mut registry = read_registry(&registry_path)?.unwrap_or(CorpusRegistry {
-        schema_version: REGISTRY_SCHEMA,
-        selected_corpus_id: id.clone(),
-        corpora: Vec::new(),
-    });
+    // The first adoption starts the registry the later ones extend.
+    let mut registry = match read_registry(&registry_path)? {
+        Some(registry) => registry,
+        None => CorpusRegistry {
+            schema_version: REGISTRY_SCHEMA,
+            selected_corpus_id: id.clone(),
+            corpora: Vec::new(),
+        },
+    };
     let bundle_path = root.join(format!("{sha256}.json"));
     let already_present = bundle_path.exists();
     if already_present {
         if fs::read(&bundle_path)? != canonical {
-            return Err(Error(format!(
+            return Err(AdoptRefusal::IdentityConflict(Error(format!(
                 "corpus identity conflict at {}; no corpus state was changed",
                 bundle_path.display()
-            )));
+            ))));
         }
     } else {
         durable_create(&bundle_path, &canonical)?;
@@ -129,9 +142,15 @@ pub(crate) fn adopt_raw(
         }
     };
     registry.selected_corpus_id = id;
-    registry.corpora.sort_by(|left, right| left.id.cmp(&right.id));
+    registry
+        .corpora
+        .sort_by(|left, right| left.id.cmp(&right.id));
     durable_replace(&registry_path, &serde_json::to_vec_pretty(&registry)?)?;
-    let records = bundle.labels.len();
+    // Every record of an adopted bundle is either new to the store or was
+    // already retained with it; an adoption conflicts and rejects nothing.
+    let (imported, unchanged): (Vec<&CorpusRow>, Vec<&CorpusRow>) =
+        bundle.labels.iter().partition(|_| !already_present);
+    let refused: Vec<&CorpusRow> = Vec::new();
     Ok(json!({
         "status": if already_present { "unchanged" } else { "adopted" },
         "corpusId": adopted.id,
@@ -141,43 +160,28 @@ pub(crate) fn adopt_raw(
         "sourcePath": adopted.source_path,
         "bundlePath": adopted.bundle_path,
         "selected": true,
-        "records": records,
-        "imported": if already_present { 0 } else { records },
-        "unchanged": if already_present { records } else { 0 },
-        "conflicting": 0,
-        "rejected": 0,
+        "records": bundle.labels.len(),
+        "imported": imported.len(),
+        "unchanged": unchanged.len(),
+        "conflicting": refused.len(),
+        "rejected": refused.len(),
     }))
-}
-
-pub(crate) fn validate_upload_name(file_name: &str) -> Result<()> {
-    if file_name.is_empty()
-        || file_name.len() > 255
-        || file_name == "."
-        || file_name == ".."
-        || file_name
-            .chars()
-            .any(|character| character.is_control() || character == '/' || character == '\\')
-    {
-        return Err(Error(
-            "uploaded corpus filename must be a 1-255 character basename".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 pub fn status() -> Result<Value> {
     let registry_path = corpora_root().join(REGISTRY_FILE);
-    let registry = read_registry(&registry_path)?;
-    let selected = registry.as_ref().and_then(|registry| {
-        registry
-            .corpora
-            .iter()
-            .find(|entry| entry.id == registry.selected_corpus_id)
-            .cloned()
-    });
-    let corpora = registry
-        .map(|registry| registry.corpora)
-        .unwrap_or_default();
+    let (selected, corpora) = match read_registry(&registry_path)? {
+        Some(registry) => {
+            let selected = registry
+                .corpora
+                .iter()
+                .find(|entry| entry.id == registry.selected_corpus_id)
+                .cloned();
+            (selected, registry.corpora)
+        }
+        // No corpus was ever adopted here.
+        None => (None, Vec::new()),
+    };
     Ok(json!({
         "registry": registry_path,
         "selected": selected,
@@ -220,54 +224,4 @@ pub fn selected_bundle_path() -> Result<Option<PathBuf>> {
 
 pub(crate) fn corpora_root() -> PathBuf {
     resolve_placement().training_root.join(CORPORA_DIR)
-}
-
-pub(crate) fn validate_bundle(bundle: &CorpusBundle, path: &Path) -> Result<()> {
-    if bundle.schema_version != BUNDLE_SCHEMA {
-        return Err(Error(format!(
-            "unsupported dataset bundle schema {} in {}; expected {}",
-            bundle.schema_version,
-            path.display(),
-            BUNDLE_SCHEMA
-        )));
-    }
-    crate::model::aspect_dir(&bundle.aspect)?;
-    if bundle.labels.is_empty() {
-        return Err(Error(format!(
-            "dataset bundle {} contains no label records",
-            path.display()
-        )));
-    }
-    let mut sessions = BTreeSet::new();
-    for (index, row) in bundle.labels.iter().enumerate() {
-        let number = index + 1;
-        if row.session_id.trim().is_empty()
-            || row.value.trim().is_empty()
-            || row.source.trim().is_empty()
-            || row.text.trim().is_empty()
-        {
-            return Err(Error(format!(
-                "dataset bundle record {number} requires nonempty session_id, value, source, and text; no corpus state was changed"
-            )));
-        }
-        if chrono::DateTime::parse_from_rfc3339(&row.ts).is_err() {
-            return Err(Error(format!(
-                "dataset bundle record {number} has invalid RFC 3339 ts; no corpus state was changed"
-            )));
-        }
-        if let Some(runtime) = &row.runtime {
-            if runtime.trim().is_empty() {
-                return Err(Error(format!(
-                    "dataset bundle record {number} has an empty runtime; use null when unknown"
-                )));
-            }
-        }
-        if !sessions.insert(row.session_id.as_str()) {
-            return Err(Error(format!(
-                "dataset bundle repeats native session_id '{}' at record {number}; no corpus state was changed",
-                row.session_id
-            )));
-        }
-    }
-    Ok(())
 }
