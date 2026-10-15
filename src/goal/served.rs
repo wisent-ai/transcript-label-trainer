@@ -119,7 +119,12 @@ pub(crate) fn evaluate_gguf(run: &GoalEvaluation) -> Result<Value> {
             let prediction = json!({
                 "session_id": row.session_id,
                 "message": row.message,
-                "goal": row.goal.clone().unwrap_or_default(),
+                // The audit instructions read an empty reference label as the
+                // no-task answer, so a row without a goal writes it empty.
+                "goal": match &row.goal {
+                    Some(goal) => goal.as_str(),
+                    None => "",
+                },
                 "student": student,
             });
             format!("{prediction}\n")
