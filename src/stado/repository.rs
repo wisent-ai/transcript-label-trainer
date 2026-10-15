@@ -52,8 +52,15 @@ impl TempDir {
 }
 
 impl Drop for TempDir {
+    /// A drop cannot fail, so a scratch directory that cannot be removed is
+    /// said on stderr with its path and cause rather than left unexplained.
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        if let Err(error) = std::fs::remove_dir_all(&self.0) {
+            eprintln!(
+                "the scratch directory {} cannot be removed: {error}",
+                self.0.display()
+            );
+        }
     }
 }
 

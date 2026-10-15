@@ -165,37 +165,46 @@ impl Section<'_> {
         })
     }
 
-    fn refuse<T>(&self, key: &str, wanted: &str) -> Result<T> {
-        let shown = self.value(key).map(py_repr).unwrap_or_default();
-        bail!("training.{key} ({}) must be {wanted}, got {shown}", flag_name(key))
+    /// The refusal of `value`, the value `key` holds, for not being `wanted`.
+    fn refuse<T>(&self, key: &str, value: &Yaml, wanted: &str) -> Result<T> {
+        bail!(
+            "training.{key} ({}) must be {wanted}, got {}",
+            flag_name(key),
+            py_repr(value)
+        )
     }
 
     fn flag(&self, key: &str) -> Result<bool> {
         match self.value(key)? {
             Yaml::Bool(value) => Ok(*value),
-            _ => self.refuse(key, "true or false"),
+            other => self.refuse(key, other, "true or false"),
         }
     }
 
     fn seed(&self, key: &str) -> Result<u64> {
-        match self.value(key)?.as_u64() {
-            Some(value) => Ok(value),
-            None => self.refuse(key, "a non-negative whole number"),
+        let value = self.value(key)?;
+        match value.as_u64() {
+            Some(seed) => Ok(seed),
+            None => self.refuse(key, value, "a non-negative whole number"),
         }
     }
 
     fn whole(&self, key: &str) -> Result<usize> {
-        let value = self.value(key)?.as_u64().and_then(|value| usize::try_from(value).ok());
-        match value.and_then(std::num::NonZeroUsize::new) {
-            Some(value) => Ok(value.get()),
-            None => self.refuse(key, "a positive whole number"),
+        let value = self.value(key)?;
+        match value.as_u64().map(usize::try_from) {
+            Some(Ok(count)) => match std::num::NonZeroUsize::new(count) {
+                Some(count) => Ok(count.get()),
+                None => self.refuse(key, value, "a positive whole number"),
+            },
+            _ => self.refuse(key, value, "a positive whole number"),
         }
     }
 
     fn number(&self, key: &str, accept: impl Fn(f64) -> bool, wanted: &str) -> Result<f64> {
-        match self.value(key)?.as_f64() {
-            Some(value) if accept(value) => Ok(value),
-            _ => self.refuse(key, wanted),
+        let value = self.value(key)?;
+        match value.as_f64() {
+            Some(number) if accept(number) => Ok(number),
+            _ => self.refuse(key, value, wanted),
         }
     }
 
