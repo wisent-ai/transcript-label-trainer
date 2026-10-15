@@ -105,7 +105,7 @@ pub(crate) fn print_placement() {
     }
     outln!("    training root: {}", resolved.training_root.display());
     outln!("    storage root:  {}", resolved.storage_root.display());
-    if resolved.source == "local-fallback" {
+    if resolved.source == placement::Source::LocalFallback {
         outln!("    fallback:      {}", resolved.detail);
     }
     outln!();

@@ -20,15 +20,38 @@ pub(crate) const TRAINING_ROOT_KEY: &str = "models_dir";
 // The training kind this trainer claims; a host may be declared for others.
 pub(crate) const TRAINING_KIND: &str = "label-model";
 
-// Historical defaults, kept only as the local exception path.
+// The local layer's directories under `$HOME`, for a machine Stado places nothing on.
 pub(crate) const LOCAL_TRAINING_DIR: &str = ".transcript-label-trainer";
 
 pub(crate) const LOCAL_STORAGE_DIR: &str = ".transcript-lake";
 
-pub(crate) const STADO_BIN: &str = "stado";
+/// The layer a root was resolved from, weakest first: the derived order is
+/// the strength order, so the weaker of two is their minimum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Source {
+    LocalFallback,
+    Stado,
+    Env,
+    Flag,
+}
 
-// Weakest to strongest. `Placement.source` is the weakest one in play.
-pub(crate) const SOURCE_ORDER: [&str; 4] = ["local-fallback", "stado", "env", "flag"];
+impl Source {
+    /// The layer as `info` and its JSON name it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Source::LocalFallback => "local-fallback",
+            Source::Stado => "stado",
+            Source::Env => "env",
+            Source::Flag => "flag",
+        }
+    }
+}
+
+impl std::fmt::Display for Source {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
+    }
+}
 
 /// The resolved answer to "where does this run, and out of what data".
 #[derive(Clone, Debug)]
@@ -36,7 +59,7 @@ pub struct Placement {
     pub training_host: Option<String>,
     pub training_root: PathBuf,
     pub storage_root: PathBuf,
-    pub source: &'static str,
+    pub source: Source,
     pub detail: String,
 }
 
@@ -46,16 +69,25 @@ pub(crate) struct Overrides {
     pub(crate) storage_root: Option<PathBuf>,
 }
 
-pub(crate) static OVERRIDES: LazyLock<Mutex<Overrides>> = LazyLock::new(|| Mutex::new(Overrides::default()));
+pub(crate) static OVERRIDES: LazyLock<Mutex<Overrides>> =
+    LazyLock::new(|| Mutex::new(Overrides::default()));
 
 pub(crate) static CACHE: LazyLock<Mutex<Option<Placement>>> = LazyLock::new(|| Mutex::new(None));
+
+/// The value behind one of this module's locks. Both hold plain paths that a
+/// panicking holder cannot leave half-written, so a poisoned lock still holds
+/// a whole value and is read as it stands.
+fn held<T>(lock: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match lock.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
 
 /// Record explicit CLI roots — the strongest layer — and drop the cache.
 pub fn set_override(training_root: Option<&str>, storage_root: Option<&str>) {
     {
-        let mut overrides = OVERRIDES
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let mut overrides = held(&OVERRIDES);
         if let Some(value) = training_root.filter(|value| !value.is_empty()) {
             overrides.training_root = Some(expanduser(value));
         }
@@ -63,23 +95,27 @@ pub fn set_override(training_root: Option<&str>, storage_root: Option<&str>) {
             overrides.storage_root = Some(expanduser(value));
         }
     }
-    *CACHE.lock().unwrap_or_else(|poison| poison.into_inner()) = None;
+    *held(&CACHE) = None;
 }
 
 /// Resolve placement once per process, per set of overrides.
 pub fn resolve_placement() -> Placement {
-    let mut cache = CACHE.lock().unwrap_or_else(|poison| poison.into_inner());
-    if cache.is_none() {
-        *cache = Some(resolve());
+    let mut cache = held(&CACHE);
+    match cache.as_ref() {
+        Some(resolved) => resolved.clone(),
+        None => {
+            let resolved = resolve();
+            *cache = Some(resolved.clone());
+            resolved
+        }
     }
-    cache.clone().unwrap_or_else(local_placement)
 }
 
 /// The resolved placement, shaped for `info --json`.
 pub fn as_dict() -> Value {
     let resolved = resolve_placement();
     let mut map = serde_json::Map::new();
-    map.insert("source".to_string(), Value::from(resolved.source));
+    map.insert("source".to_string(), Value::from(resolved.source.label()));
     map.insert(
         "training_host".to_string(),
         match resolved.training_host {
@@ -127,35 +163,25 @@ pub(crate) fn resolve() -> Placement {
         training_host: declared.training_host,
         training_root,
         storage_root,
-        source: weakest(training_source, storage_source),
+        source: training_source.min(storage_source),
         detail: format!("training root {training_note}; storage root {storage_note}"),
     }
 }
 
-/// The placement a process falls back to when the cache itself is unusable.
-pub(crate) fn local_placement() -> Placement {
-    let training_root = home_dir().join(LOCAL_TRAINING_DIR);
-    let storage_root = home_dir().join(LOCAL_STORAGE_DIR);
-    let detail = format!(
-        "training root {} — local fallback because placement could not be resolved; \
-         storage root {} — local fallback because placement could not be resolved",
-        training_root.display(),
-        storage_root.display()
-    );
-    Placement {
-        training_host: None,
-        training_root,
-        storage_root,
-        source: "local-fallback",
-        detail,
-    }
+pub(crate) fn overridden(field: impl FnOnce(&Overrides) -> Option<PathBuf>) -> Option<PathBuf> {
+    field(&held(&OVERRIDES))
 }
 
-pub(crate) fn overridden(field: impl FnOnce(&Overrides) -> Option<PathBuf>) -> Option<PathBuf> {
-    let overrides = OVERRIDES
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
-    field(&overrides)
+/// A root named by `env_var`, when it names one. The variable is read as the
+/// operating system holds it, so a root that is not UTF-8 is still a root;
+/// only one that is unset or blank is absent.
+fn from_environment(env_var: &str) -> Option<PathBuf> {
+    let value = std::env::var_os(env_var)?;
+    match value.to_str() {
+        Some(text) if text.trim().is_empty() => None,
+        Some(text) => Some(expanduser(text.trim())),
+        None => Some(PathBuf::from(value)),
+    }
 }
 
 /// One root through the four layers, plus the reason it landed there.
@@ -165,21 +191,18 @@ pub(crate) fn pick(
     declared: Option<PathBuf>,
     local: PathBuf,
     why_not: &str,
-) -> (PathBuf, &'static str, String) {
+) -> (PathBuf, Source, String) {
     if let Some(flagged) = flagged {
         let note = format!("{} from the command line", flagged.display());
-        return (flagged, "flag", note);
+        return (flagged, Source::Flag, note);
     }
-    let from_env = std::env::var(env_var).unwrap_or_default();
-    let from_env = from_env.trim();
-    if !from_env.is_empty() {
-        let path = expanduser(from_env);
+    if let Some(path) = from_environment(env_var) {
         let note = format!("{} from ${env_var}", path.display());
-        return (path, "env", note);
+        return (path, Source::Env, note);
     }
     if let Some(declared) = declared {
         let note = format!("{} declared in the Stado registry", declared.display());
-        return (declared, "stado", note);
+        return (declared, Source::Stado, note);
     }
     let reason = if why_not.is_empty() {
         "the Stado registry declares no root for it"
@@ -187,21 +210,7 @@ pub(crate) fn pick(
         why_not
     };
     let note = format!("{} — local fallback because {reason}", local.display());
-    (local, "local-fallback", note)
-}
-
-pub(crate) fn weakest(left: &'static str, right: &'static str) -> &'static str {
-    let rank = |source: &str| {
-        SOURCE_ORDER
-            .iter()
-            .position(|entry| *entry == source)
-            .unwrap_or(0)
-    };
-    if rank(left) <= rank(right) {
-        left
-    } else {
-        right
-    }
+    (local, Source::LocalFallback, note)
 }
 
 /// The registry's placement declarations, or why there are none.

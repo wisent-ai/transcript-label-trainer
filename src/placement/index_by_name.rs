@@ -34,7 +34,9 @@ pub(crate) fn declared_lake_root(target: Option<&Value>) -> Option<PathBuf> {
 }
 
 /// The one host Stado places label-model training on.
-pub(crate) fn declared_training(by_name: &[(Option<String>, &Value)]) -> (Option<String>, Option<PathBuf>) {
+pub(crate) fn declared_training(
+    by_name: &[(Option<String>, &Value)],
+) -> (Option<String>, Option<PathBuf>) {
     for (name, target) in by_name {
         let Some(block) = target.get(TRAINING_KEY) else {
             continue;
@@ -62,74 +64,47 @@ pub(crate) fn declared_training(by_name: &[(Option<String>, &Value)]) -> (Option
     (None, None)
 }
 
-/// Which registry target this machine is, per `stado registry self`.
+/// Which registry target this machine is, per `stado registry self`: the
+/// first tab-separated field of its answer.
 pub(crate) fn self_target() -> (Option<String>, String) {
     let (out, failure) = run_stado(&["registry", "self"]);
     let Some(out) = out else {
         return (None, failure);
     };
-    let name = if out.trim().is_empty() {
-        String::new()
-    } else {
-        out.split('\t').next().unwrap_or("").trim().to_string()
-    };
-    if name.is_empty() {
-        return (
+    match out.trim().split('\t').next().map(str::trim) {
+        Some(name) if !name.is_empty() => (Some(name.to_string()), String::new()),
+        _ => (
             None,
             "'stado registry self' did not name this machine".to_string(),
-        );
+        ),
     }
-    (Some(name), String::new())
 }
 
 /// Run a stado subcommand. Returns `(Some(stdout), "")` or `(None, why not)`.
 pub(crate) fn run_stado(args: &[&str]) -> (Option<String>, String) {
-    let printable = format!("{STADO_BIN} {}", args.join(" "));
-    let spawned = Command::new(STADO_BIN)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
-    let mut child = match spawned {
-        Ok(child) => child,
+    let stado = match crate::brama::stado_bin() {
+        Ok(stado) => stado,
+        Err(error) => return (None, error.to_string()),
+    };
+    let printable = format!("{stado} {}", args.join(" "));
+    let answered = stado_wait::output(Command::new(&stado).args(args).stdin(Stdio::null()));
+    let output = match answered {
+        Ok(output) => output,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return (None, format!("the '{STADO_BIN}' CLI is not on PATH"));
+            return (None, format!("the '{stado}' CLI is not on PATH"));
         }
         Err(error) => return (None, format!("'{printable}' could not run: {error}")),
     };
-
-    // Drain both pipes from their own threads: a registry document is larger
-    // than a pipe buffer, and a writer blocked on a full pipe would never
-    // exit for the wait below.
-    let (Some(mut out_pipe), Some(mut err_pipe)) = (child.stdout.take(), child.stderr.take())
-    else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return (None, format!("'{printable}' could not run: no pipes"));
-    };
-    let out_reader = std::thread::spawn(move || {
-        let mut buffer = Vec::new();
-        let _ = out_pipe.read_to_end(&mut buffer);
-        buffer
-    });
-    let err_reader = std::thread::spawn(move || {
-        let mut buffer = Vec::new();
-        let _ = err_pipe.read_to_end(&mut buffer);
-        buffer
-    });
-
-    let status = match child.wait() {
-        Ok(status) => status,
-        Err(error) => return (None, format!("'{printable}' could not run: {error}")),
-    };
-
-    let stdout = String::from_utf8_lossy(&out_reader.join().unwrap_or_default()).into_owned();
-    let stderr = String::from_utf8_lossy(&err_reader.join().unwrap_or_default()).into_owned();
-    if !status.success() {
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    if !output.status.success() {
         return (
             None,
-            format!("'{printable}' failed: {}", first_line(&stderr, &stdout)),
+            format!(
+                "'{printable}' failed ({}): {}",
+                output.status,
+                first_line(&stderr, &stdout)
+            ),
         );
     }
     (Some(stdout), String::new())
@@ -140,7 +115,7 @@ pub(crate) fn run_stado_json(args: &[&str]) -> (Option<Value>, String) {
     let Some(out) = out else {
         return (None, failure);
     };
-    let printable = format!("{STADO_BIN} {}", args.join(" "));
+    let printable = format!("stado {}", args.join(" "));
     match serde_json::from_str::<Value>(&out) {
         Err(error) => (
             None,
@@ -157,17 +132,22 @@ pub(crate) fn run_stado_json(args: &[&str]) -> (Option<Value>, String) {
     }
 }
 
+/// The first line of what a failed command said: its stderr, else its
+/// stdout, else that it said nothing.
 pub(crate) fn first_line(stderr: &str, stdout: &str) -> String {
     let stderr = stderr.trim();
     let stdout = stdout.trim();
-    let detail = if !stderr.is_empty() {
+    let said = if !stderr.is_empty() {
         stderr
     } else if !stdout.is_empty() {
         stdout
     } else {
-        "no output"
+        return "no output".to_string();
     };
-    detail.lines().next().unwrap_or(detail).to_string()
+    match said.lines().next() {
+        Some(first) => first.to_string(),
+        None => said.to_string(),
+    }
 }
 
 pub(crate) fn type_name(value: &Value) -> &'static str {
@@ -189,6 +169,7 @@ pub(crate) fn display_or_none(path: Option<&PathBuf>) -> String {
     }
 }
 
+/// A path with a leading `~` read as `$HOME`, as a shell would.
 pub(crate) fn expanduser(value: &str) -> PathBuf {
     if value == "~" {
         return home_dir();

@@ -25,7 +25,6 @@
 //! [`Placement::source`] reports the *weakest* layer any root depended on, so
 //! one silent local fallback cannot hide behind a root that did resolve.
 
-use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{LazyLock, Mutex};
@@ -34,8 +33,8 @@ use serde_json::Value;
 
 use crate::util::{home_dir, json_text, json_truthy};
 
-mod targets_key;
 mod index_by_name;
+mod targets_key;
 
-pub use targets_key::*;
 pub use index_by_name::*;
+pub use targets_key::*;
