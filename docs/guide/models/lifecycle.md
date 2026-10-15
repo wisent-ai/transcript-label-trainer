@@ -107,8 +107,14 @@ settings by name), and `ster tune merge` folds it into a checkpoint; Ster's repo
 as `metrics.json`. The job's output URI and workspace are keyed by the datasets, expanded
 options and exact trainer source revision. Source admission precedes upload. llama.cpp's converter then exports
 and quantizes it to Q4_K_M GGUF, the untouched reviewed split is evaluated on that GGUF, and
-an independent Brama `--best` audit judges every held-out prediction. Publication requires
-the passing audit; the served rates are recorded in the manifest beside it.
+an independent Brama `--best` audit judges every held-out prediction. The audit is one
+typed decision per prediction on Brama's `POST /v1/decisions` (`best` asks
+`best-decision-model`): the contract, masked input, reference and student decision are the
+state, and two choices are asked — the verdict (`student-sensible`, `student-wrong` or
+`unjudgeable`) and whether the student finishes a goal dangerously (`dangerous` or `safe`).
+A refusal, an answer without a choice or an option outside those offered fails that
+prediction with Brama's answer. Publication requires the passing audit; the served rates
+are recorded in the manifest beside it.
 
 The quantized model is measured the way production serves it, by
 `transcript-label-trainer lifecycle-evaluate-gguf`: `llama-server` on a loopback

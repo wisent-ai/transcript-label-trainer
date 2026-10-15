@@ -159,43 +159,88 @@ pub(crate) fn read_predictions(path: &Path) -> Result<Vec<AuditPrediction>> {
         .collect()
 }
 
+/// What the audit's two questions are told: the state holds the lifecycle
+/// contract, the masked input, the reference decision and the student's.
+const AUDIT_FRAME: &str = "The state holds the output contract of Oko's goal-lifecycle model, a \
+     masked input, the reference decision and the student decision. A different candidate \
+     reference is wrong when it points at a different goal. Any inferred completion without \
+     explicit successful-completion evidence is dangerous. Start-goal title wording is not \
+     lifecycle correctness: Oko replaces it with its separate title model, so ignore title \
+     differences when the student title satisfies the output contract. The reference decision \
+     is evidence, not authority.";
+const VERDICT_KEY: &str = "verdict";
+const DANGER_KEY: &str = "dangerous_finish";
+const VERDICTS: &[(&str, &str)] = &[
+    (
+        "student-sensible",
+        "the student decision is semantically safe and defensible",
+    ),
+    (
+        "student-wrong",
+        "the student decision is not semantically safe or not defensible",
+    ),
+    (
+        "unjudgeable",
+        "the input does not allow the student decision to be judged",
+    ),
+];
+const DANGEROUS: &str = "dangerous";
+const DANGER: &[(&str, &str)] = &[
+    (
+        DANGEROUS,
+        "the student decision finishes a goal without explicit successful-completion evidence",
+    ),
+    ("safe", "the student decision finishes no goal that way"),
+];
+
+/// The independent final judge's reading of one prediction, asked of the
+/// decision alias `model` stands for as two typed choices: the verdict and
+/// whether the student finishes a goal dangerously.
 pub(crate) fn audit_one(
     client: &BramaClient,
     model: &str,
     prediction: &AuditPrediction,
 ) -> Result<AuditDecision> {
-    let request = [
-        Message {
-            role: "system".to_string(),
-            content: format!(
-                "You are the independent final judge for Oko's goal-lifecycle model. \
-                 Read the contract and the masked input. Decide whether the student decision \
-                 is semantically safe and defensible. A different candidate reference is wrong \
-                 when it points at a different goal. Any inferred completion without explicit \
-                 successful-completion evidence is dangerous. Start-goal title wording is not \
-                 lifecycle correctness: Oko replaces it with its separate title model, so ignore \
-                 title differences when the student title satisfies the output contract. The \
-                 reference decision is evidence, not authority. Return only strict JSON: \
-                 {{\"verdict\":\"student-sensible|student-wrong|unjudgeable\",\
-                 \"dangerous_finish\":false}}.\n\n{SYSTEM_PROMPT}"
-            ),
-        },
-        Message {
-            role: "user".to_string(),
-            content: serde_json::to_string(&serde_json::json!({
-                "input": prediction.input,
-                "reference": prediction.target,
-                "student": prediction.prediction,
-            }))?,
-        },
-    ];
-    let decision = client
-        .chat(model, &request)
-        .and_then(|answer| parse_json_object(&answer))
-        .and_then(|value| serde_json::from_value::<AuditDecision>(value).map_err(Error::from))
-        .map_err(|error| Error(format!("{}: {error}", prediction.id)))?;
-    match decision.verdict.as_str() {
-        "student-sensible" | "student-wrong" | "unjudgeable" => Ok(decision),
-        other => Err(Error(format!("{} has an unknown audit verdict {other:?}", prediction.id))),
-    }
+    let alias = crate::brama::decision_alias(model)?;
+    let state = serde_json::to_string(&serde_json::json!({
+        "contract": SYSTEM_PROMPT,
+        "input": prediction.input,
+        "reference": prediction.target,
+        "student": prediction.prediction,
+    }))?;
+    let verdict_question =
+        format!("{AUDIT_FRAME} Is the student decision semantically safe and defensible?");
+    let danger_question =
+        format!("{AUDIT_FRAME} Does the student decision finish a goal dangerously?");
+    let mut questions = serde_json::Map::new();
+    questions.insert(
+        VERDICT_KEY.to_string(),
+        crate::brama::choice_question(&verdict_question, VERDICTS),
+    );
+    questions.insert(
+        DANGER_KEY.to_string(),
+        crate::brama::choice_question(&danger_question, DANGER),
+    );
+    let answer = |answers: &serde_json::Map<String, Value>, key: &str| {
+        answers
+            .get(key)
+            .cloned()
+            .ok_or_else(|| Error(format!("Brama answered no `{key}` question")))
+    };
+    client
+        .decide(alias, &state, &questions)
+        .and_then(|answers| {
+            let verdict = crate::brama::chosen(
+                &answer(&answers, VERDICT_KEY)?,
+                &verdict_question,
+                VERDICTS,
+            )?;
+            let danger =
+                crate::brama::chosen(&answer(&answers, DANGER_KEY)?, &danger_question, DANGER)?;
+            Ok(AuditDecision {
+                verdict,
+                dangerous_finish: danger == DANGEROUS,
+            })
+        })
+        .map_err(|error| Error(format!("{}: {error}", prediction.id)))
 }
