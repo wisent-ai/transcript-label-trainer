@@ -57,17 +57,6 @@ impl Drop for TempDir {
     }
 }
 
-pub(crate) fn stado_bin() -> PathBuf {
-    if let Some(path) = std::env::var_os("STADO_BIN").filter(|value| !value.is_empty()) {
-        return PathBuf::from(path);
-    }
-    let installed = home_dir().join(".stado/bin/stado");
-    if installed.is_file() {
-        return installed;
-    }
-    PathBuf::from("stado")
-}
-
 pub(crate) fn run(program: &Path, args: &[OsString]) -> Result<Output> {
     stado_wait::output(
         Command::new(program)
@@ -209,7 +198,7 @@ pub fn execute(job_path: &str, job: &Job, compute_target: &str) -> Result<i32> {
     let base = format!("stado://probierz/inputs/transcript-label-trainer/{key}");
     let dataset_uri = format!("{base}/dataset.json");
     let spec_uri = format!("{base}/job.yaml");
-    let stado = stado_bin();
+    let stado = PathBuf::from(crate::brama::stado_bin()?);
     upload(&stado, &dataset_uri, &dataset_path, "application/json")?;
     upload(&stado, &spec_uri, &spec_path, "application/yaml")?;
 

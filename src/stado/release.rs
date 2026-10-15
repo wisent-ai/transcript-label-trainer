@@ -159,7 +159,7 @@ fn text<'a>(value: &'a Value, pointer: &str) -> Result<&'a str> {
 /// coordinate are left as they are.
 pub(crate) fn publish_release(model: &ReleaseModel, source: &str, repo: Option<&str>) -> Result<Value> {
     let repo = repository(model, repo)?;
-    let stado = stado_bin();
+    let stado = PathBuf::from(crate::brama::stado_bin()?);
     let source = source.trim_end_matches('/');
     let work = TempDir::create()?;
     let root = &work.0;

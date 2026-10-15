@@ -22,7 +22,7 @@ pub fn execute_goal_model(
     let source_ref = repo_ref()?;
     let run_key = digest(format!("{key}\nster={ster_options}\nsource={source_ref}\n").as_bytes());
     let output_uri = format!("stado://probierz/artifacts/models/jeden/goal-qwen3-4b/{run_key}");
-    let stado = stado_bin();
+    let stado = PathBuf::from(crate::brama::stado_bin()?);
     upload(&stado, &dataset_uri, dataset_path, "application/x-ndjson")?;
     let command = format!(
         "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/jeden-goal-{run_key}\"; \
@@ -119,7 +119,7 @@ pub fn execute_lifecycle_model(
     let run_key = digest(format!("{key}\nster={ster_options}\nsource={source_ref}\n").as_bytes());
     let ster_options = shell_quote(&ster_options);
     let output_uri = format!("stado://probierz/artifacts/models/oko/lifecycle-qwen3-4b/{run_key}");
-    let stado = stado_bin();
+    let stado = PathBuf::from(crate::brama::stado_bin()?);
     upload(&stado, &train_uri, train_path, "application/x-ndjson")?;
     upload(&stado, &eval_uri, eval_path, "application/x-ndjson")?;
     let command = format!(
@@ -214,7 +214,7 @@ pub fn execute_humanizer_model(
     let output_uri = format!(
         "stado://probierz/artifacts/models/echo/lukasz-humanizer-cydonia-24b-lora/{run_key}"
     );
-    let stado = stado_bin();
+    let stado = PathBuf::from(crate::brama::stado_bin()?);
     upload(&stado, &targets_uri, targets_path, "application/x-ndjson")?;
     let source_ref = repo_ref()?;
     let work_root = crate::placement::resolve_placement()

@@ -51,6 +51,11 @@ enabled, it immediately runs `evaluate <name> --best`, so nonsensical labels
 or final judge opinions fail the Stado job rather than becoming a successful
 artifact.
 
+Every Stado command the trainer runs, here and for releases, lifecycle and
+goal jobs, uses the program `TLT_STADO_BIN` names, or `stado` on `PATH` when it
+is unset; a set but empty or non-UTF-8 value is refused with the variable's
+name.
+
 The input-staging workspace is keyed by the full submitted run identity:
 dataset, job specification and exact trainer source revision. Repeating the
 same run selects the same staging path; another source revision selects a
@@ -61,7 +66,8 @@ declared training root or promise filesystem retention after a host is retired.
 
 `cargo test --test run-dispatch` executes real `run --compute-target` jobs.
 Run it on the dedicated training host with the worker's staging filesystem
-visible at the same path. Declare `STADO_BIN`, `TLT_TEST_COMPUTE_TARGET`,
+visible at the same path. Declare `STADO_BIN` (the Stado the test itself runs;
+the trainer it starts reads `TLT_STADO_BIN`), `TLT_TEST_COMPUTE_TARGET`,
 `TLT_TEST_SOURCE_REVISION` matching the clean checkout, and a different existing
 `TLT_TEST_ALTERNATE_SOURCE_REVISION`; both revisions must be reachable by Stado.
 `TLT_TEST_JOB_SPEC` names a reviewed `tfidf-logreg` job whose evaluator and scope

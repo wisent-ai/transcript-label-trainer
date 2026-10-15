@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use sha2::{Digest, Sha256};
 
 use crate::jobs::{Job, SKLEARN_MODEL};
-use crate::util::{home_dir, Error, Result};
+use crate::util::{Error, Result};
 use crate::{lake, model};
 
 mod repository;

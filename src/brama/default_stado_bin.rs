@@ -71,9 +71,9 @@ pub(crate) fn env_value(key: &str) -> Result<Option<String>> {
     }
 }
 
-/// The stado executable: `TLT_STADO_BIN` when it names one, otherwise the
-/// program named stado, found on PATH when it runs.
-fn stado_bin() -> Result<String> {
+/// The stado executable every part of the trainer runs: `TLT_STADO_BIN` when
+/// it names one, otherwise the program named stado, found on PATH when it runs.
+pub(crate) fn stado_bin() -> Result<String> {
     Ok(match env_value("TLT_STADO_BIN")? {
         Some(stado) => stado,
         None => DEFAULT_STADO_BIN.to_string(),
@@ -122,7 +122,9 @@ pub(crate) fn resolve_url() -> Result<String> {
         return Ok(url);
     }
     stado_url().map_err(|cause| {
-        Error(format!("no Brama endpoint: BRAMA_URL is unset and Stado could not place Brama: {cause}"))
+        Error(format!(
+            "no Brama endpoint: BRAMA_URL is unset and Stado could not place Brama: {cause}"
+        ))
     })
 }
 
