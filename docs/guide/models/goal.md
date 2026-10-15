@@ -13,9 +13,13 @@ transcript-label-trainer goal-model \
   --ster-options trl
 ```
 
-The command generates task and no-task labels with a Brama teacher, then requires
-two review passes through the pinned Brama reviewer before any row enters the
-dataset. It holds out reviewed OMP titles and, of the teacher's task rows and its
+The command generates task and no-task labels with a Brama teacher, whose answer
+must carry the `<goal>…</goal>` or `<goal/>` tags the goal system prompt asks for
+(an answer without them fails that candidate, quoting it). Every row, the reviewed
+OMP titles included, then needs an independent `sensible` choice from
+`best-decision-model` on Brama's typed decision endpoint before it enters the
+dataset; whether a goal has the 3–7 words Jeden displays is that reviewer's
+judgement, stated in the choice it is offered. It holds out reviewed OMP titles and, of the teacher's task rows and its
 no-task rows each, the share scikit-learn's
 [`train_test_split`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html)
 documents as its test size (0.25, rounded up so each class holds at least one out)
@@ -55,9 +59,14 @@ as Jeden Desktop runs the model, constrained to `<goal/>` or one `<goal>…</goa
 It writes `predictions.jsonl` and the exact-match
 share in `metrics-gguf.json`; a server that exits before it is ready fails with its
 status and log, and a failed request fails the run naming its session. Every one of
-those served predictions must receive `both-sensible` from a final Brama `--best` audit
-or the model remains unqualified; a rejected candidate is retained for diagnosis but
-cannot enter the Jeden Desktop release namespace. To build an example set and see how
+those served predictions must receive `both-sensible` from a final Brama `--best` audit,
+a typed choice among `both-sensible`, `label-nonsensical`, `student-nonsensical` and
+`both-nonsensical` asked of `best-decision-model` (`goal-audit --brama-model` takes
+`decision-model` or `best-decision-model`; any other alias is refused before the
+predictions are read), or the model remains unqualified; a rejected candidate is retained for diagnosis but
+cannot enter the Jeden Desktop release namespace. An audit record of the same review
+over the same predictions is resumed; a record that is not JSON is refused rather than
+overwritten. To build an example set and see how
 the base model answers it before any job:
 
 ```sh

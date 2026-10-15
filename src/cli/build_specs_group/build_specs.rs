@@ -17,88 +17,125 @@ fn training_specs() -> Vec<Spec> {
     // Each training key, as the flag `train` reads it; the value is read as a
     // YAML scalar and validated exactly as a job's `training` section is.
     let tfidf = |flag: &'static str, help: &str| {
-        option(flag, "VALUE", Kind::Text, format!("tfidf-logreg: {help}; required without --model"))
+        option(
+            flag,
+            "VALUE",
+            Kind::Text,
+            format!("tfidf-logreg: {help}; required without --model"),
+        )
     };
     let hf = |flag: &'static str, help: &str| {
-        option(flag, "VALUE", Kind::Text, format!("HuggingFace: {help}; required with --model"))
+        option(
+            flag,
+            "VALUE",
+            Kind::Text,
+            format!("HuggingFace: {help}; required with --model"),
+        )
     };
 
     let train_opts = vec![
-            required(
-                "--aspect",
-                "ASPECT",
-                Kind::Text,
-                "aspect name, e.g. reviewed".to_string(),
-            ),
-            option(
-                "--eval-split",
-                "PRESET",
-                Kind::Text,
-                "the frozen holdout from a preset instead of a stated fraction and seed: \
+        required(
+            "--aspect",
+            "ASPECT",
+            Kind::Text,
+            "aspect name, e.g. reviewed".to_string(),
+        ),
+        option(
+            "--eval-split",
+            "PRESET",
+            Kind::Text,
+            "the frozen holdout from a preset instead of a stated fraction and seed: \
                  scikit-learn (train_test_split's documented test share 0.25, seeded by the \
                  aspect's name); refused beside --eval-split-fraction or --eval-split-seed"
-                    .to_string(),
-            ),
-            option(
-                "--model",
-                "HF_MODEL_ID",
-                Kind::Text,
-                "fine-tune this HuggingFace model instead of the default TF-IDF + \
+                .to_string(),
+        ),
+        option(
+            "--model",
+            "HF_MODEL_ID",
+            Kind::Text,
+            "fine-tune this HuggingFace model instead of the default TF-IDF + \
                  logistic regression (requires the 'hf' extra); multilingual models \
                  such as distilbert-base-multilingual-cased fit the mixed \
                  Polish/English transcripts"
-                    .to_string(),
-            ),
+                .to_string(),
+        ),
         hf("--epochs", "training epochs"),
         hf("--batch-size", "batch size"),
         hf("--learning-rate", "learning rate"),
         hf("--max-length", "tokenizer max tokens per session"),
-        hf("--seed", "seed of the head initialisation, in-training slice and shuffle"),
+        hf(
+            "--seed",
+            "seed of the head initialisation, in-training slice and shuffle",
+        ),
         hf("--weight-decay", "AdamW weight decay, zero or more"),
         hf("--max-grad-norm", "global gradient norm clip, above zero"),
-        hf("--in-training-eval-share", "share of the training side sliced off to watch the loss"),
-            option(
-                "--training",
-                "PRESET",
-                Kind::Text,
-                "state every tfidf-logreg setting at once from a preset whose values cite \
+        hf(
+            "--in-training-eval-share",
+            "share of the training side sliced off to watch the loss",
+        ),
+        option(
+            "--training",
+            "PRESET",
+            Kind::Text,
+            "state every tfidf-logreg setting at once from a preset whose values cite \
                  their vendor documentation: scikit-learn (the documented defaults of \
                  TfidfVectorizer, LogisticRegression and SciPy's L-BFGS-B); refused beside \
                  any single setting flag"
-                    .to_string(),
-            ),
+                .to_string(),
+        ),
         tfidf("--ngram-max", "longest word n-gram counted"),
-        tfidf("--lowercase", "true or false: lowercase text before counting"),
-        tfidf("--sublinear-tf", "true or false: term frequency as one plus its logarithm"),
-        tfidf("--smooth-idf", "true or false: idf as if one more document held every term"),
+        tfidf(
+            "--lowercase",
+            "true or false: lowercase text before counting",
+        ),
+        tfidf(
+            "--sublinear-tf",
+            "true or false: term frequency as one plus its logarithm",
+        ),
+        tfidf(
+            "--smooth-idf",
+            "true or false: idf as if one more document held every term",
+        ),
         tfidf("--min-df", "terms in fewer documents are dropped"),
-        tfidf("--max-df", "terms in more than this share of documents are dropped"),
+        tfidf(
+            "--max-df",
+            "terms in more than this share of documents are dropped",
+        ),
         tfidf("--c", "inverse strength of the L2 penalty"),
         tfidf("--max-iter", "most L-BFGS iterations"),
-        tfidf("--tol", "the solver stops once no gradient component exceeds this"),
+        tfidf(
+            "--tol",
+            "the solver stops once no gradient component exceeds this",
+        ),
         tfidf("--lbfgs-memory", "correction pairs the solver keeps"),
-        tfidf("--armijo-c1", "share of the predicted decrease a step must achieve"),
-        tfidf("--max-backtracks", "line-search candidates tried before a step is abandoned"),
-            option(
-                "--eval-split-fraction",
-                "F",
-                Kind::Float,
-                "share of labeled sessions (between 0 and 1) frozen out of training the \
+        tfidf(
+            "--armijo-c1",
+            "share of the predicted decrease a step must achieve",
+        ),
+        tfidf(
+            "--max-backtracks",
+            "line-search candidates tried before a step is abandoned",
+        ),
+        option(
+            "--eval-split-fraction",
+            "F",
+            Kind::Float,
+            "share of labeled sessions (between 0 and 1) frozen out of training the \
                  first time this aspect is trained; required unless --no-eval-split. Later \
                  runs reuse the frozen eval-split.json unchanged"
-                    .to_string(),
-            ),
-            option(
-                "--eval-split-seed",
-                "N",
-                Kind::Int,
-                "seed that picks the frozen holdout; required unless --no-eval-split".to_string(),
-            ),
-            option(
-                "--no-eval-split",
-                "",
-                Kind::Flag,
-                "train on every labeled session, with no frozen holdout to evaluate on".to_string(),
+                .to_string(),
+        ),
+        option(
+            "--eval-split-seed",
+            "N",
+            Kind::Int,
+            "seed that picks the frozen holdout; required unless --no-eval-split".to_string(),
+        ),
+        option(
+            "--no-eval-split",
+            "",
+            Kind::Flag,
+            "train on every labeled session, with no frozen holdout to evaluate on".to_string(),
         ),
     ];
     let train = Spec {
@@ -172,8 +209,9 @@ fn training_specs() -> Vec<Spec> {
                 "MODEL_ID",
                 Kind::Text,
                 format!(
-                    "Brama-routed judge model (default: the job spec's judge.model, \
-                     else {teacher})"
+                    "Brama judge alias that answers typed choices: {teacher} (asks \
+                     best-decision-model), best-decision-model or decision-model \
+                     (default: the job spec's judge.model, else {teacher})"
                 ),
             ),
             option(
@@ -213,7 +251,7 @@ fn training_specs() -> Vec<Spec> {
                 "aspect name, e.g. reviewed".to_string(),
             ),
             Opt {
-                group: 1,
+                group: Some("infer-selection"),
                 ..option(
                     "--session",
                     "SESSION",
@@ -222,7 +260,7 @@ fn training_specs() -> Vec<Spec> {
                 )
             },
             Opt {
-                group: 1,
+                group: Some("infer-selection"),
                 ..option(
                     "--limit",
                     "LIMIT",

@@ -1,59 +1,57 @@
 use super::*;
 
-pub(crate) fn write_json(out: &mut String, value: &Value, depth: usize) {
+/// One level of Python's `json.dumps(value, indent=2)`.
+const INDENT: &str = "  ";
+
+/// Write `value` the way Python's `json.dumps(value, indent=2)` does, with
+/// `outer` the indentation of the line it starts on.
+pub(crate) fn write_json(out: &mut String, value: &Value, outer: &str) {
     match value {
         Value::Null => out.push_str("null"),
-        Value::Bool(flag) => out.push_str(if *flag { "true" } else { "false" }),
+        Value::Bool(flag) => out.push_str(&flag.to_string()),
         Value::Number(number) => match number.as_f64() {
             Some(float) if number.is_f64() => out.push_str(&float_repr(float)),
             _ => out.push_str(&number.to_string()),
         },
         Value::String(string) => write_json_string(out, string),
+        Value::Array(items) if items.is_empty() => out.push_str("[]"),
         Value::Array(items) => {
-            if items.is_empty() {
-                out.push_str("[]");
-                return;
-            }
+            let inner = format!("{outer}{INDENT}");
             out.push_str("[\n");
-            for (index, item) in items.iter().enumerate() {
-                if index > 0 {
-                    out.push_str(",\n");
-                }
-                indent(out, depth + 1);
-                write_json(out, item, depth + 1);
+            let mut separator = "";
+            for item in items {
+                out.push_str(separator);
+                out.push_str(&inner);
+                write_json(out, item, &inner);
+                separator = ",\n";
             }
             out.push('\n');
-            indent(out, depth);
+            out.push_str(outer);
             out.push(']');
         }
+        Value::Object(map) if map.is_empty() => out.push_str("{}"),
         Value::Object(map) => {
-            if map.is_empty() {
-                out.push_str("{}");
-                return;
-            }
+            let inner = format!("{outer}{INDENT}");
             out.push_str("{\n");
-            for (index, (key, item)) in map.iter().enumerate() {
-                if index > 0 {
-                    out.push_str(",\n");
-                }
-                indent(out, depth + 1);
+            let mut separator = "";
+            for (key, item) in map {
+                out.push_str(separator);
+                out.push_str(&inner);
                 write_json_string(out, key);
                 out.push_str(": ");
-                write_json(out, item, depth + 1);
+                write_json(out, item, &inner);
+                separator = ",\n";
             }
             out.push('\n');
-            indent(out, depth);
+            out.push_str(outer);
             out.push('}');
         }
     }
 }
 
-pub(crate) fn indent(out: &mut String, depth: usize) {
-    for _ in 0..depth * 2 {
-        out.push(' ');
-    }
-}
-
+/// A JSON string as Python's `ensure_ascii` writes it: printable ASCII as
+/// itself, the short escapes JSON names, and every other character as the
+/// `\uXXXX` escape of each of its UTF-16 code units.
 pub(crate) fn write_json_string(out: &mut String, value: &str) {
     out.push('"');
     for character in value.chars() {
@@ -65,19 +63,10 @@ pub(crate) fn write_json_string(out: &mut String, value: &str) {
             '\t' => out.push_str("\\t"),
             '\u{08}' => out.push_str("\\b"),
             '\u{0c}' => out.push_str("\\f"),
-            character if (character as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", character as u32);
-            }
-            character if (character as u32) < 0x7f => out.push(character),
+            character if character == ' ' || character.is_ascii_graphic() => out.push(character),
             character => {
-                let code = character as u32;
-                if code > 0xFFFF {
-                    let value = code - 0x10000;
-                    let high = 0xD800 + (value >> 10);
-                    let low = 0xDC00 + (value & 0x3FF);
-                    let _ = write!(out, "\\u{high:04x}\\u{low:04x}");
-                } else {
-                    let _ = write!(out, "\\u{code:04x}");
+                for unit in character.to_string().encode_utf16() {
+                    out.push_str(&format!("\\u{unit:04x}"));
                 }
             }
         }
@@ -111,13 +100,14 @@ pub(crate) fn repr(value: &Value) -> String {
     }
 }
 
+/// Python's `repr()` of a string: single quotes unless the text holds a
+/// single quote and no double quote.
 pub(crate) fn repr_str(value: &str) -> String {
-    let quote = if value.contains('\'') && !value.contains('"') {
-        '"'
-    } else {
-        '\''
+    let quote = match value.contains('\'') && !value.contains('"') {
+        true => '"',
+        false => '\'',
     };
-    let mut out = String::with_capacity(value.len() + 2);
+    let mut out = String::new();
     out.push(quote);
     for character in value.chars() {
         match character {
@@ -151,9 +141,9 @@ pub(crate) struct Opt {
     pub(crate) metavar: &'static str,
     pub(crate) kind: Kind,
     pub(crate) required: bool,
-    /// Non-zero puts this option in a mutually exclusive group with every
-    /// other option carrying the same number.
-    pub(crate) group: u8,
+    /// The mutually exclusive group this option belongs to, by name: at most
+    /// one option of a group may be given.
+    pub(crate) group: Option<&'static str>,
     pub(crate) help: String,
 }
 
@@ -176,7 +166,7 @@ pub(crate) fn option(flag: &'static str, metavar: &'static str, kind: Kind, help
         metavar,
         kind,
         required: false,
-        group: 0,
+        group: None,
         help,
     }
 }
@@ -187,7 +177,7 @@ pub(crate) fn required(flag: &'static str, metavar: &'static str, kind: Kind, he
         metavar,
         kind,
         required: true,
-        group: 0,
+        group: None,
         help,
     }
 }

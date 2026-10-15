@@ -7,6 +7,14 @@ pub struct SplitRequest<'a> {
     pub eval_split: &'a jobs::EvalSplit,
 }
 
+/// How many frozen holdout sessions are not among the sessions selected now.
+fn missing_from(holdout_ids: &[String], session_ids: &[String]) -> usize {
+    holdout_ids
+        .iter()
+        .filter(|session_id| !session_ids.contains(session_id))
+        .count()
+}
+
 /// Load or create the frozen holdout for this artifact directory.
 ///
 /// Returns which rows of `sessions` train, which are held out, and the
@@ -36,8 +44,12 @@ pub fn resolve_split(
             created_at: None,
             path: None,
             holdout_index: Vec::new(),
-            train_index: (0..total).collect(),
-            missing_from_selection: 0,
+            train_index: session_ids
+                .iter()
+                .enumerate()
+                .map(|(index, _)| index)
+                .collect(),
+            missing_from_selection: missing_from(&[], &session_ids),
             reused: false,
             frozen: Value::Null,
         };
@@ -114,17 +126,13 @@ pub fn resolve_split(
         let mut record = Map::new();
         record.insert(
             "fraction".to_string(),
-            fraction.map(number).unwrap_or(Value::Null),
+            match fraction {
+                Some(fraction) => number(fraction),
+                None => Value::Null,
+            },
         );
-        record.insert(
-            "seed".to_string(),
-            seed.map(|seed| Value::Number(seed.into()))
-                .unwrap_or(Value::Null),
-        );
-        record.insert(
-            "created_at".to_string(),
-            created_at.clone().map(Value::String).unwrap_or(Value::Null),
-        );
+        record.insert("seed".to_string(), serde_json::json!(seed));
+        record.insert("created_at".to_string(), serde_json::json!(created_at));
         record.insert(
             "session_ids".to_string(),
             Value::Array(holdout_ids.iter().cloned().map(Value::String).collect()),
@@ -139,7 +147,7 @@ pub fn resolve_split(
         seed,
         created_at,
         path: Some(path.to_string_lossy().into_owned()),
-        missing_from_selection: holdout_ids.len() - holdout_index.len(),
+        missing_from_selection: missing_from(&holdout_ids, &session_ids),
         holdout_index,
         train_index,
         reused,
@@ -149,32 +157,56 @@ pub fn resolve_split(
     Ok(split)
 }
 
+/// How many judged (gold, predicted) pairs `keep` accepts.
+fn tally(judged: &[(&str, &str)], keep: impl Fn(&str, &str) -> bool) -> usize {
+    judged
+        .iter()
+        .filter(|(actual, predicted)| keep(*actual, *predicted))
+        .count()
+}
+
 /// Accuracy, per-class counts and confusion pairs on the frozen holdout.
 ///
 /// This is not the HF backend's `in_training_eval`: that one is a stratified
 /// slice of the training side, resplit on every run. This one is the frozen
 /// set, identical across runs and across backends.
 pub fn holdout_report(gold: &[String], predictions: &[(String, f64)]) -> Value {
-    let mut counts: BTreeMap<&str, u64> = BTreeMap::new();
-    let mut correct_per_class: BTreeMap<&str, u64> = BTreeMap::new();
-    let mut confusion: BTreeMap<(&str, &str), u64> = BTreeMap::new();
-    let mut correct = 0u64;
-    for (actual, (predicted, _confidence)) in gold.iter().zip(predictions) {
-        *counts.entry(actual.as_str()).or_insert(0) += 1;
-        correct_per_class.entry(actual.as_str()).or_insert(0);
-        if predicted == actual {
-            *correct_per_class.entry(actual.as_str()).or_insert(0) += 1;
-            correct += 1;
-        } else {
-            *confusion
-                .entry((actual.as_str(), predicted.as_str()))
-                .or_insert(0) += 1;
-        }
+    let judged: Vec<(&str, &str)> = gold
+        .iter()
+        .zip(predictions)
+        .map(|(actual, (predicted, _confidence))| (actual.as_str(), predicted.as_str()))
+        .collect();
+    let classes: BTreeSet<&str> = judged.iter().map(|(actual, _)| *actual).collect();
+    let mut counts = Map::new();
+    let mut correct_per_class = Map::new();
+    for class in &classes {
+        counts.insert(
+            class.to_string(),
+            serde_json::json!(tally(&judged, |actual, _| actual == *class)),
+        );
+        correct_per_class.insert(
+            class.to_string(),
+            serde_json::json!(tally(&judged, |actual, predicted| actual == *class
+                && predicted == *class)),
+        );
     }
+    let correct = tally(&judged, |actual, predicted| actual == predicted);
     let total = gold.len();
 
-    let mut ordered: Vec<((&str, &str), u64)> =
-        confusion.into_iter().map(|(pair, n)| (pair, n)).collect();
+    let confused: BTreeSet<(&str, &str)> = judged
+        .iter()
+        .copied()
+        .filter(|(actual, predicted)| actual != predicted)
+        .collect();
+    let mut ordered: Vec<((&str, &str), usize)> = confused
+        .into_iter()
+        .map(|pair| {
+            (
+                pair,
+                tally(&judged, |actual, predicted| (actual, predicted) == pair),
+            )
+        })
+        .collect();
     ordered.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
     let pairs: Vec<Value> = ordered
         .into_iter()
@@ -185,76 +217,25 @@ pub fn holdout_report(gold: &[String], predictions: &[(String, f64)]) -> Value {
                 "predicted".to_string(),
                 Value::String(predicted.to_string()),
             );
-            pair.insert("n".to_string(), Value::Number(n.into()));
+            pair.insert("n".to_string(), serde_json::json!(n));
             Value::Object(pair)
         })
         .collect();
 
-    let as_object = |source: BTreeMap<&str, u64>| {
-        let mut object = Map::new();
-        for (key, value) in source {
-            object.insert(key.to_string(), Value::Number(value.into()));
-        }
-        Value::Object(object)
-    };
-
     let mut report = Map::new();
-    report.insert("n_sessions".to_string(), Value::Number(total.into()));
+    report.insert("n_sessions".to_string(), serde_json::json!(total));
     report.insert(
         "accuracy".to_string(),
-        if total > 0 {
-            number(round4(correct as f64 / total as f64))
-        } else {
+        if judged.is_empty() {
             Value::Null
+        } else {
+            number(round4(correct as f64 / total as f64))
         },
     );
-    report.insert("counts".to_string(), as_object(counts));
-    report.insert("correct".to_string(), as_object(correct_per_class));
+    report.insert("counts".to_string(), Value::Object(counts));
+    report.insert("correct".to_string(), Value::Object(correct_per_class));
     report.insert("confusion".to_string(), Value::Array(pairs));
     Value::Object(report)
-}
-
-// ---------------------------------------------------------------------------
-// The Brama teacher's verdict
-// ---------------------------------------------------------------------------
-
-/// Ask the teacher whether one prediction is defensible for one session.
-pub fn judge_prompt(
-    aspect: &str,
-    task: Option<&str>,
-    gold: &str,
-    prediction: &str,
-    text: &str,
-) -> Vec<brama::Message> {
-    let purpose = match task {
-        Some(task) if !task.is_empty() => format!("\nWhat the classifier is for: {task}"),
-        _ => String::new(),
-    };
-    vec![
-        brama::Message {
-            role: "system".to_string(),
-            content: format!(
-                "You audit a small classifier that assigns aspect labels to \
-                 coding-agent session transcripts. Answer with exactly one \
-                 word, {} or {}, and nothing else.",
-                JUDGE_VALUES[0], JUDGE_VALUES[1]
-            ),
-        },
-        brama::Message {
-            role: "user".to_string(),
-            content: format!(
-                "Aspect: {aspect}{purpose}\n\
-                 Ground-truth label recorded by the evaluator: {gold}\n\
-                 Label predicted by the classifier: {prediction}\n\n\
-                 Is the predicted label a defensible reading of this transcript \
-                 on this aspect? Answer {} if it is (including when it differs \
-                 from the ground truth but the session genuinely supports it), \
-                 {} if it is not.\n\n\
-                 Transcript:\n{text}",
-                JUDGE_VALUES[0], JUDGE_VALUES[1]
-            ),
-        },
-    ]
 }
 
 pub(crate) fn failure(session_id: &str, error: &str) -> Value {

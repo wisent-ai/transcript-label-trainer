@@ -1,12 +1,16 @@
 use super::*;
 
+/// A required option naming a file.
+fn path(flag: &'static str, help: &str) -> Opt {
+    required(flag, "PATH", Kind::Text, help.to_string())
+}
+
 pub(crate) fn release_specs() -> Vec<Spec> {
     let models = stado::RELEASE_MODELS
         .iter()
         .map(|model| model.name)
         .collect::<Vec<_>>()
         .join("|");
-    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
     let evaluate_gguf = Spec {
         name: "lifecycle-evaluate-gguf",
         help: "measure the quantized lifecycle model the way production serves it".to_string(),
@@ -98,15 +102,7 @@ fn manifest_spec() -> Spec {
     }
 }
 
-pub(crate) fn cmd_model_manifest(args: &Parsed) -> Result<i32> {
-    let model = stado::ManifestModel::named(args.text("--model").unwrap_or_default())?;
-    let output = std::path::PathBuf::from(args.text("--output-dir").unwrap_or_default());
-    let artifact = args.text("--artifact").map(std::path::PathBuf::from);
-    printed(&stado::write_manifest(model, &output, artifact.as_deref())?)
-}
-
 fn decisions_spec() -> Spec {
-    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
     Spec {
         name: "lifecycle-decisions",
         help: "write reviewed lifecycle rows as Ster labelled decisions".to_string(),
@@ -126,15 +122,7 @@ fn decisions_spec() -> Spec {
     }
 }
 
-pub(crate) fn cmd_lifecycle_decisions(args: &Parsed) -> Result<i32> {
-    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
-    let (rows, output) = (path("--rows"), path("--output"));
-    let report = crate::lifecycle::export_decisions(&crate::lifecycle::DecisionExport { rows: &rows, output: &output })?;
-    printed(&report)
-}
-
 fn examples_spec() -> Spec {
-    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
     Spec {
         name: "lifecycle-examples",
         help: "write reviewed lifecycle rows as the Ster examples the served model trains on".to_string(),
@@ -153,21 +141,7 @@ fn examples_spec() -> Spec {
     }
 }
 
-pub(crate) fn cmd_lifecycle_examples(args: &Parsed) -> Result<i32> {
-    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
-    let (rows, output) = (path("--rows"), path("--output"));
-    printed(&crate::lifecycle::export_examples(&crate::lifecycle::DecisionExport { rows: &rows, output: &output })?)
-}
-
-/// Print `report` as the command's answer and end it as having done what it
-/// promised.
-pub(crate) fn printed(report: &Value) -> Result<i32> {
-    outln!("{}", dumps(&report));
-    Ok(0)
-}
-
 fn split_by_day_spec() -> Spec {
-    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
     Spec {
         name: "lifecycle-split-by-day",
         help: "re-split reviewed lifecycle rows, holding one day out for evaluation".to_string(),
@@ -189,24 +163,7 @@ fn split_by_day_spec() -> Spec {
     }
 }
 
-pub(crate) fn cmd_lifecycle_split_by_day(args: &Parsed) -> Result<i32> {
-    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
-    let (train, eval) = (path("--train"), path("--eval"));
-    let (output_train, output_eval) = (path("--output-train"), path("--output-eval"));
-    let run = crate::lifecycle::DaySplit {
-        train: &train,
-        eval: &eval,
-        eval_day: args.text("--eval-day").unwrap_or_default(),
-        output_train: &output_train,
-        output_eval: &output_eval,
-    };
-    let report = crate::lifecycle::split_by_day(&run)?;
-    outln!("{}", dumps(&report));
-    Ok(0)
-}
-
 fn generate_curriculum_spec() -> Spec {
-    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
     Spec {
         name: "lifecycle-generate-curriculum",
         help: "write deterministic hard-case lifecycle turns for Brama review".to_string(),
@@ -229,25 +186,7 @@ fn generate_curriculum_spec() -> Spec {
     }
 }
 
-pub(crate) fn cmd_lifecycle_generate_curriculum(args: &Parsed) -> Result<i32> {
-    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
-    let (source, output) = (path("--source"), path("--output"));
-    let seed = args
-        .int("--seed")
-        .ok_or_else(|| Error("--seed N is required; this command has no default for it".to_string()))?;
-    let run = crate::lifecycle::CurriculumGeneration {
-        source: &source,
-        output: &output,
-        per_family: stated_count(args, "--per-family")?,
-        seed: seed as u64,
-    };
-    let report = crate::lifecycle::generate_curriculum(&run)?;
-    outln!("{}", dumps(&report));
-    Ok(0)
-}
-
 fn assemble_curriculum_spec() -> Spec {
-    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
     Spec {
         name: "lifecycle-assemble-curriculum",
         help: "assemble the lifecycle splits from reviewed rows and the agreed curriculum".to_string(),
@@ -277,59 +216,4 @@ fn assemble_curriculum_spec() -> Spec {
             ),
         ],
     }
-}
-
-pub(crate) fn cmd_lifecycle_assemble_curriculum(args: &Parsed) -> Result<i32> {
-    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
-    let (base_train, base_eval) = (path("--base-train"), path("--base-eval"));
-    let (reviewed_train, reviewed_eval) = (path("--curriculum-train"), path("--curriculum-eval"));
-    let (output_train, output_eval) = (path("--output-train"), path("--output-eval"));
-    let run = crate::lifecycle::CurriculumAssembly {
-        base_train: &base_train,
-        base_eval: &base_eval,
-        reviewed_train: &reviewed_train,
-        reviewed_eval: &reviewed_eval,
-        output_train: &output_train,
-        output_eval: &output_eval,
-        minimum_eval_per_action: stated_count(args, "--minimum-eval-per-action")?,
-    };
-    let report = crate::lifecycle::assemble_curriculum(&run)?;
-    outln!("{}", dumps(&report));
-    Ok(0)
-}
-
-pub(crate) fn cmd_release_publish(args: &Parsed) -> Result<i32> {
-    let name = args.text("--model").unwrap_or_default();
-    let Some(model) = stado::RELEASE_MODELS
-        .iter()
-        .find(|model| model.name == name)
-    else {
-        return Err(Error(format!(
-            "--model must be one of {}, not {name:?}",
-            stado::RELEASE_MODELS
-                .iter()
-                .map(|model| model.name)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )));
-    };
-    let published = stado::publish_release(model, args.positional(0), args.text("--repo"))?;
-    outln!("{}", dumps(&published));
-    Ok(0)
-}
-
-pub(crate) fn cmd_lifecycle_evaluate_gguf(args: &Parsed) -> Result<i32> {
-    let path = |flag: &str| std::path::PathBuf::from(args.text(flag).unwrap_or_default());
-    let run = crate::lifecycle::GgufEvaluation {
-        model: path("--model"),
-        dataset: path("--dataset"),
-        predictions: path("--predictions"),
-        metrics: path("--metrics"),
-        server: path("--server"),
-        server_log: path("--server-log"),
-        output_schema: path("--output-schema"),
-    };
-    let report = crate::lifecycle::evaluate_gguf(&run)?;
-    outln!("{}", dumps(&report));
-    Ok(0)
 }

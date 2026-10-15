@@ -1,5 +1,15 @@
 use super::*;
 
+/// A count a command option names, refused when it is negative.
+fn count_option(flag: &str, value: Option<i64>) -> Result<Option<usize>> {
+    match value {
+        Some(value) => Ok(Some(usize::try_from(value).map_err(|error| {
+            crate::util::Error(format!("{flag} must be a count, not {value}: {error}"))
+        })?)),
+        None => Ok(None),
+    }
+}
+
 /// Propose aspect dimensions from recent sessions via the Brama teacher.
 pub fn discover(
     limit: Option<i64>,
@@ -8,10 +18,17 @@ pub fn discover(
     max_aspects: Option<i64>,
     runtime: Option<&str>,
 ) -> Result<Value> {
-    let model_id = brama_model
-        .filter(|value| !value.is_empty())
-        .unwrap_or(brama::DEFAULT_MODEL)
-        .to_string();
+    let model_id = match brama_model {
+        Some(model) if model.trim().is_empty() => {
+            return Err(crate::util::Error(
+                "--brama-model is empty; name a Brama alias or leave it out".to_string(),
+            ));
+        }
+        Some(model) => model.trim().to_string(),
+        None => brama::DEFAULT_MODEL.to_string(),
+    };
+    let session_limit = count_option("--limit", limit)?;
+    let keep = count_option("--max-aspects", max_aspects)?;
     let client = brama::BramaClient::from_env()?;
 
     let mut sessions = lake::all_sessions()?;
@@ -23,7 +40,7 @@ pub fn discover(
         .map(|session| session.session_id)
         .collect();
     // Every session unless the caller names how many of the newest to read.
-    if let Some(session_limit) = limit.map(|value| value.max(0) as usize) {
+    if let Some(session_limit) = session_limit {
         if targets.len() > session_limit {
             // The lake lists oldest first; the newest sessions are the ones the
             // operator's current habits are visible in.
@@ -34,101 +51,58 @@ pub fn discover(
 
     let mut merged: BTreeMap<String, Merged> = BTreeMap::new();
     let mut failures: Vec<Value> = Vec::new();
-    let mut chunks = 0usize;
-    let mut sampled = 0usize;
     let excerpts: Vec<(String, String)> = targets
         .iter()
         .filter_map(|session_id| {
-            let entry = texts.get(session_id)?;
-            let text = entry.text.trim();
-            if text.is_empty() {
-                return None;
-            }
-            Some((session_id.clone(), text.to_string()))
+            let text = texts.get(session_id)?.text.trim();
+            (!text.is_empty()).then(|| (session_id.clone(), text.to_string()))
         })
         .collect();
     let mut answers = Vec::new();
     if !excerpts.is_empty() {
         teacher_answers(&client, &model_id, &excerpts, &mut answers);
     }
-    for (sessions, answer) in answers {
-        chunks += 1;
-        sampled += sessions;
-        let answer = match answer {
-            Ok(answer) => answer,
-            Err(error) => {
-                failures.push(json!({
-                    "chunk": chunks,
-                    "error": error.0,
-                }));
+    let sampled: usize = answers.iter().map(|(sessions, _)| sessions).sum();
+    let chunks = answers.len();
+    for (chunk, (_, answer)) in answers.into_iter().enumerate() {
+        let proposals = match answer.map(|answer| parse_proposals(&answer)) {
+            Ok(Ok(proposals)) => proposals,
+            Ok(Err(why)) => {
+                failures.push(json!({ "chunk": chunk, "error": why }));
                 continue;
             }
-        };
-        let Some(proposals) = parse_proposals(&answer) else {
-            failures.push(json!({
-                "chunk": chunks,
-                "error": format!("unparseable proposals: {answer}"),
-            }));
-            continue;
+            Err(error) => {
+                failures.push(json!({ "chunk": chunk, "error": error.0 }));
+                continue;
+            }
         };
         for proposal in proposals {
-            let Some(aspect) = proposal.get("aspect").and_then(Value::as_str) else {
-                continue;
+            let proposal = match read_proposal(&proposal) {
+                Ok(proposal) => proposal,
+                Err(why) => {
+                    failures.push(json!({ "chunk": chunk, "error": why }));
+                    continue;
+                }
             };
-            let aspect = kebab(aspect);
-            if aspect.is_empty() {
-                continue;
-            }
-            let values: Vec<String> = proposal
-                .get("values")
-                .and_then(Value::as_array)
-                .map(|values| {
-                    values
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(kebab)
-                        .filter(|value| !value.is_empty())
-                        .collect()
-                })
-                .unwrap_or_default();
-            if values.len() < 2 {
-                continue;
-            }
-            let description = proposal
-                .get("description")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            let evidence: Vec<String> = proposal
-                .get("evidence")
-                .and_then(Value::as_array)
-                .map(|ids| {
-                    ids.iter()
-                        .filter_map(Value::as_str)
-                        .map(str::to_string)
-                        .collect()
-                })
-                .unwrap_or_default();
-            let entry = merged.entry(aspect).or_insert_with(|| Merged {
+            let entry = merged.entry(proposal.aspect).or_insert_with(|| Merged {
                 values: Vec::new(),
-                description: description.clone(),
-                support: 0,
+                description: proposal.description.clone(),
+                supported_by: Vec::new(),
                 evidence: Vec::new(),
             });
-            entry.support += 1;
-            for value in values {
+            entry.supported_by.push(chunk);
+            for value in proposal.values {
                 if !entry.values.contains(&value) {
                     entry.values.push(value);
                 }
             }
-            for session_id in evidence {
+            for session_id in proposal.evidence {
                 if !entry.evidence.contains(&session_id) {
                     entry.evidence.push(session_id);
                 }
             }
             if entry.description.is_empty() {
-                entry.description = description;
+                entry.description = proposal.description;
             }
         }
     }
@@ -137,48 +111,43 @@ pub fn discover(
     ranked.sort_by(|left, right| {
         right
             .1
-            .support
-            .cmp(&left.1.support)
+            .supported_by
+            .len()
+            .cmp(&left.1.supported_by.len())
             .then_with(|| left.0.cmp(&right.0))
     });
     // Every merged proposal unless the caller names how many to keep.
-    if let Some(keep) = max_aspects.map(|value| value.max(0) as usize) {
+    if let Some(keep) = keep {
         ranked.truncate(keep);
     }
 
     let mut proposals: Vec<Value> = Vec::new();
     let mut rejected: Vec<Value> = Vec::new();
-    let mut review_failed = 0usize;
+    let mut review_failed: Vec<String> = Vec::new();
     for (aspect, entry) in ranked {
         let mut review = None;
         if best_review {
-            let prompt = review_prompt(&aspect, &entry.values, &entry.description);
-            match client.chat(brama::BEST_MODEL, &prompt) {
-                Ok(answer) => match brama::parse_answer(&answer, &REVIEW_VALUES[..]) {
-                    Some((verdict, _exact)) if verdict == REVIEW_VALUES[1] => {
-                        rejected.push(json!({
-                            "aspect": aspect,
-                            "values": entry.values,
-                            "best_review": verdict,
-                        }));
-                        continue;
-                    }
-                    Some((verdict, _exact)) => review = Some(verdict),
-                    None => {
-                        review_failed += 1;
-                        failures.push(json!({
-                            "aspect": aspect,
-                            "error": format!("unparseable best review: {answer}"),
-                        }));
-                        continue;
-                    }
-                },
+            match client.choose(
+                brama::BEST_DECISION_MODEL,
+                &review_state(&aspect, &entry.values, &entry.description),
+                "Is this a sensible aspect to classify every coding-agent session on?",
+                REVIEW_LABELS,
+            ) {
+                Ok(verdict) if verdict == NONSENSICAL => {
+                    rejected.push(json!({
+                        "aspect": aspect,
+                        "values": entry.values,
+                        "best_review": verdict,
+                    }));
+                    continue;
+                }
+                Ok(verdict) => review = Some(verdict),
                 Err(error) => {
-                    review_failed += 1;
                     failures.push(json!({
                         "aspect": aspect,
                         "error": format!("best review failed: {}", error.0),
                     }));
+                    review_failed.push(aspect);
                     continue;
                 }
             }
@@ -190,11 +159,8 @@ pub fn discover(
             "values".to_string(),
             Value::Array(entry.values.iter().cloned().map(Value::String).collect()),
         );
-        proposal.insert(
-            "description".to_string(),
-            Value::String(entry.description),
-        );
-        proposal.insert("support".to_string(), Value::Number(entry.support.into()));
+        proposal.insert("description".to_string(), Value::String(entry.description));
+        proposal.insert("support".to_string(), json!(entry.supported_by.len()));
         proposal.insert(
             "evidence_sessions".to_string(),
             Value::Array(entry.evidence.into_iter().map(Value::String).collect()),
@@ -219,24 +185,21 @@ pub fn discover(
 
     let mut summary = Map::new();
     summary.insert("brama_model".to_string(), Value::String(model_id));
-    summary.insert(
-        "sessions_sampled".to_string(),
-        Value::Number(sampled.into()),
-    );
-    summary.insert("chunks".to_string(), Value::Number(chunks.into()));
+    summary.insert("sessions_sampled".to_string(), json!(sampled));
+    summary.insert("chunks".to_string(), json!(chunks));
     summary.insert(
         "best_review".to_string(),
         json!({
             "enabled": best_review,
             "model": if best_review {
-                Value::String(brama::BEST_MODEL.to_string())
+                Value::String(brama::BEST_DECISION_MODEL.to_string())
             } else {
                 Value::Null
             },
             "accepted": proposals.len(),
             "rejected_nonsensical": rejected.len(),
-            "failed": review_failed,
-            "sensible": !best_review || (rejected.is_empty() && review_failed == 0),
+            "failed": review_failed.len(),
+            "sensible": !best_review || (rejected.is_empty() && review_failed.is_empty()),
         }),
     );
     summary.insert("proposals".to_string(), Value::Array(proposals));
@@ -244,6 +207,9 @@ pub fn discover(
     summary.insert("failures".to_string(), Value::Array(failures));
     Ok(Value::Object(summary))
 }
+
+/// How many parts a batch that does not fit is split into.
+const BISECTION_PARTS: usize = 2; // https://en.wikipedia.org/wiki/Bisection_method "repeatedly bisecting the interval" — halving keeps the number of calls logarithmic in the batch
 
 /// Ask the teacher about every session of `batch` in one call. When Brama
 /// answers that the prompt does not fit the routed model, ask about each half
@@ -257,18 +223,20 @@ fn teacher_answers(
 ) {
     match client.answer(model, &teacher_prompt(batch)) {
         Ok(brama::ChatAnswer::Content(answer)) => answers.push((batch.len(), Ok(answer))),
-        Ok(brama::ChatAnswer::DoesNotFit(_)) if batch.len() > 1 => {
-            let (first, second) = batch.split_at(batch.len() / 2);
-            teacher_answers(client, model, first, answers);
-            teacher_answers(client, model, second, answers);
-        }
-        Ok(brama::ChatAnswer::DoesNotFit(detail)) => answers.push((
-            1,
-            Err(crate::util::Error(format!(
-                "session {} alone does not fit {model}: {detail}",
-                batch[0].0
-            ))),
-        )),
+        Ok(brama::ChatAnswer::DoesNotFit(detail)) => match batch {
+            [only] => answers.push((
+                batch.len(),
+                Err(crate::util::Error(format!(
+                    "session {} alone does not fit {model}: {detail}",
+                    only.0
+                ))),
+            )),
+            _ => {
+                for half in batch.chunks(batch.len().div_ceil(BISECTION_PARTS)) {
+                    teacher_answers(client, model, half, answers);
+                }
+            }
+        },
         Err(error) => answers.push((batch.len(), Err(error))),
     }
 }

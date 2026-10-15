@@ -2,20 +2,23 @@ use super::*;
 
 pub(crate) const PROG: &str = "transcript-label-trainer";
 
-/// argparse's `HelpFormatter._width`: the terminal width less two, and the
-/// terminal falls back to 80 columns whenever stdout is not a terminal.
-pub(crate) const WIDTH: usize = 78;
+/// argparse's `HelpFormatter._width` when stdout is not a terminal: the
+/// columns Python then reports, less the two argparse keeps free.
+pub(crate) const WIDTH: usize = 78; // https://github.com/python/cpython/blob/3.12/Lib/argparse.py HelpFormatter.__init__: width = shutil.get_terminal_size().columns; width -= 2 — and off a terminal https://docs.python.org/3/library/shutil.html#shutil.get_terminal_size fallback=(80, 24)
 
 /// argparse's `max_help_position`, the column help text starts in.
-pub(crate) const MAX_HELP_POSITION: usize = 24;
+pub(crate) const MAX_HELP_POSITION: usize = 24; // https://github.com/python/cpython/blob/3.12/Lib/argparse.py HelpFormatter.__init__(max_help_position=24)
 
-pub(crate) const TOP_DESCRIPTION: &str = "Train small local classifiers that predict Transcript Lake aspect \
+pub(crate) const TOP_DESCRIPTION: &str =
+    "Train small local classifiers that predict Transcript Lake aspect \
      labels, and emit label suggestions. Never writes to the lake.";
 
-pub(crate) const TRAINING_ROOT_HELP: &str = "override where model artifacts live; beats $TLT_HOME and the \
+pub(crate) const TRAINING_ROOT_HELP: &str =
+    "override where model artifacts live; beats $TLT_HOME and the \
      Stado registry declaration";
 
-pub(crate) const STORAGE_ROOT_HELP: &str = "override the lake data root; beats $LAKE_DATA and the Stado \
+pub(crate) const STORAGE_ROOT_HELP: &str =
+    "override the lake data root; beats $LAKE_DATA and the Stado \
      registry declaration";
 
 pub(crate) const HELP_HELP: &str = "show this help message and exit";
@@ -29,65 +32,57 @@ pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub(crate) const VERSION_HELP: &str = "show program's version number and exit";
 
 /// The entry point `main` calls. The returned integer is the process status:
-/// 0 on success, 1 on a failed command, 2 on a usage error or on a run the
-/// lake does not hold enough labeled sessions for.
+/// `EXIT_SUCCESS`, `EXIT_FAILURE` for a failed command, and the usage-error
+/// status argparse uses, which a run the lake does not hold enough labeled
+/// sessions for shares.
 pub fn run(args: Vec<String>) -> Result<i32> {
     let specs = build_specs();
 
     let mut training_root: Option<String> = None;
     let mut storage_root: Option<String> = None;
-    let mut command: Option<String> = None;
-    let mut index = 0;
-    while index < args.len() {
-        let arg = args[index].as_str();
+    let mut rest = args.as_slice();
+    let command = loop {
+        let Some((arg, after)) = rest.split_first() else {
+            return Ok(top_error("the following arguments are required: command"));
+        };
+        rest = after;
         if arg == "-h" || arg == "--help" {
             print!("{}", top_help(&specs));
-            return Ok(0);
+            return Ok(EXIT_SUCCESS);
         }
         if arg == "-V" || arg == "--version" {
             println!("{VERSION}");
-            return Ok(0);
+            return Ok(EXIT_SUCCESS);
         }
         let (name, inline) = match arg.split_once('=') {
             Some((name, value)) if name.starts_with("--") => (name, Some(value.to_string())),
-            _ => (arg, None),
+            _ => (arg.as_str(), None),
         };
         if name == "--training-root" || name == "--storage-root" {
-            let value = match inline {
-                Some(value) => {
-                    index += 1;
-                    value
+            let value = match (inline, rest.split_first()) {
+                (Some(value), _) => value,
+                (None, Some((next, after))) if !looks_like_option(next) => {
+                    rest = after;
+                    next.clone()
                 }
-                None => match args.get(index + 1) {
-                    Some(next) if !looks_like_option(next) => {
-                        index += 2;
-                        next.clone()
-                    }
-                    _ => {
-                        return Ok(top_error(&format!(
-                            "argument {name}: expected one argument"
-                        )));
-                    }
-                },
+                (None, _) => {
+                    return Ok(top_error(&format!(
+                        "argument {name}: expected one argument"
+                    )));
+                }
             };
-            if name == "--training-root" {
-                training_root = Some(value);
-            } else {
-                storage_root = Some(value);
+            match name == "--training-root" {
+                true => training_root = Some(value),
+                false => storage_root = Some(value),
             }
             continue;
         }
         if looks_like_option(arg) {
             return Ok(top_error(&format!("unrecognized arguments: {arg}")));
         }
-        command = Some(arg.to_string());
-        index += 1;
-        break;
-    }
-
-    let Some(command) = command else {
-        return Ok(top_error("the following arguments are required: command"));
+        break arg.clone();
     };
+
     let Some(spec) = specs.iter().find(|spec| spec.name == command) else {
         let choices = specs
             .iter()
@@ -99,10 +94,10 @@ pub fn run(args: Vec<String>) -> Result<i32> {
         )));
     };
 
-    let parsed = match parse_sub(spec, &args[index..]) {
+    let parsed = match parse_sub(spec, rest) {
         Outcome::Help => {
             print!("{}", sub_help(spec));
-            return Ok(0);
+            return Ok(EXIT_SUCCESS);
         }
         Outcome::Error(message) => return Ok(sub_error(spec, &message)),
         Outcome::Parsed(parsed) => parsed,
@@ -151,74 +146,66 @@ pub fn run(args: Vec<String>) -> Result<i32> {
 
 // ---------------------------------------------------------------- commands
 
+/// The `eval_split` section the train flags state, written the way a job
+/// spec writes it, so the job validator decides it exactly as it decides a
+/// spec's.
+fn stated_eval_split(args: &Parsed) -> Result<serde_yaml::Value> {
+    use serde_yaml::Value as Yaml;
+    let fraction = args.float("--eval-split-fraction");
+    let seed = args.int("--eval-split-seed");
+    match (args.flag("--no-eval-split"), args.text("--eval-split"), fraction, seed) {
+        (true, _, _, _) => Ok(Yaml::Bool(false)),
+        (false, Some(preset), None, None) => Ok(Yaml::String(preset.to_string())),
+        (false, Some(preset), _, _) => Err(Error(format!(
+            "--eval-split {preset} states the fraction and seed; --eval-split-fraction and --eval-split-seed cannot be given beside it"
+        ))),
+        (false, None, Some(fraction), Some(seed)) => {
+            let mut stated = serde_yaml::Mapping::new();
+            stated.insert(Yaml::from("fraction"), Yaml::from(fraction));
+            stated.insert(Yaml::from("seed"), Yaml::from(seed));
+            Ok(Yaml::Mapping(stated))
+        }
+        (false, None, _, _) => Err(Error(
+            "train needs --eval-split-fraction F and --eval-split-seed N, --eval-split \
+             scikit-learn, or --no-eval-split; transcript-label-trainer chooses no holdout"
+                .to_string(),
+        )),
+    }
+}
+
 pub(crate) fn cmd_train(args: &Parsed) -> Result<i32> {
-    let stated_fraction_or_seed = args.float("--eval-split-fraction").is_some() || args.int("--eval-split-seed").is_some();
-    let eval_split = if args.flag("--no-eval-split") {
-        serde_json::json!({"enabled": false, "fraction": Value::Null, "seed": Value::Null})
-    } else if let Some(preset) = args.text("--eval-split") {
-        if stated_fraction_or_seed {
-            return Err(Error(format!(
-                "--eval-split {preset} states the fraction and seed; --eval-split-fraction and --eval-split-seed cannot be given beside it"
-            )));
-        }
-        if preset != jobs::EVAL_SPLIT_PRESET {
-            return Err(Error(format!(
-                "unknown --eval-split preset {preset:?}: the preset is {}",
-                jobs::EVAL_SPLIT_PRESET
-            )));
-        }
-        let Some(aspect) = args.text("--aspect") else {
-            return Err(Error("--eval-split needs --aspect, whose name seeds the holdout".to_string()));
-        };
-        serde_json::to_value(jobs::eval_split_preset(aspect))?
-    } else {
-        let (Some(fraction), Some(seed)) = (
-            args.float("--eval-split-fraction"),
-            args.int("--eval-split-seed"),
-        ) else {
-            return Err(Error(
-                "train needs --eval-split-fraction F and --eval-split-seed N, --eval-split \
-                 scikit-learn, or --no-eval-split; transcript-label-trainer chooses no holdout"
-                    .to_string(),
-            ));
-        };
-        if !(fraction > 0.0 && fraction < 1.0) {
-            return Err(Error(format!(
-                "--eval-split-fraction must be greater than 0 and less than 1, not {fraction}"
-            )));
-        }
-        if seed < 0 {
-            return Err(Error(format!(
-                "--eval-split-seed must be a non-negative integer, not {seed}"
-            )));
-        }
-        serde_json::json!({"enabled": true, "fraction": fraction, "seed": seed})
-    };
+    let aspect = args.required("--aspect");
+    let mut spec = serde_yaml::Mapping::new();
+    spec.insert(
+        serde_yaml::Value::from("eval_split"),
+        stated_eval_split(args)?,
+    );
+    let eval_split = serde_json::to_value(jobs::eval_split(&spec, aspect)?)?;
     let model_id = args.text("--model");
-    let training = jobs::training_from_flags(model_id.unwrap_or(jobs::SKLEARN_MODEL), |flag| args.text(flag))?;
-    let metrics = match model::train(
-        args.text("--aspect").unwrap_or_default(),
-        model_id,
-        &training,
-        &eval_split,
-    ) {
+    let backend = match model_id {
+        Some(model) => model,
+        None => jobs::SKLEARN_MODEL,
+    };
+    let training = jobs::training_from_flags(backend, |flag| args.text(flag))?;
+    let metrics = match model::train(aspect, model_id, &training, &eval_split) {
         Ok(metrics) => metrics,
         Err(failure) => return Ok(report("train", failure)),
     };
     outln!("{}", dumps(&metrics));
-    Ok(0)
+    Ok(EXIT_SUCCESS)
 }
 
 pub(crate) fn cmd_run(args: &Parsed) -> Result<i32> {
-    let job = match jobs::load(args.positional(0)) {
+    let job_file = args.positional("job_file");
+    let job = match jobs::load(job_file) {
         Ok(job) => job,
         Err(error) => {
             eprintln!("run: {error}");
-            return Ok(1);
+            return Ok(EXIT_FAILURE);
         }
     };
     if let Some(target) = args.text("--compute-target") {
-        return stado::execute(args.positional(0), &job, target);
+        return stado::execute(job_file, &job, target);
     }
     let resolved = model::resolve_job(&job)?;
     outln!("{}", dumps(&model::job_summary(&job, &resolved)));
@@ -237,17 +224,16 @@ pub(crate) fn cmd_run(args: &Parsed) -> Result<i32> {
         Err(failure) => return Ok(report("run", failure)),
     };
     outln!("{}", dumps(&metrics));
-    Ok(0)
+    Ok(EXIT_SUCCESS)
 }
 
 pub(crate) fn cmd_evaluate(args: &Parsed) -> Result<i32> {
-    let judge = if args.flag("--no-judge") {
-        Some(false)
-    } else {
-        None
+    let judge = match args.flag("--no-judge") {
+        true => Some(false),
+        false => None,
     };
     let verdict = match evaluate::evaluate(
-        args.positional(0),
+        args.positional("name"),
         judge,
         args.text("--brama-model"),
         args.flag("--best"),
@@ -255,39 +241,29 @@ pub(crate) fn cmd_evaluate(args: &Parsed) -> Result<i32> {
         Ok(verdict) => verdict,
         Err(error) => {
             eprintln!("evaluate: {error}");
-            return Ok(1);
+            return Ok(EXIT_FAILURE);
         }
-    };
-    let status = if args.flag("--best")
-        && verdict
-            .pointer("/best_review/sensible")
-            .and_then(Value::as_bool)
-            != Some(true)
-    {
-        1
-    } else {
-        0
     };
     if args.flag("--json") {
         outln!("{}", dumps(&verdict));
     } else {
         print_verdict(&verdict);
     }
-    Ok(status)
+    Ok(reviewed_status(args, &verdict))
 }
 
 pub(crate) fn cmd_infer(args: &Parsed) -> Result<i32> {
     let suggestions = match model::infer(
-        args.text("--aspect").unwrap_or_default(),
+        args.required("--aspect"),
         args.text("--session"),
         args.int("--limit"),
     ) {
         Ok(suggestions) => suggestions,
         Err(error) => {
             eprintln!("infer: {error}");
-            return Ok(1);
+            return Ok(EXIT_FAILURE);
         }
     };
     outln!("{}", dumps(&suggestions));
-    Ok(0)
+    Ok(EXIT_SUCCESS)
 }

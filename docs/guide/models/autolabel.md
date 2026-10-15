@@ -12,9 +12,12 @@ transcript-label-trainer autolabel --aspect tasktype \
 ```
 
 For each session that has no label on the aspect yet, autolabel reconstructs
-the session text and asks the teacher for exactly one of the allowed values.
-With `--best`, a second model returns `sensible` or `nonsensical`; only a
-`sensible` proposal is applied through the lake's own CLI:
+the session text and asks Brama's typed decision endpoint (`POST
+/v1/decisions`) to choose one of the allowed values. The answer is the label
+Brama returns in the decision's structure; no reply text is searched for a
+value. With `--best`, a second choice — `sensible` or `nonsensical` — is asked
+of `best-decision-model`; only a `sensible` proposal is applied through the
+lake's own CLI:
 
 ```sh
 transcript-lake label add <session-id> --aspect tasktype --value <v> --source brama:<model-id> --note "autolabel; reviewed=best"
@@ -28,13 +31,19 @@ what changed is only that no human reviews the suggestion. Rules:
 - **Semantic gate.** `--best` never applies a proposal rejected as
   `nonsensical`, records it under `rejected`, and exits nonzero if a proposal
   is rejected or the final reviewer cannot answer.
-- **Failure isolation.** A Brama error or an unparseable answer fails that
-  one session, writes nothing for it, and is counted in the final summary
+- **Failure isolation.** A Brama refusal, a decision without a choice, or a
+  choice outside the allowed values fails that one session with Brama's own
+  words, writes nothing for it, and is counted in the final summary
   (`labeled` / `skipped_labeled` / `failed`).
-- The teacher defaults to Brama's `best` alias, the strongest operator
-  subscription the signed identity may use; override it with `--brama-model`.
-  Brama resolves the alias and reports unavailable capabilities. No sampling
-  setting is sent: how the routed model samples is its own.
+- The decision endpoint answers exactly two aliases: `decision-model`, the
+  route the gateway pays for, and `best-decision-model`, which delegates to
+  `best`, the strongest operator subscription the signed identity may use.
+  The teacher defaults to `best`, which asks `best-decision-model`; name
+  either decision alias with `--brama-model`. Any other alias is refused
+  before a session is read, naming the two that can answer, and an empty
+  `--brama-model` is refused by name. The summary records the alias given
+  (`brama_model`) and the one asked (`decision_model`). No sampling setting
+  is sent: how the routed model decides is its own.
 - Auth: HMAC-signed requests as `WISENT_APP_AGENT_ID` (required), keyed by
   `WISENT_APP_AGENT_AUTH_SECRET` or else the vault role `TLT_BRAMA_AGENT_ROLE`
   declares as `ROLE#FIELD`; the bearer is `BRAMA_TOKEN` or else the role

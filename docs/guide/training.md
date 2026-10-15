@@ -127,7 +127,7 @@ model: tfidf-logreg
 scope:
   aspect: topic
   runtimes: [claude, codex, kimi]  # optional; default is all runtimes
-  since: "2026-07-01"              # optional; label ts must be on/after this
+  since: "YYYY-MM-DD"              # optional; label ts must be on/after this date
   values: [bugfix, feature, chore] # optional; restrict to these values
   min_text_chars: 200              # optional; skip shorter session texts
 eval_split: scikit-learn           # required: the preset, fraction and seed, or false
@@ -242,31 +242,39 @@ topic-v1 (aspect: topic, backend: sklearn):
 
 Per holdout session the judge gets the reconstructed session text (the same
 lake CLI path and the same whole session training uses), the model's prediction and
-the ground-truth label, and answers `acceptable` or `unacceptable` — so a
-prediction that differs from the label can still be ruled defensible, and a
-prediction that matches it can still be rejected. The verdict, the aggregate
-agreement rate and one record per session go to
-`<training root>/models/<name>/judge.json`.
+the ground-truth label, and chooses `acceptable` or `unacceptable` on Brama's
+typed decision endpoint (`POST /v1/decisions`) — so a prediction that differs
+from the label can still be ruled defensible, and a prediction that matches it
+can still be rejected. The verdict is the label in the decision's structure,
+never a word found in reply text. The verdict, the aggregate agreement rate and
+one record per session go to `<training root>/models/<name>/judge.json`.
 
-`--best` adds a second, independent pass through Brama's `best` subscription
-route. For every holdout record it audits both the stored ground-truth label
-and the first judge's `acceptable`/`unacceptable` opinion against the
-transcript. The four possible outcomes (`both-sensible`, `label-nonsensical`,
-`judge-nonsensical`, `both-nonsensical`) and their aggregate counts are stored
-under `best_review` in the same `judge.json`; any nonsensical or unreviewed
-record makes the command exit nonzero.
+`--best` adds a second, independent choice asked of `best-decision-model`,
+which delegates to Brama's `best` subscription route. For every holdout record
+it audits both the stored ground-truth label and the first judge's
+`acceptable`/`unacceptable` opinion against the transcript. The four possible
+outcomes (`both-sensible`, `label-nonsensical`, `judge-nonsensical`,
+`both-nonsensical`) and their aggregate counts are stored under `best_review`
+in the same `judge.json`; any nonsensical or unreviewed record makes the
+command exit nonzero.
 
 Rules, mirroring `autolabel`:
 
-- **Failure isolation.** A Brama error or an unparseable answer fails that one
-  session, is counted in `failed`, and is recorded verbatim in `judge.json`.
+- **Failure isolation.** A Brama refusal, a decision without a choice, or a
+  choice outside the offered labels fails that one session, is counted in
+  `failed`, and is recorded verbatim in `judge.json`. A holdout record without
+  its session id, labels or lake text fails too, naming what is missing.
 - **No invented verdict.** If not one session could be judged — no usable
   provider route, no credential — `evaluate` prints the gateway's own error
   verbatim, writes nothing, and exits nonzero. There is no local heuristic
   fallback, because a fabricated verdict is worse than no verdict.
-- The judge model comes from the job spec's `judge.model`, or `--brama-model`,
-  defaulting to the same teacher `autolabel` uses. `judge: false` in the spec,
-  or `--no-judge`, reports the holdout scores alone.
+- The judge alias comes from `--brama-model`, else the job spec's
+  `judge.model`, else `best`. It must answer typed choices: `best` asks
+  `best-decision-model`, and `decision-model` or `best-decision-model` are
+  taken as written; any other alias fails every session with a refusal naming
+  the aliases that can answer. `judge: false` in the spec, or `--no-judge`,
+  reports the holdout scores alone. A trained artifact whose metrics record a
+  `judge` that is not a judge spec is refused by name.
 - Auth is `brama.rs`'s single HMAC/Skarbiec path — the same one `autolabel`
   uses. There is no second credential route.
 

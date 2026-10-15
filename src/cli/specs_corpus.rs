@@ -48,7 +48,12 @@ pub(crate) fn corpus_specs() -> Vec<Spec> {
             name: "corpus",
             help: "corpus id, as corpus-status prints it".to_string(),
         }],
-        opts: vec![option("--json", "", Kind::Flag, "print machine-readable JSON".to_string())],
+        opts: vec![option(
+            "--json",
+            "",
+            Kind::Flag,
+            "print machine-readable JSON".to_string(),
+        )],
     };
 
     let corpus_remove = Spec {
@@ -64,7 +69,12 @@ pub(crate) fn corpus_specs() -> Vec<Spec> {
             name: "corpus",
             help: "corpus id, as corpus-status prints it".to_string(),
         }],
-        opts: vec![option("--json", "", Kind::Flag, "print machine-readable JSON".to_string())],
+        opts: vec![option(
+            "--json",
+            "",
+            Kind::Flag,
+            "print machine-readable JSON".to_string(),
+        )],
     };
 
     let gui = Spec {
@@ -84,13 +94,15 @@ pub(crate) fn corpus_specs() -> Vec<Spec> {
                 "--bind",
                 "IP",
                 Kind::Text,
-                "loopback IP listener (default: 127.0.0.1; also accepts ::1)".to_string(),
+                "loopback IP listener (default: the IPv4 loopback address; the IPv6 one is \
+                 also accepted)"
+                    .to_string(),
             ),
             option(
                 "--port",
                 "PORT",
                 Kind::Int,
-                "listener port (default: 0, select an available port)".to_string(),
+                "listener port (default: a free port the system chooses)".to_string(),
             ),
         ],
     };
@@ -123,7 +135,7 @@ pub(crate) fn corpus_specs() -> Vec<Spec> {
         positionals: Vec::new(),
         opts: vec![
             Opt {
-                group: 1,
+                group: Some("corpus-source"),
                 ..option(
                     "--corpus",
                     "BUNDLE",
@@ -133,7 +145,7 @@ pub(crate) fn corpus_specs() -> Vec<Spec> {
                 )
             },
             Opt {
-                group: 1,
+                group: Some("corpus-source"),
                 ..option(
                     "--skip-corpus",
                     "",
@@ -187,7 +199,11 @@ pub(crate) fn corpus_specs() -> Vec<Spec> {
                 "--brama-model",
                 "MODEL_ID",
                 Kind::Text,
-                format!("Brama-routed teacher model (default: {teacher})"),
+                format!(
+                    "Brama teacher alias that answers typed choices: {teacher} (asks \
+                     best-decision-model), best-decision-model or decision-model \
+                     (default: {teacher})"
+                ),
             ),
             option(
                 "--best",
@@ -212,27 +228,37 @@ pub(crate) fn corpus_specs() -> Vec<Spec> {
             ),
         ],
     };
-    vec![corpus_adopt, corpus_status, corpus_select, corpus_remove, gui, info, onboarding, autolabel]
+    vec![
+        corpus_adopt,
+        corpus_status,
+        corpus_select,
+        corpus_remove,
+        gui,
+        info,
+        onboarding,
+        autolabel,
+    ]
 }
 
 /// `corpus-select` and `corpus-remove`: the registry after the change, as
 /// corpus-status reports it.
 pub(crate) fn cmd_corpus_change(args: &Parsed, remove: bool) -> Result<i32> {
-    let id = args.positional(0);
-    let report = if remove { corpus::remove(id)? } else { corpus::select(id)? };
+    let id = args.positional("corpus");
+    let report = if remove {
+        corpus::remove(id)?
+    } else {
+        corpus::select(id)?
+    };
     if args.flag("--json") {
         outln!("{}", dumps(&report));
-        return Ok(0);
+        return Ok(EXIT_SUCCESS);
     }
     if remove {
         outln!("removed corpus {id}");
     }
     match report.get("selected").filter(|value| !value.is_null()) {
-        Some(selected) => outln!(
-            "selected corpus {}",
-            selected.get("id").and_then(Value::as_str).unwrap_or("")
-        ),
+        Some(selected) => outln!("selected corpus {}", json_text(&selected["id"])),
         None => outln!("no adopted corpus is selected"),
     }
-    Ok(0)
+    Ok(EXIT_SUCCESS)
 }

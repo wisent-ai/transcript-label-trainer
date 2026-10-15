@@ -36,9 +36,11 @@ use crate::bail;
 use crate::util::{Error, Result};
 
 mod allowance;
-mod default_stado_bin;
 mod brama_client;
+mod decisions;
+mod default_stado_bin;
 
 pub use allowance::allowance;
-pub use default_stado_bin::*;
 pub use brama_client::*;
+pub use decisions::*;
+pub use default_stado_bin::*;

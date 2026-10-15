@@ -2,10 +2,10 @@ use super::*;
 
 // ---------------------------------------------------------------- printers
 
-pub(crate) static NULL: Value = Value::Null;
-
+/// A field of a report this program wrote; an absent field reads as JSON
+/// null, which `text` prints as such, so absence stays visible.
 pub(crate) fn field<'a>(value: &'a Value, key: &str) -> &'a Value {
-    value.get(key).unwrap_or(&NULL)
+    &value[key]
 }
 
 pub(crate) fn text(value: &Value) -> String {
@@ -38,7 +38,11 @@ pub(crate) fn print_info(entries: &[Value]) {
         for artifact in artifacts {
             let metrics = field(artifact, "metrics");
             let backend = text(field(artifact, "backend"));
-            let marker = if backend == active { "*" } else { " " };
+            // The artifact `info` would load is marked; the others are not.
+            let marker = match backend == active {
+                true => '*',
+                false => ' ',
+            };
             let job = field(metrics, "job");
             if json_truthy(job) {
                 outln!(
@@ -48,34 +52,21 @@ pub(crate) fn print_info(entries: &[Value]) {
                     text(field(job, "evaluator"))
                 );
             }
-            let quality = if backend == "sklearn" {
-                let cv = field(metrics, "cv_accuracy");
-                if cv.is_null() {
-                    "cv_accuracy=n/a".to_string()
-                } else {
-                    format!(
-                        "cv_accuracy={} ({}-fold)",
-                        text(cv),
-                        text(field(metrics, "cv_folds"))
-                    )
-                }
-            } else {
-                let hyperparameters = field(metrics, "hyperparameters");
-                let accuracy = field(field(metrics, "in_training_eval"), "accuracy");
-                let mut quality = if accuracy.is_null() {
-                    "in_training_accuracy=n/a".to_string()
-                } else {
-                    format!("in_training_accuracy={}", text(accuracy))
-                };
-                let _ = write!(
-                    quality,
-                    " ({}, epochs={}, lr={}, device={})",
+            let hyperparameters = field(metrics, "hyperparameters");
+            let quality = match backend.as_str() {
+                "sklearn" => format!(
+                    "cv_accuracy={} ({}-fold)",
+                    text(field(metrics, "cv_accuracy")),
+                    text(field(metrics, "cv_folds"))
+                ),
+                _ => format!(
+                    "in_training_accuracy={} ({}, epochs={}, lr={}, device={})",
+                    text(field(field(metrics, "in_training_eval"), "accuracy")),
                     text(field(metrics, "base_model")),
                     text(field(hyperparameters, "epochs")),
                     text(field(hyperparameters, "lr")),
                     text(field(metrics, "device"))
-                );
-                quality
+                ),
             };
             outln!(
                 " {marker} {backend}: {} sessions trained on, classes={}, {quality}\n\
@@ -96,7 +87,7 @@ pub(crate) fn print_info(entries: &[Value]) {
                     text(field(split, "seed")),
                     text(field(split, "fraction"))
                 );
-            } else if json_truthy(split) && !split.get("enabled").map(json_truthy).unwrap_or(true) {
+            } else if json_truthy(split) && split.get("enabled") == Some(&Value::Bool(false)) {
                 outln!("    frozen holdout: disabled by eval_split: false");
             }
         }
@@ -108,14 +99,10 @@ pub(crate) fn print_placement() {
     let resolved = placement::resolve_placement();
     outln!("placement:");
     outln!("    source:        {}", resolved.source);
-    outln!(
-        "    training host: {}",
-        resolved
-            .training_host
-            .as_deref()
-            .filter(|host| !host.is_empty())
-            .unwrap_or("undeclared")
-    );
+    match resolved.training_host.as_deref() {
+        Some(host) if !host.is_empty() => outln!("    training host: {host}"),
+        _ => outln!("    training host: undeclared"),
+    }
     outln!("    training root: {}", resolved.training_root.display());
     outln!("    storage root:  {}", resolved.storage_root.display());
     if resolved.source == "local-fallback" {
@@ -165,15 +152,10 @@ pub(crate) fn print_verdict(verdict: &Value) {
         let mut values: Vec<&String> = counts.keys().collect();
         values.sort_unstable();
         for value in values {
-            let scored = correct.get(value.as_str()).unwrap_or(&Value::Null);
-            let scored = if scored.is_null() {
-                "0".to_string()
-            } else {
-                text(scored)
-            };
             outln!(
-                "        {value}: {scored}/{} correct",
-                text(counts.get(value).unwrap_or(&NULL))
+                "        {value}: {}/{} correct",
+                text(field(correct, value)),
+                text(field(field(holdout, "counts"), value))
             );
         }
     }
@@ -216,13 +198,9 @@ pub(crate) fn print_verdict(verdict: &Value) {
     }
     if let Value::Array(records) = field(verdict, "sessions") {
         for record in records {
-            let mark = if text(field(record, "verdict")) == evaluate::JUDGE_VALUES[0] {
-                "ok "
-            } else {
-                "bad"
-            };
             outln!(
-                "        {mark} {}: gold={} predicted={} ({})",
+                "        {} {}: gold={} predicted={} ({})",
+                text(field(record, "verdict")),
                 text(field(record, "session_id")),
                 text(field(record, "gold")),
                 text(field(record, "prediction")),
@@ -256,6 +234,6 @@ pub(crate) fn print_verdict(verdict: &Value) {
 /// and these bytes land in files the lake and the operator already have.
 pub(crate) fn dumps(value: &Value) -> String {
     let mut out = String::new();
-    write_json(&mut out, value, 0);
+    write_json(&mut out, value, "");
     out
 }

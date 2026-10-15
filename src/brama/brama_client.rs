@@ -51,8 +51,12 @@ impl BramaClient {
         } else {
             hex::encode(Sha256::digest(body.as_bytes()))
         };
-        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(self.secret.as_bytes())
-            .map_err(|error| Error(format!("the agent's signing secret cannot key an HMAC: {error}")))?;
+        let mut mac =
+            <Hmac<Sha256> as Mac>::new_from_slice(self.secret.as_bytes()).map_err(|error| {
+                Error(format!(
+                    "the agent's signing secret cannot key an HMAC: {error}"
+                ))
+            })?;
         mac.update(format!("{}:{timestamp}:{body_hash}", self.agent_id).as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
         let mut headers = vec![
@@ -95,7 +99,9 @@ impl BramaClient {
             .map_err(|error| Error(format!("Brama unreachable at {}: {error}", self.url)))?;
         let status = response.status();
         let text = response.text().map_err(|error| {
-            Error(format!("Brama answered HTTP {status} but its body could not be read: {error}"))
+            Error(format!(
+                "Brama answered HTTP {status} but its body could not be read: {error}"
+            ))
         })?;
         if status != reqwest::StatusCode::OK {
             let detail = text.trim();
@@ -107,7 +113,9 @@ impl BramaClient {
             // Brama states a prompt the route cannot take as error.code; a
             // body that is not JSON or names no code is reported whole below.
             if let Ok(payload) = serde_json::from_str::<serde_json::Value>(detail) {
-                if payload.pointer("/error/code").and_then(serde_json::Value::as_str)
+                if payload
+                    .pointer("/error/code")
+                    .and_then(serde_json::Value::as_str)
                     == Some("context_length_exceeded")
                 {
                     return Ok(ChatAnswer::DoesNotFit(detail.to_string()));
@@ -116,7 +124,10 @@ impl BramaClient {
             bail!("Brama answered HTTP {status}: {detail}")
         }
         let payload: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
-            Error(format!("Brama answered HTTP {status} with a body that is not JSON ({error}): {}", text.trim()))
+            Error(format!(
+                "Brama answered HTTP {status} with a body that is not JSON ({error}): {}",
+                text.trim()
+            ))
         })?;
         let content = payload
             .get("choices")
@@ -124,7 +135,12 @@ impl BramaClient {
             .and_then(|choices| choices.first())
             .and_then(|choice| choice.pointer("/message/content"))
             .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| Error(format!("Brama response was not an OpenAI chat completion: {}", text.trim())))?;
+            .ok_or_else(|| {
+                Error(format!(
+                    "Brama response was not an OpenAI chat completion: {}",
+                    text.trim()
+                ))
+            })?;
         Ok(ChatAnswer::Content(content.trim().to_string()))
     }
 }
@@ -135,51 +151,4 @@ pub(crate) enum ChatAnswer {
     Content(String),
     /// The prompt does not fit the routed model; Brama's answer body.
     DoesNotFit(String),
-}
-
-/// Compact single-label classification prompt.
-pub fn build_prompt(aspect: &str, values: &[String], text: &str) -> Vec<Message> {
-    let allowed = values.join(", ");
-    vec![
-        Message::new(
-            "system",
-            "You classify coding-agent session transcripts. Answer with \
-             exactly one of the allowed values and nothing else."
-                .to_string(),
-        ),
-        Message::new(
-            "user",
-            format!(
-                "Aspect: {aspect}\n\
-                 Allowed values: {allowed}\n\n\
-                 Classify this session transcript into one allowed value.\n\n\
-                 Transcript:\n{text}"
-            ),
-        ),
-    ]
-}
-
-/// Map a raw model answer to an allowed value.
-///
-/// `Some((value, exact))` where `exact == false` means the value was recovered
-/// from a longer answer. `None` is a parse failure: apply nothing.
-pub fn parse_answer<S: AsRef<str>>(answer: &str, values: &[S]) -> Option<(String, bool)> {
-    let cleaned = answer
-        .trim()
-        .trim_matches(|c| c == '"' || c == '`' || c == '\'' || c == ' ' || c == '.');
-    for value in values {
-        let value = value.as_ref();
-        if cleaned.eq_ignore_ascii_case(value) || cleaned.to_lowercase() == value.to_lowercase() {
-            return Some((value.to_string(), true));
-        }
-    }
-    let haystack = answer.to_lowercase();
-    let mut found = values
-        .iter()
-        .map(AsRef::as_ref)
-        .filter(|value| haystack.contains(&value.to_lowercase()));
-    match (found.next(), found.next()) {
-        (Some(only), None) => Some((only.to_string(), false)),
-        _ => None,
-    }
 }

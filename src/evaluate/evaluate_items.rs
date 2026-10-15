@@ -16,34 +16,39 @@ pub fn evaluate(
     let aspect = metrics
         .get("aspect")
         .and_then(Value::as_str)
-        .unwrap_or_default()
+        .ok_or_else(|| {
+            Error(format!(
+                "the trained artifact of {name} records no aspect in its metrics"
+            ))
+        })?
         .to_string();
-    let empty = Value::Object(Map::new());
     let job_meta = match metrics.get("job") {
         Some(value) if json_truthy(value) => value.clone(),
-        _ => empty.clone(),
+        _ => Value::Object(Map::new()),
     };
-    let spec_judge = match job_meta.get("judge") {
-        Some(value) if json_truthy(value) => value.clone(),
-        _ => serde_json::to_value(jobs::default_judge())?,
+    // The job's own judge, as `jobs` parsed it from the spec; a model trained
+    // without a job carries none and gets the teacher every run gets.
+    let spec_judge: jobs::Judge = match job_meta.get("judge") {
+        Some(value) if json_truthy(value) => serde_json::from_value(value.clone()).map_err(|error| {
+            Error(format!("the trained artifact of {name} records a judge that is not a judge spec ({error}): {value}"))
+        })?,
+        _ => jobs::default_judge(),
     };
-    let judge_enabled = judge.unwrap_or_else(|| {
-        spec_judge
-            .get("enabled")
-            .and_then(Value::as_bool)
-            .unwrap_or(true)
-    });
-    let model_id = judge_model
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .or_else(|| {
-            spec_judge
-                .get("model")
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| brama::DEFAULT_MODEL.to_string());
+    let judge_enabled = match judge {
+        Some(enabled) => enabled,
+        None => spec_judge.enabled,
+    };
+    let model_id = match (judge_model, spec_judge.model) {
+        (Some(model), _) if model.trim().is_empty() => {
+            return Err(Error(
+                "--judge-model is empty; name a Brama alias or leave it out".to_string(),
+            ));
+        }
+        (Some(model), _) => model.trim().to_string(),
+        (None, Some(model)) => model,
+        // The spec turned the judge off and the command turned it on.
+        (None, None) => brama::DEFAULT_MODEL.to_string(),
+    };
     if best_review && !judge_enabled {
         return Err(Error(
             "--best requires the Brama judge to be enabled".to_string(),
@@ -83,7 +88,7 @@ pub fn evaluate(
         .cloned()
         .collect();
     let no_text = holdout_ids.len() - usable.len();
-    if no_text > 0 {
+    if usable.len() != holdout_ids.len() {
         lake::warn(&format!(
             "{no_text} frozen holdout session(s) had no text in the lake"
         ));
@@ -116,11 +121,7 @@ pub fn evaluate(
             record.insert("session_id".to_string(), Value::String(session_id.clone()));
             record.insert(
                 "runtime".to_string(),
-                texts[session_id.as_str()]
-                    .runtime
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
+                serde_json::json!(texts[session_id.as_str()].runtime),
             );
             record.insert("gold".to_string(), Value::String(actual.clone()));
             record.insert("prediction".to_string(), Value::String(predicted.clone()));
@@ -137,22 +138,15 @@ pub fn evaluate(
     );
     eval_split.insert(
         "fraction".to_string(),
-        frozen.fraction.map(number).unwrap_or(Value::Null),
+        match frozen.fraction {
+            Some(fraction) => number(fraction),
+            None => Value::Null,
+        },
     );
-    eval_split.insert(
-        "seed".to_string(),
-        frozen
-            .seed
-            .map(|seed| Value::Number(seed.into()))
-            .unwrap_or(Value::Null),
-    );
+    eval_split.insert("seed".to_string(), serde_json::json!(frozen.seed));
     eval_split.insert(
         "created_at".to_string(),
-        frozen
-            .created_at
-            .clone()
-            .map(Value::String)
-            .unwrap_or(Value::Null),
+        serde_json::json!(frozen.created_at),
     );
     eval_split.insert(
         "frozen_sessions".to_string(),
@@ -173,11 +167,11 @@ pub fn evaluate(
     );
     result.insert(
         "model_path".to_string(),
-        metrics.get("model_path").cloned().unwrap_or(Value::Null),
+        serde_json::json!(metrics.get("model_path")),
     );
     result.insert(
         "trained_at".to_string(),
-        metrics.get("trained_at").cloned().unwrap_or(Value::Null),
+        serde_json::json!(metrics.get("trained_at")),
     );
     result.insert("evaluated_at".to_string(), Value::String(now_iso()));
     result.insert("eval_split".to_string(), Value::Object(eval_split));
@@ -198,22 +192,20 @@ pub fn evaluate(
     if records.is_empty() {
         // No usable provider route: surface the gateway's own words and write
         // nothing. A verdict nobody produced is not a verdict.
-        let first = failures
-            .first()
-            .and_then(|entry| entry.get("error"))
-            .and_then(Value::as_str)
-            .unwrap_or("(no sessions to judge)")
-            .to_string();
+        let cause = match failures.first().and_then(|entry| entry.get("error")) {
+            Some(error) => format!("first error: {error}"),
+            None => "there were no holdout sessions to judge".to_string(),
+        };
         return Err(Error(format!(
-            "the Brama judge ({model_id}) could not judge any of the {} holdout \
-             session(s); first error: {first}",
+            "the Brama judge ({model_id}) could not judge any of the {} holdout session(s); {cause}",
             sessions.len()
         )));
     }
 
+    let [acceptable_verdict, _] = JUDGE_VALUES;
     let acceptable = records
         .iter()
-        .filter(|record| record.get("verdict").and_then(Value::as_str) == Some(JUDGE_VALUES[0]))
+        .filter(|record| record.get("verdict").and_then(Value::as_str) == Some(acceptable_verdict))
         .count();
     let mut block = Map::new();
     block.insert("enabled".to_string(), Value::Bool(true));
@@ -231,7 +223,15 @@ pub fn evaluate(
     );
     result.insert("judge".to_string(), Value::Object(block));
     if best_review {
-        record_best_review(&client, &aspect, task, &mut records, &texts, &failures, &mut result)?;
+        record_best_review(
+            &client,
+            &aspect,
+            task,
+            &mut records,
+            &texts,
+            &failures,
+            &mut result,
+        )?;
     }
     result.insert("sessions".to_string(), Value::Array(records));
     result.insert("failures".to_string(), Value::Array(failures));

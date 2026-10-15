@@ -94,53 +94,74 @@ pub(crate) fn humanizer_specs() -> Vec<Spec> {
     vec![prepare, audit, publish]
 }
 
+/// The Brama alias a command option names, or the one it documents as its
+/// default when the option is left out.
+fn named_or<'a>(args: &'a Parsed, flag: &str, documented: &'a str) -> &'a str {
+    match args.text(flag) {
+        Some(model) => model,
+        None => documented,
+    }
+}
+
+/// The status of a command that succeeds only when `report[field]` is true.
+fn status_of(report: &Value, field: &str) -> i32 {
+    match report[field] == Value::Bool(true) {
+        true => EXIT_SUCCESS,
+        false => EXIT_FAILURE,
+    }
+}
+
 pub(crate) fn cmd_humanizer_prepare(args: &Parsed) -> Result<i32> {
-    let teacher = args.text("--teacher-model").unwrap_or(brama::DEFAULT_MODEL);
-    let reviewer = args.text("--review-model").unwrap_or(brama::BEST_MODEL);
     let report = crate::humanizer::prepare_dataset(
-        std::path::Path::new(args.positional(0)),
-        std::path::Path::new(args.text("--output-dir").unwrap_or_default()),
-        teacher,
-        reviewer,
+        std::path::Path::new(args.positional("targets")),
+        std::path::Path::new(args.required("--output-dir")),
+        named_or(args, "--teacher-model", brama::DEFAULT_MODEL),
+        named_or(args, "--review-model", brama::BEST_MODEL),
     )?;
     outln!("{}", dumps(&report));
-    Ok(0)
+    Ok(EXIT_SUCCESS)
 }
 
 pub(crate) fn cmd_humanizer_audit(args: &Parsed) -> Result<i32> {
-    let judge = args.text("--brama-model").unwrap_or(brama::BEST_MODEL);
     let summary = crate::humanizer::audit_outputs(
-        std::path::Path::new(args.positional(0)),
-        std::path::Path::new(args.text("--output").unwrap_or_default()),
-        judge,
+        std::path::Path::new(args.positional("predictions")),
+        std::path::Path::new(args.required("--output")),
+        named_or(args, "--brama-model", brama::BEST_MODEL),
     )?;
     outln!("{}", dumps(&summary));
-    Ok(i32::from(
-        summary.get("passed").and_then(Value::as_bool) != Some(true),
-    ))
+    Ok(status_of(&summary, "passed"))
 }
 
 pub(crate) fn cmd_humanizer_publish(args: &Parsed) -> Result<i32> {
     use std::io::Write;
     use std::path::Path;
 
-    let path = Path::new(args.text("--output").unwrap_or_default());
-    let mut output = std::fs::OpenOptions::new().write(true).create_new(true).open(path)
-        .map_err(|error| Error(format!("cannot create publication report {}: {error}", path.display())))?;
+    let path = Path::new(args.required("--output"));
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| {
+            Error(format!(
+                "cannot create publication report {}: {error}",
+                path.display()
+            ))
+        })?;
+    // A refused publication is written as the refusal receipt the option
+    // documents, with the refusal's own words.
     let report = match crate::humanizer::publish_adapter(crate::humanizer::Publication {
-        model: Path::new(args.positional(0)),
-        metrics: Path::new(args.text("--metrics").unwrap_or_default()),
-        audit: Path::new(args.text("--audit").unwrap_or_default()),
-        preparation: Path::new(args.text("--preparation").unwrap_or_default()),
-        repository: args.text("--repo").unwrap_or_default(),
+        model: Path::new(args.positional("model")),
+        metrics: Path::new(args.required("--metrics")),
+        audit: Path::new(args.required("--audit")),
+        preparation: Path::new(args.required("--preparation")),
+        repository: args.required("--repo"),
     }) {
         Ok(report) => report,
         Err(error) => serde_json::json!({"qualified": false, "error": error.to_string()}),
     };
-    let failed = report.get("qualified").and_then(Value::as_bool) != Some(true);
     let mut encoded = dumps(&report);
     encoded.push('\n');
     output.write_all(encoded.as_bytes())?;
     outln!("{}", encoded.trim_end_matches('\n'));
-    Ok(i32::from(failed))
+    Ok(status_of(&report, "qualified"))
 }
