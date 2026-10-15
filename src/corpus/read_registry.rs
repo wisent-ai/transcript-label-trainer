@@ -4,8 +4,12 @@ pub(crate) fn read_registry(path: &Path) -> Result<Option<CorpusRegistry>> {
     if !path.exists() {
         return Ok(None);
     }
-    let registry: CorpusRegistry = serde_json::from_slice(&fs::read(path)?).map_err(|error| {
-        Error(format!("invalid corpus registry {}: {error}", path.display()))
+    let bytes = fs::read(path).map_err(|error| failed("read the corpus registry", path, error))?;
+    let registry: CorpusRegistry = serde_json::from_slice(&bytes).map_err(|error| {
+        Error(format!(
+            "invalid corpus registry {}: {error}",
+            path.display()
+        ))
     })?;
     if registry.schema_version != REGISTRY_SCHEMA {
         return Err(Error(format!(
@@ -49,35 +53,56 @@ fn parent_of(path: &Path) -> Result<&Path> {
     }
 }
 
+/// `step` failed on `path`: the sentence a durable write answers with.
+fn failed(step: &str, path: &Path, error: std::io::Error) -> Error {
+    Error(format!("cannot {step} {}: {error}", path.display()))
+}
+
 pub(crate) fn durable_create(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = parent_of(path)?;
-    fs::create_dir_all(parent)?;
+    fs::create_dir_all(parent).map_err(|error| failed("create the directory", parent, error))?;
     let mut file = fs::OpenOptions::new()
         .create_new(true)
         .write(true)
-        .open(path)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    fs::File::open(parent)?.sync_all()?;
+        .open(path)
+        .map_err(|error| failed("create", path, error))?;
+    file.write_all(bytes)
+        .map_err(|error| failed("write", path, error))?;
+    file.sync_all()
+        .map_err(|error| failed("flush to disk", path, error))?;
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| failed("flush to disk the directory", parent, error))?;
     Ok(())
 }
 
 pub(crate) fn durable_replace(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = parent_of(path)?;
-    fs::create_dir_all(parent)?;
+    fs::create_dir_all(parent).map_err(|error| failed("create the directory", parent, error))?;
     let temporary = parent.join(format!(".registry.{}.tmp", std::process::id()));
     let result = (|| -> Result<()> {
         let mut file = fs::OpenOptions::new()
             .create(true)
             .truncate(true)
             .write(true)
-            .open(&temporary)?;
-        file.write_all(bytes)?;
-        file.write_all(b"\n")?;
-        file.sync_all()?;
+            .open(&temporary)
+            .map_err(|error| failed("create", &temporary, error))?;
+        file.write_all(bytes)
+            .and_then(|()| file.write_all(b"\n"))
+            .map_err(|error| failed("write", &temporary, error))?;
+        file.sync_all()
+            .map_err(|error| failed("flush to disk", &temporary, error))?;
         drop(file);
-        fs::rename(&temporary, path)?;
-        fs::File::open(parent)?.sync_all()?;
+        fs::rename(&temporary, path).map_err(|error| {
+            Error(format!(
+                "cannot move {} into place as {}: {error}",
+                temporary.display(),
+                path.display()
+            ))
+        })?;
+        fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| failed("flush to disk the directory", parent, error))?;
         Ok(())
     })();
     // The write's own failure is what the caller is told; a temporary file it
