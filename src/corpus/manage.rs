@@ -40,14 +40,19 @@ pub fn remove(id: &str) -> Result<Value> {
         .iter()
         .position(|entry| entry.id == id)
         .ok_or_else(|| refuse_unknown(&registry, id))?;
-    if registry.selected_corpus_id == id && registry.corpora.len() > 1 {
+    if registry.selected_corpus_id == id && registry.corpora.iter().any(|entry| entry.id != id) {
         return Err(Error(format!(
             "corpus {id} is selected; select another with corpus-select before removing it"
         )));
     }
     let entry = registry.corpora.remove(position);
     if registry.corpora.is_empty() {
-        fs::remove_file(&path)?;
+        fs::remove_file(&path).map_err(|error| {
+            Error(format!(
+                "corpus {id} is the last one, but the registry {} cannot be deleted: {error}",
+                path.display()
+            ))
+        })?;
     } else {
         durable_replace(&path, &serde_json::to_vec_pretty(&registry)?)?;
     }
