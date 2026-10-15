@@ -244,16 +244,13 @@ pub fn build_dataset(output: &Path, teacher_model: Option<&str>) -> Result<Value
             failures.len()
         )
     }
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let mut file = fs::File::create(output)?;
+    let mut rows = Vec::new();
     for candidate in &accepted {
-        serde_json::to_writer(&mut file, &candidate.row)?;
-        file.write_all(b"\n")?;
+        serde_json::to_writer(&mut rows, &candidate.row)?;
+        rows.push(b'\n');
     }
-    file.flush()?;
-    let digest = hex::encode(Sha256::digest(fs::read(output)?));
+    crate::util::write_whole(output, &rows)?;
+    let digest = hex::encode(Sha256::digest(&rows));
     let summary = serde_json::json!({
         "created_at": now_iso(),
         "source": "Transcript Lake normalized events",
@@ -271,9 +268,9 @@ pub fn build_dataset(output: &Path, teacher_model: Option<&str>) -> Result<Value
         "output": output.to_string_lossy(),
     });
     let manifest_path = output.with_extension("manifest.json");
-    fs::write(
+    crate::util::write_whole(
         &manifest_path,
-        serde_json::to_string_pretty(&summary)? + "\n",
+        (serde_json::to_string_pretty(&summary)? + "\n").as_bytes(),
     )?;
     Ok(summary)
 }
