@@ -138,6 +138,8 @@ Each root is resolved independently, strongest layer first:
 2. **env** — `TLT_HOME` / `LAKE_DATA`;
 3. **stado** — the declarations above;
 4. **local-fallback** — `~/.transcript-label-trainer` and `~/.transcript-lake`.
+   `~` is `$HOME`; the trainer refuses to start when `HOME` is unset or
+   empty rather than placing these under the current directory.
 
 ### The local fallback is an exception, not a default
 

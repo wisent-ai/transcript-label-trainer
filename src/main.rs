@@ -25,6 +25,13 @@ mod util;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    // The trainer's local roots and its onboarding state live under the
+    // account's home directory; a process without one is refused here, before
+    // either is placed somewhere else.
+    if !util::home_is_named() {
+        eprintln!("error: HOME is unset or empty; the trainer needs the account's home directory");
+        return ExitCode::FAILURE;
+    }
     let mut arguments = std::env::args();
     // The first argument is the program's own name, not an argument to it.
     arguments.next();

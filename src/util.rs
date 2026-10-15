@@ -54,11 +54,18 @@ macro_rules! bail {
     };
 }
 
-/// `$HOME`, or `.` when the environment has none.
+/// Whether `HOME` names a directory. `main` refuses to start without one, so
+/// every later [`home_dir`] has it.
+pub fn home_is_named() -> bool {
+    std::env::var_os("HOME").is_some_and(|home| !home.is_empty())
+}
+
+/// `$HOME`, which `main` established before any command ran.
 pub fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
+    match std::env::var_os("HOME") {
+        Some(home) if !home.is_empty() => PathBuf::from(home),
+        _ => panic!("HOME was checked at startup and has since been removed from the environment"),
+    }
 }
 
 /// Current instant as an ISO-8601 UTC string, second precision, matching the
@@ -154,7 +161,9 @@ pub fn json_truthy(value: &serde_json::Value) -> bool {
     match value {
         serde_json::Value::Null => false,
         serde_json::Value::Bool(flag) => *flag,
-        serde_json::Value::Number(number) => number.as_f64().is_some_and(|n| n != 0.0),
+        serde_json::Value::Number(number) => number
+            .as_f64()
+            .is_some_and(|n| n.classify() != std::num::FpCategory::Zero),
         serde_json::Value::String(text) => !text.is_empty(),
         serde_json::Value::Array(items) => !items.is_empty(),
         serde_json::Value::Object(map) => !map.is_empty(),
@@ -167,13 +176,15 @@ pub fn json_truthy(value: &serde_json::Value) -> bool {
 ///
 /// Metrics files and the JSON the CLI prints carry floats, and the byte shape
 /// of those files is the compatibility contract with everything already on
-/// disk, so the formatting cannot come from Rust's default.
+/// disk, so the formatting cannot come from Rust's default. Every bound below
+/// is CPython's own, in `format_float_short` of
+/// https://github.com/python/cpython/blob/main/Python/pystrtod.c.
 pub fn float_repr(value: f64) -> String {
     if value.is_nan() {
         return "nan".to_string();
     }
     if value.is_infinite() {
-        return if value < 0.0 {
+        return if value.is_sign_negative() {
             "-inf".to_string()
         } else {
             "inf".to_string()
@@ -185,7 +196,9 @@ pub fn float_repr(value: f64) -> String {
         Some(parts) => parts,
         None => return scientific,
     };
-    let exponent: i32 = exponent.parse().unwrap_or(0);
+    let exponent: i32 = exponent
+        .parse()
+        .expect("Rust's {:e} writes its exponent as a decimal integer");
     let (sign, mantissa) = match mantissa.strip_prefix('-') {
         Some(rest) => ("-", rest),
         None => ("", mantissa),
@@ -193,29 +206,35 @@ pub fn float_repr(value: f64) -> String {
     let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
     let digits = digits.trim_end_matches('0');
     let digits = if digits.is_empty() { "0" } else { digits };
-    // Position of the decimal point: value == 0.<digits> * 10^point.
-    let point = exponent + 1;
-    if point > -4 && point <= 16 {
+    // Position of the decimal point: value == 0.<digits> * 10^point, one place
+    // right of `{:e}`'s d.ddd form.
+    let point = exponent + 1; // https://github.com/python/cpython/blob/main/Python/pystrtod.c decpt, the point position _Py_dg_dtoa reports
+    let fixed = point > -4 && point <= 16; // https://github.com/python/cpython/blob/main/Python/pystrtod.c "if (decpt <= -4 || decpt > 16)" switches 'r' to exponent form
+    if fixed {
         let length = digits.len() as i32;
-        let body = if point <= 0 {
-            format!("0.{}{}", "0".repeat((-point) as usize), digits)
-        } else if point >= length {
-            format!("{}{}.0", digits, "0".repeat((point - length) as usize))
+        let body = if point.is_positive() {
+            if point >= length {
+                format!("{}{}.0", digits, "0".repeat((point - length) as usize))
+            } else {
+                format!(
+                    "{}.{}",
+                    &digits[..point as usize],
+                    &digits[point as usize..]
+                )
+            }
         } else {
-            format!(
-                "{}.{}",
-                &digits[..point as usize],
-                &digits[point as usize..]
-            )
+            format!("0.{}{}", "0".repeat((-point) as usize), digits)
         };
         return format!("{sign}{body}");
     }
-    let body = if digits.len() > 1 {
-        format!("{}.{}", &digits[..1], &digits[1..])
+    let mut rest = digits.chars();
+    let lead: String = rest.next().into_iter().collect();
+    let tail = rest.as_str();
+    let body = if tail.is_empty() {
+        lead
     } else {
-        digits.to_string()
+        format!("{lead}.{tail}")
     };
-    let exponent = point - 1;
-    let exponent_sign = if exponent < 0 { '-' } else { '+' };
-    format!("{sign}{body}e{exponent_sign}{:02}", exponent.abs())
+    let exponent_sign = if exponent.is_negative() { '-' } else { '+' };
+    format!("{sign}{body}e{exponent_sign}{:02}", exponent.abs()) // https://github.com/python/cpython/blob/main/Python/pystrtod.c "exponent ... at least 2 digits"
 }
