@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGETS="${1:?usage: run.sh TARGETS_JSONL}"
 JOB_ID="${WC_JOB_ID:?WC_JOB_ID is required}"
-WORK="${HUMANIZER_WORK_DIR:-/tmp/echo-humanizer-$JOB_ID}"
+WORK="${HUMANIZER_WORK_DIR:?humanizer-model passes the work directory of its job as HUMANIZER_WORK_DIR}"
 OUT="/tmp/wc-$JOB_ID/output"
 VENV="$WORK/venv"
 mkdir -p "$WORK" "$OUT"
@@ -33,7 +33,9 @@ export HUMANIZER_PREPARATION="$WORK/preparation.json"
 export HUMANIZER_BASE_MODEL="TheDrummer/Cydonia-24B-v4.3"
 export HUMANIZER_BASE_REVISION="db0426d39d4bd4a6d34fdc71db97569da68f55e1"
 
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORK/cargo-target}"
+# The trainer is built inside the job's own work directory, like every other
+# file this job writes, whatever the host's own cargo setting is.
+export CARGO_TARGET_DIR="$WORK/cargo-target"
 TRAINER=("$HOME/.cargo/bin/cargo" run --manifest-path "$ROOT/Cargo.toml" --locked --release --)
 
 "${TRAINER[@]}" humanizer-prepare "$HUMANIZER_TARGETS" --output-dir "$WORK"
