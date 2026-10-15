@@ -25,10 +25,12 @@ use sha2::{Digest, Sha256};
 use crate::util::{home_dir, now_iso, Error, Result};
 use crate::{corpus, lake, model};
 
+mod journey;
 mod product_id;
 mod report;
 mod set;
 
+pub use journey::*;
 pub use product_id::*;
 pub use report::*;
 pub use set::*;

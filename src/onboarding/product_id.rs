@@ -44,7 +44,7 @@ pub fn onboarding(
         let screen_id = string_field(&state, "current_screen_id")
             .ok_or_else(|| Error("onboarding state has no current screen".into()))?;
         let screen = screen_by_id(&definition, &screen_id)?.clone();
-        report.render(&screen);
+        report.render(&screen)?;
 
         match screen.get("screen_kind").and_then(Value::as_str) {
             Some("first_action") => match screen_fact(&screen)? {
@@ -62,17 +62,11 @@ pub fn onboarding(
                         return report.emit();
                     }
                     if let Some(path) = corpus_path {
+                        // The adoption report is shown as corpus-adopt
+                        // answered it, not read field by field with
+                        // stand-ins for what it did not state.
                         let adoption = corpus::adopt(std::path::Path::new(path))?;
-                        report.note(&format!(
-                            "Selected corpus {} for aspect '{}' ({} imported, {} unchanged, \
-                             {} conflicting, {} rejected).",
-                            string_field(&adoption, "corpusId").unwrap_or_default(),
-                            string_field(&adoption, "aspect").unwrap_or_default(),
-                            adoption.get("imported").and_then(Value::as_u64).unwrap_or(0),
-                            adoption.get("unchanged").and_then(Value::as_u64).unwrap_or(0),
-                            adoption.get("conflicting").and_then(Value::as_u64).unwrap_or(0),
-                            adoption.get("rejected").and_then(Value::as_u64).unwrap_or(0),
-                        ));
+                        report.note(&format!("Selected corpus: {adoption}"));
                     } else if corpus::selected_bundle_path()?.is_none() {
                         report.note(
                             "No adopted corpus is selected. Supply an existing canonical \
@@ -146,7 +140,11 @@ pub fn onboarding(
                         return report.emit();
                     }
                 };
-                let records = suggestions.as_array().map(Vec::as_slice).unwrap_or_default();
+                let Some(records) = suggestions.as_array() else {
+                    return Err(Error(format!(
+                        "inference answered something other than a list of suggestions: {suggestions}"
+                    )));
+                };
                 if records.is_empty() {
                     report.finish(
                         "awaiting_sessions",
@@ -195,7 +193,7 @@ pub fn onboarding(
 /// that emitted nothing is not a first success, and progress that cannot be
 /// written is a warning on stderr: onboarding state never fails an `infer`.
 pub fn record_first_success(aspect: &str, suggestions: usize) {
-    if suggestions == 0 {
+    if std::num::NonZeroUsize::new(suggestions).is_none() {
         return;
     }
     if let Err(error) = record(aspect, suggestions) {
@@ -233,7 +231,7 @@ pub(crate) fn record(aspect: &str, suggestions: usize) -> Result<()> {
             )));
         }
         let screen = screen_by_id(&definition, &screen_id)?.clone();
-        if transitions(&screen).is_empty() {
+        if transitions(&screen)?.is_empty() {
             if !complete(&screen, &mut state, &evidence, &revision)? {
                 return Err(Error(
                     "published first-success evidence was not satisfied".into(),
