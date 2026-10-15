@@ -46,14 +46,26 @@ pub struct Context {
     client: Client,
     token: String,
     cache: PathBuf,
+    hf_bin: std::ffi::OsString,
 }
 
 impl Context {
+    /// The hf executable is chosen as the product's publisher chooses it:
+    /// HF_BIN when set, refused when set but empty, and otherwise the `hf`
+    /// command huggingface_hub documents
+    /// (https://huggingface.co/docs/huggingface_hub/guides/cli).
     pub fn new(work: PathBuf, token: String) -> Result<Self> {
         let cache = work.join("hf-home");
+        let hf_bin = match std::env::var_os("HF_BIN") {
+            Some(value) if value.is_empty() => {
+                return Err("HF_BIN is set but empty; name the hf executable or unset it".into())
+            }
+            Some(value) => value,
+            None => "hf".into(),
+        };
         Ok(Self {
             work, owner: String::new(), commands: Vec::new(), requests: Vec::new(),
-            client: Client::builder().build()?, token, cache,
+            client: Client::builder().build()?, token, cache, hf_bin,
         })
     }
 
@@ -63,7 +75,12 @@ impl Context {
         if let Some(body) = body { request = request.json(body); }
         let response = request.send().map_err(|error| format!("{method} {path}: {error}"))?;
         let status = response.status();
-        let code = response.headers().get("x-error-code").and_then(|value| value.to_str().ok());
+        let code = match response.headers().get("x-error-code") {
+            None => None,
+            Some(value) => Some(value.to_str().map_err(|error| {
+                format!("{method} {path}: HTTP {status} carries an x-error-code that is not text: {error}")
+            })?),
+        };
         let repository_missing = code == Some("RepoNotFound");
         self.requests.push(json!({"method": method.as_str(), "path": path,
             "status": status.as_u16(), "error_code": code}));
@@ -98,7 +115,7 @@ impl Context {
         private: Option<bool>,
         journey: impl FnOnce(&mut Self, &str) -> Result<Value>,
     ) -> Result<Value> {
-        let name = format!("tlt-publication-{}", hex::encode(rand::random::<[u8; 16]>()));
+        let name = format!("tlt-publication-{:x}", rand::random::<u128>());
         let repo = format!("{}/{name}", self.owner);
         require(self.info(&repo, None)?.is_none(), format!("refusing an existing fixture repository: {repo}"))?;
         let body = json!({"organization": self.owner, "name": name, "type": "model"});
@@ -138,9 +155,7 @@ impl Context {
 
     pub fn product(&self) -> Command { self.command(BINARY) }
 
-    pub fn hf(&self) -> Command {
-        self.command(std::env::var_os("HF_BIN").unwrap_or_else(|| "hf".into()))
-    }
+    pub fn hf(&self) -> Command { self.command(&self.hf_bin) }
 
     pub fn run(&mut self, label: &str, mut command: Command) -> Result<Output> {
         let argv: Vec<String> = std::iter::once(command.get_program()).chain(command.get_args())
