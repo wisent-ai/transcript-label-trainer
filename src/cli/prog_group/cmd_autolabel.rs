@@ -86,7 +86,12 @@ fn stamped_dataset(model: &str, prefix: &str) -> Result<std::path::PathBuf> {
         .training_root
         .join(model)
         .join("datasets");
-    std::fs::create_dir_all(&root)?;
+    std::fs::create_dir_all(&root).map_err(|error| {
+        Error(format!(
+            "cannot create the datasets directory {}: {error}",
+            root.display()
+        ))
+    })?;
     let stamp = crate::util::now_iso().replace([':', '-'], "");
     Ok(root.join(format!("{prefix}-{stamp}.jsonl")))
 }
