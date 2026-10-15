@@ -34,8 +34,9 @@ pub struct SessionRow {
 
 pub(crate) const DATASET_BUNDLE_ENV: &str = "TLT_DATASET_BUNDLE";
 
-pub(crate) const DATASET_BUNDLE_SCHEMA: u32 = 1;
-
+/// The dataset bundle this module writes for a Stado run and reads back is
+/// the corpus bundle the corpus module declares; its schema version is that
+/// declaration's, never a second copy.
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct DatasetBundle {
     pub(crate) schema_version: u32,
@@ -51,21 +52,28 @@ pub(crate) fn read_bundle_at(path: &Path) -> Result<DatasetBundle> {
                 path.display()
             ))
         })?;
-    if bundle.schema_version != DATASET_BUNDLE_SCHEMA {
+    if bundle.schema_version != crate::corpus::BUNDLE_SCHEMA {
         bail!(
             "unsupported dataset bundle schema {} in {}; expected {}",
             bundle.schema_version,
             path.display(),
-            DATASET_BUNDLE_SCHEMA
+            crate::corpus::BUNDLE_SCHEMA
         );
     }
     Ok(bundle)
 }
 
+/// The bundle a pinned Stado job was handed in `TLT_DATASET_BUNDLE`; `None`
+/// only when the variable is unset. A set but empty value is refused: it
+/// names no file, and reading it as unset would send the job back to the
+/// source machine's lake.
 pub(crate) fn read_pinned_bundle() -> Result<Option<DatasetBundle>> {
-    let Some(path) = std::env::var_os(DATASET_BUNDLE_ENV).filter(|value| !value.is_empty()) else {
+    let Some(path) = std::env::var_os(DATASET_BUNDLE_ENV) else {
         return Ok(None);
     };
+    if path.is_empty() {
+        bail!("{DATASET_BUNDLE_ENV} is set but empty; name the dataset bundle file or unset it");
+    }
     Ok(Some(read_bundle_at(&PathBuf::from(path))?))
 }
 
@@ -97,7 +105,7 @@ pub fn export_bundle(aspect: &str, labels: &[SessionLabel], path: &Path) -> Resu
         bundled.push(label);
     }
     let bundle = DatasetBundle {
-        schema_version: DATASET_BUNDLE_SCHEMA,
+        schema_version: crate::corpus::BUNDLE_SCHEMA,
         aspect: aspect.to_string(),
         labels: bundled,
     };
@@ -105,36 +113,43 @@ pub fn export_bundle(aspect: &str, labels: &[SessionLabel], path: &Path) -> Resu
     Ok(())
 }
 
-/// Command prefix that invokes the lake CLI.
-///
-/// `TLT_LAKE_CLI` overrides it and is split on whitespace into argv, exactly
-/// as before. The default is the bare binary name resolved on PATH; only when
-/// the lake is not installed does this fall back to the release build in the
-/// neighbouring checkout, so a developer with just the two working copies
-/// still gets a working trainer.
-pub fn lake_cli() -> Vec<String> {
-    if let Ok(override_value) = std::env::var("TLT_LAKE_CLI") {
-        if !override_value.trim().is_empty() {
-            return override_value
-                .split_whitespace()
-                .map(str::to_string)
-                .collect();
+/// Command prefix that invokes the lake CLI: `TLT_LAKE_CLI` split on
+/// whitespace into a command and its arguments when it is set, otherwise the
+/// lake binary's name, which the system looks up on PATH when it runs. A lake
+/// that is not installed is refused there, naming the program; a set but
+/// empty `TLT_LAKE_CLI` is refused by `run_lake`, never read as unset.
+pub fn lake_cli() -> Result<Vec<String>> {
+    match std::env::var("TLT_LAKE_CLI") {
+        Ok(value) => Ok(value.split_whitespace().map(str::to_string).collect()),
+        Err(std::env::VarError::NotPresent) => Ok(vec![LAKE_BINARY.to_string()]),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err(Error("TLT_LAKE_CLI is set but is not UTF-8".to_string()))
         }
     }
-    if find_on_path(LAKE_BINARY).is_some() {
-        return vec![LAKE_BINARY.to_string()];
-    }
-    vec![checkout_lake_binary().to_string_lossy().into_owned()]
 }
 
-/// Latest label record per session for one aspect.
+/// A text field every label-store record carries, or the record refused
+/// with the file it came from.
+fn record_text(record: &Value, field: &str, file: &Path, line: &str) -> Result<String> {
+    match record.get(field) {
+        Some(value) if !value.is_null() => Ok(json_text(value)),
+        _ => Err(Error(format!(
+            "label store {} holds a record without {field}: {line}",
+            file.display()
+        ))),
+    }
+}
+
+/// Latest label in force per session for one aspect.
 ///
-/// The store is append-only, so the record with the newest `ts` wins for each
-/// `session_id`. A missing labels directory simply means zero labels. Records
-/// keep the order in which their session was first seen, which is the order
-/// the files themselves are read in — and the files are read in sorted name
-/// order, because the directory listing order must not decide which record
-/// a tie on `ts` resolves to.
+/// The store is append-only, so the record with the newest `ts` decides each
+/// `session_id`: a value assigns it, and the lake's withdrawal record, whose
+/// value is null, leaves the session unlabeled. A store with no labels
+/// directory holds no labels. Sessions keep the order they were first seen
+/// in, files are read in sorted name order so the listing order cannot
+/// decide a tie on `ts`, and a line that is not JSON or a record of this
+/// aspect without its session, value, source or time is refused with its
+/// file: skipping it would train on a store that silently lost labels.
 pub fn load_labels(aspect: &str) -> Result<Vec<SessionLabel>> {
     if let Some(bundle) = read_training_bundle()? {
         if bundle.aspect != aspect {
@@ -146,13 +161,18 @@ pub fn load_labels(aspect: &str) -> Result<Vec<SessionLabel>> {
         return Ok(bundle.labels);
     }
     let labels_dir = resolve_placement().storage_root.join("labels");
-    let mut latest: Vec<SessionLabel> = Vec::new();
-    if !labels_dir.is_dir() {
-        return Ok(latest);
-    }
+    // Each session's newest record, with the value it assigns, if any.
+    let mut latest: Vec<(SessionLabel, Option<String>)> = Vec::new();
+    let entries = match std::fs::read_dir(&labels_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            bail!("cannot list the label store {}: {error}", labels_dir.display())
+        }
+    };
 
     let mut names: Vec<std::ffi::OsString> = Vec::new();
-    for entry in std::fs::read_dir(&labels_dir)? {
+    for entry in entries {
         let entry = entry?;
         let name = entry.file_name();
         if Path::new(&name).extension().and_then(|ext| ext.to_str()) == Some("ndjson") {
@@ -162,48 +182,53 @@ pub fn load_labels(aspect: &str) -> Result<Vec<SessionLabel>> {
     names.sort_unstable();
 
     for name in names {
-        let text = std::fs::read_to_string(labels_dir.join(&name))?;
+        let file = labels_dir.join(&name);
+        let text = std::fs::read_to_string(&file)?;
         for line in text.lines() {
             let line = line.trim();
             if line.is_empty() {
                 continue;
             }
-            let Ok(record) = serde_json::from_str::<Value>(line) else {
-                continue;
-            };
+            let record = serde_json::from_str::<Value>(line).map_err(|error| {
+                Error(format!(
+                    "label store {} holds a line that is not JSON ({error}): {line}",
+                    file.display()
+                ))
+            })?;
             if record.get("aspect").and_then(Value::as_str) != Some(aspect) {
                 continue;
             }
-            let Some(session_id) = record.get("session_id").filter(|id| json_truthy(id)) else {
-                continue;
+            let session_id = record_text(&record, "session_id", &file, line)?;
+            let assigned = match record.get("value") {
+                Some(Value::Null) => None,
+                Some(value) => Some(json_text(value)),
+                None => bail!("label store {} holds a record without value: {line}", file.display()),
             };
-            let session_id = json_text(session_id);
             let label = SessionLabel {
                 session_id: session_id.clone(),
-                value: record.get("value").map(json_text).unwrap_or_default(),
-                source: record.get("source").map(json_text).unwrap_or_default(),
-                ts: record
-                    .get("ts")
-                    .filter(|ts| !ts.is_null())
-                    .map(json_text)
-                    .unwrap_or_default(),
+                value: String::new(),
+                source: record_text(&record, "source", &file, line)?,
+                ts: record_text(&record, "ts", &file, line)?,
                 runtime: record
                     .get("runtime")
                     .filter(|runtime| !runtime.is_null())
                     .map(json_text),
                 text: String::new(),
             };
-            match latest.iter_mut().find(|seen| seen.session_id == session_id) {
+            match latest.iter_mut().find(|(seen, _)| seen.session_id == session_id) {
                 // Newest ts wins, ties to the later record: the store is
                 // append-only, so a second record with the same second is a
                 // correction of the first.
-                Some(current) if label.ts >= current.ts => *current = label,
+                Some(current) if label.ts >= current.0.ts => *current = (label, assigned),
                 Some(_) => {}
-                None => latest.push(label),
+                None => latest.push((label, assigned)),
             }
         }
     }
-    Ok(latest)
+    Ok(latest
+        .into_iter()
+        .filter_map(|(label, assigned)| assigned.map(|value| SessionLabel { value, ..label }))
+        .collect())
 }
 
 /// Run SQL over the lake views and return the rows.
@@ -221,6 +246,8 @@ pub fn query(sql: &str) -> Result<Vec<Value>> {
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stdout = stdout.trim();
+    // DuckDB's JSON mode, which the lake's query runs in, prints nothing for
+    // a result without rows.
     if stdout.is_empty() {
         return Ok(Vec::new());
     }
@@ -228,6 +255,15 @@ pub fn query(sql: &str) -> Result<Vec<Value>> {
         Value::Array(rows) => Ok(rows),
         _ => bail!("lake query did not return a JSON array"),
     }
+}
+
+/// A column the lake's own query selected, or the row refused naming it.
+pub(crate) fn row_field<'row>(row: &'row Value, column: &str, view: &str) -> Result<&'row Value> {
+    row.get(column).ok_or_else(|| {
+        Error(format!(
+            "the lake's {view} query answered a row without {column}: {row}"
+        ))
+    })
 }
 
 /// Every session known to the lake.
@@ -243,14 +279,13 @@ pub fn all_sessions() -> Result<Vec<SessionRow>> {
             .collect());
     }
     let rows = query("SELECT runtime, session_id FROM sessions ORDER BY last_ts DESC")?;
-    Ok(rows
-        .into_iter()
-        .map(|row| SessionRow {
-            session_id: row.get("session_id").map(json_text).unwrap_or_default(),
-            runtime: row
-                .get("runtime")
-                .filter(|runtime| !runtime.is_null())
-                .map(json_text),
+    rows.iter()
+        .map(|row| {
+            let runtime = row_field(row, "runtime", "sessions")?;
+            Ok(SessionRow {
+                session_id: json_text(row_field(row, "session_id", "sessions")?),
+                runtime: (!runtime.is_null()).then(|| json_text(runtime)),
+            })
         })
-        .collect())
+        .collect()
 }

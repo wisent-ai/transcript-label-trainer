@@ -22,7 +22,7 @@ use serde_json::Value;
 
 use crate::bail;
 use crate::placement::resolve_placement;
-use crate::util::{home_dir, json_text, json_truthy, Error, Result};
+use crate::util::{json_text, Error, Result};
 
 mod text_cap;
 mod session_texts;

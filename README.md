@@ -138,13 +138,13 @@ repository's.
   job's `eval-split.json` and, once `evaluate` has run, `judge.json`).
 - `LAKE_DATA` — lake data root. Overrides the Stado storage declaration, and
   is passed through to the lake CLI.
-- `TLT_LAKE_CLI` — override how the lake CLI is invoked, split on whitespace
-  into a command and its arguments. Default: `transcript-lake` on `PATH`,
-  falling back to
-  `~/Documents/CodingProjects/Wisent/transcript-lake/target/release/transcript-lake`
-  when the name is not found there.
+- `TLT_LAKE_CLI` — how the lake CLI is invoked, split on whitespace into a
+  command and its arguments. Unset, the trainer runs `transcript-lake` from
+  `PATH`; a lake that is not installed is refused naming the program, and a
+  set but empty value is refused rather than read as unset.
 - `TLT_DATASET_BUNDLE` — internal read-only dataset bundle used by a pinned
-  Stado job instead of reaching back into the source machine's lake.
+  Stado job instead of reaching back into the source machine's lake; set but
+  empty, it is refused.
 - `TLT_REPO_REF` — exact lowercase commit used for Stado's source checkout;
   normally resolved from this checkout automatically.
 

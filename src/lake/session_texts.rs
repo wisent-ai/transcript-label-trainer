@@ -61,19 +61,17 @@ pub fn session_texts(session_ids: &[String]) -> Result<HashMap<String, SessionTe
 
     let mut runtimes: HashMap<String, Option<String>> = HashMap::new();
     let mut parts: HashMap<String, Vec<String>> = HashMap::new();
-    for row in rows {
-        let session_id = row.get("session_id").map(json_text).unwrap_or_default();
-        // The runtime of the first row for a session wins, as it did when the
-        // Python used setdefault on the accumulator.
-        runtimes.entry(session_id.clone()).or_insert_with(|| {
-            row.get("runtime")
-                .filter(|runtime| !runtime.is_null())
-                .map(json_text)
-        });
+    for row in &rows {
+        let session_id = json_text(row_field(row, "session_id", "events")?);
+        let runtime = row_field(row, "runtime", "events")?;
+        // A session's runtime is the one its first row in time names.
+        runtimes
+            .entry(session_id.clone())
+            .or_insert_with(|| (!runtime.is_null()).then(|| json_text(runtime)));
         parts
             .entry(session_id)
             .or_default()
-            .push(row.get("text").map(json_text).unwrap_or_default());
+            .push(json_text(row_field(row, "text", "events")?));
     }
 
     let mut texts = HashMap::with_capacity(parts.len());
@@ -120,45 +118,21 @@ pub fn warn(message: &str) {
 
 /// Invoke the lake CLI with the resolved storage root in `LAKE_DATA`.
 pub(crate) fn run_lake(args: &[&str]) -> Result<Output> {
-    let cli = lake_cli();
+    let cli = lake_cli()?;
     let Some((program, prefix)) = cli.split_first() else {
         bail!("TLT_LAKE_CLI is set but names no command to run");
     };
     let storage_root = resolve_placement().storage_root;
-    Command::new(program)
-        .args(prefix)
-        .args(args)
-        .env("LAKE_DATA", &storage_root)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| Error(format!("could not run the lake CLI '{program}': {error}")))
+    stado_wait::output(
+        Command::new(program)
+            .args(prefix)
+            .args(args)
+            .env("LAKE_DATA", &storage_root)
+            .stdin(Stdio::null()),
+    )
+    .map_err(|error| Error(format!("could not run the lake CLI '{program}': {error}")))
 }
 
 pub(crate) fn quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
-}
-
-pub(crate) fn checkout_lake_binary() -> PathBuf {
-    home_dir()
-        .join("Documents")
-        .join("CodingProjects")
-        .join("Wisent")
-        .join("transcript-lake")
-        .join("target")
-        .join("release")
-        .join(LAKE_BINARY)
-}
-
-pub(crate) fn find_on_path(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|dir| dir.join(name))
-        .find(|candidate| is_executable(candidate))
-}
-
-pub(crate) fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path)
-        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
 }
