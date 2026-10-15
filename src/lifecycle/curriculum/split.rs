@@ -25,19 +25,28 @@ pub struct DaySplit<'a> {
     pub output_eval: &'a Path,
 }
 
-/// One split being built: its rows and how many carry each action.
+/// One split being built: its rows and the ids of the rows carrying each
+/// action.
 #[derive(Default)]
 struct Split {
     rows: Vec<Value>,
-    actions: BTreeMap<String, usize>,
+    actions: BTreeMap<String, Vec<String>>,
 }
 
 impl Split {
-    fn push(&mut self, mut row: Value, name: &str) -> Result<()> {
-        *self.actions.entry(action_of(&row)?).or_default() += 1;
+    fn push(&mut self, id: String, mut row: Value, name: &str) -> Result<()> {
+        self.actions.entry(action_of(&row)?).or_default().push(id);
         row["split"] = json!(name);
         self.rows.push(row);
         Ok(())
+    }
+
+    /// How many rows carry each action.
+    fn counts(&self) -> BTreeMap<&str, usize> {
+        self.actions
+            .iter()
+            .map(|(action, ids)| (action.as_str(), ids.len()))
+            .collect()
     }
 
     /// Refused when an action the schema declares has no row here.
@@ -105,7 +114,12 @@ fn merged(sources: &[&Path]) -> Result<BTreeMap<String, Value>> {
                 continue;
             }
             let row: Value = serde_json::from_str(&line)?;
-            let id = row["id"].as_str().unwrap_or_default().to_string();
+            let id = row["id"].as_str().map(str::to_string).ok_or_else(|| {
+                Error(format!(
+                    "{}: a reviewed row has no string id: {line}",
+                    source.display()
+                ))
+            })?;
             match by_id.get(&id) {
                 Some(previous) if previous != &row => {
                     return Err(Error(format!("conflicting reviewed rows for {id}")));
@@ -123,11 +137,11 @@ fn merged(sources: &[&Path]) -> Result<BTreeMap<String, Value>> {
 /// Split the merged rows by day, write both splits and answer the counts.
 pub fn split_by_day(run: &DaySplit) -> Result<Value> {
     let (mut train, mut eval) = (Split::default(), Split::default());
-    for (_, row) in merged(&[run.train, run.eval])? {
+    for (id, row) in merged(&[run.train, run.eval])? {
         if row["split_day"] == run.eval_day {
-            eval.push(row, "eval")?;
+            eval.push(id, row, "eval")?;
         } else {
-            train.push(row, "train")?;
+            train.push(id, row, "train")?;
         }
     }
     let actions = declared_actions()?;
@@ -136,10 +150,10 @@ pub fn split_by_day(run: &DaySplit) -> Result<Value> {
     write_split(run.output_train, &train.rows)?;
     write_split(run.output_eval, &eval.rows)?;
     Ok(json!({
-        "eval_actions": eval.actions,
+        "eval_actions": eval.counts(),
         "eval_day": run.eval_day,
         "eval_rows": eval.rows.len(),
-        "train_actions": train.actions,
+        "train_actions": train.counts(),
         "train_rows": train.rows.len(),
     }))
 }

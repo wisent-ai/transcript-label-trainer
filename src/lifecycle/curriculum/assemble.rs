@@ -64,13 +64,13 @@ fn reviewed(mut value: Value) -> Result<(Value, String)> {
         .iter()
         .filter(|message| message.role == "assistant")
         .collect();
-    if answers.len() != 1 {
+    let [answer] = answers.as_slice() else {
         return Err(Error(format!(
             "{} must contain one reviewed assistant decision",
             row.id
         )));
-    }
-    let decision = validate_decision(&row, parse_json_object(&answers[0].content)?)?;
+    };
+    let decision = validate_decision(&row, parse_json_object(&answer.content)?)?;
     let content = serde_json::to_string(&decision)?;
     for message in value["messages"].as_array_mut().into_iter().flatten() {
         if message["role"] == "assistant" {
@@ -90,7 +90,9 @@ fn read_reviewed(path: &Path) -> Result<Vec<(Value, String)>> {
         }
         let value: Value = serde_json::from_str(&line)
             .map_err(|error| Error(format!("{}: unreadable row: {error}", path.display())))?;
-        rows.push(reviewed(value)?);
+        rows.push(
+            reviewed(value).map_err(|error| Error(format!("{}: {error}", path.display())))?,
+        );
     }
     Ok(rows)
 }
@@ -99,28 +101,31 @@ fn read_reviewed(path: &Path) -> Result<Vec<(Value, String)>> {
 /// the disagreements counted by `intended->reviewed`.
 fn accepted(rows: Vec<(Value, String)>) -> (Vec<(Value, String)>, BTreeMap<String, usize>) {
     let mut kept = Vec::new();
-    let mut rejected: BTreeMap<String, usize> = BTreeMap::new();
+    let mut rejected = Vec::new();
     for (row, action) in rows {
         let intended = row
             .pointer("/metadata/intended_action")
             .and_then(Value::as_str)
             .map(str::to_string);
-        if intended.as_deref() == Some(action.as_str()) {
-            kept.push((row, action));
-        } else {
-            let from = intended.unwrap_or_else(|| "none stated".to_string());
-            *rejected.entry(format!("{from}->{action}")).or_default() += 1;
+        match intended {
+            Some(intended) if intended == action => kept.push((row, action)),
+            Some(intended) => rejected.push(format!("{intended}->{action}")),
+            None => rejected.push(format!("none stated->{action}")),
         }
     }
-    (kept, rejected)
+    (kept, tally(&rejected))
+}
+
+/// How many times each key occurs.
+fn tally(keys: &[String]) -> BTreeMap<String, usize> {
+    keys.iter()
+        .map(|key| (key.clone(), keys.iter().filter(|other| *other == key).count()))
+        .collect()
 }
 
 fn action_counts(rows: &[(Value, String)]) -> BTreeMap<String, usize> {
-    let mut counts = BTreeMap::new();
-    for (_, action) in rows {
-        *counts.entry(action.clone()).or_default() += 1;
-    }
-    counts
+    let actions: Vec<String> = rows.iter().map(|(_, action)| action.clone()).collect();
+    tally(&actions)
 }
 
 fn write_rows(path: &Path, rows: &[(Value, String)]) -> Result<()> {
@@ -150,11 +155,15 @@ fn unique_ids(rows: &[(Value, String)], split: &str) -> Result<HashSet<String>> 
         let id = row
             .get("id")
             .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        if !seen.insert(id) {
+            .map(str::to_string)
+            .ok_or_else(|| {
+                Error(format!(
+                    "assembled {split} split holds a row without a string id: {row}"
+                ))
+            })?;
+        if !seen.insert(id.clone()) {
             return Err(Error(format!(
-                "assembled {split} split contains duplicate ids"
+                "assembled {split} split contains the id {id} more than once"
             )));
         }
     }
@@ -169,11 +178,13 @@ pub fn assemble_curriculum(run: &CurriculumAssembly) -> Result<Value> {
     let (train_curriculum, train_rejected) = accepted(read_reviewed(run.reviewed_train)?);
     let (eval_curriculum, eval_rejected) = accepted(read_reviewed(run.reviewed_eval)?);
 
-    let eval_counts = action_counts(&eval_curriculum);
     let missing: BTreeMap<&str, usize> = actions
         .iter()
         .filter_map(|action| {
-            let have = eval_counts.get(action).copied().unwrap_or_default();
+            let have = eval_curriculum
+                .iter()
+                .filter(|(_, reviewed)| reviewed == action)
+                .count();
             (have < run.minimum_eval_per_action)
                 .then(|| (action.as_str(), run.minimum_eval_per_action - have))
         })

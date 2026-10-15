@@ -54,6 +54,8 @@ To hold a different day out for evaluation, `transcript-label-trainer lifecycle-
 new-train.jsonl --output-eval new-eval.jsonl` merges the reviewed rows by id (refusing one
 id with two different rows), puts the rows of that `split_day` into evaluation and the rest
 into training, and refuses a split that lacks an action the output schema declares.
+Both commands refuse a reviewed row without a string `id`, naming the file or split it
+came from, rather than merging such rows or counting them under an empty id.
 
 The same reviewed rows are Ster labelled decisions with `transcript-label-trainer
 lifecycle-decisions --rows reviewed-train.jsonl --output lifecycle-decisions.json`: each
