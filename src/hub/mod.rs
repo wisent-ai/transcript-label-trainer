@@ -52,26 +52,32 @@ impl Hub {
         if token.trim().is_empty() {
             return Err(Error("HF_TOKEN is empty".into()));
         }
+        // HF_ENDPOINT and HF_BIN are huggingface_hub's own variables; unset, the
+        // Hub and its CLI use the values that library documents.
         let endpoint = match std::env::var("HF_ENDPOINT") {
             Ok(value) => value,
-            Err(std::env::VarError::NotPresent) => "https://huggingface.co".to_string(),
+            Err(std::env::VarError::NotPresent) => "https://huggingface.co".to_string(), // https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfendpoint
             Err(error) => return Err(Error(format!("cannot read HF_ENDPOINT: {error}"))),
         };
         let endpoint = Url::parse(&endpoint)
             .map_err(|error| Error(format!("invalid HF_ENDPOINT: {error}")))?;
-        if !matches!(endpoint.scheme(), "http" | "https")
-            || endpoint.query().is_some()
-            || endpoint.fragment().is_some()
-        {
-            return Err(Error("HF_ENDPOINT must be an HTTP base URL without a query or fragment".into()));
+        if endpoint.query().is_some() || endpoint.fragment().is_some() {
+            return Err(Error("HF_ENDPOINT must be a base URL without a query or fragment".into()));
         }
+        let executable = match std::env::var_os("HF_BIN") {
+            Some(value) if value.is_empty() => {
+                return Err(Error("HF_BIN is set but empty; name the hf executable or unset it".into()));
+            }
+            Some(value) => value,
+            None => OsString::from("hf"), // https://huggingface.co/docs/huggingface_hub/guides/cli
+        };
         let client = Client::builder()
             .build()
             .map_err(|error| Error(format!("cannot initialize Hugging Face client: {error}")))?;
         Ok(Self {
             client,
             endpoint,
-            executable: std::env::var_os("HF_BIN").unwrap_or_else(|| "hf".into()),
+            executable,
             token,
         })
     }
@@ -101,11 +107,15 @@ impl Hub {
         if files {
             url.query_pairs_mut().append_pair("blobs", "true");
         }
-        let response = self.client.get(url).bearer_auth(self.token.trim()).send()
+        let response = stado_wait::request_blocking(self.client.get(url).bearer_auth(self.token.trim()))
             .map_err(|error| Error(format!("Hugging Face model_info {repo} failed: {error}")))?;
         let status = response.status();
-        let repository_missing = response.headers().get("x-error-code")
-            .and_then(|value| value.to_str().ok()) == Some("RepoNotFound");
+        let repository_missing = match response.headers().get("x-error-code") {
+            None => false,
+            Some(code) => code.to_str().map_err(|error| Error(format!(
+                "Hugging Face model_info {repo}: HTTP {status} carries an x-error-code that is not text: {error}"
+            )))? == "RepoNotFound",
+        };
         if status == StatusCode::NOT_FOUND || (status == StatusCode::UNAUTHORIZED && repository_missing) {
             return Ok(None);
         }
@@ -136,7 +146,7 @@ impl Hub {
                 .map_err(|_| Error("HF_ENDPOINT cannot hold file paths".into()))?
                 .pop_if_empty().extend(repo.split('/'))
                 .extend(["resolve", revision]).extend(file.rfilename.split('/'));
-            let mut response = self.client.get(url).bearer_auth(self.token.trim()).send()
+            let mut response = stado_wait::request_blocking(self.client.get(url).bearer_auth(self.token.trim()))
                 .map_err(|error| Error(format!("cannot read published file {}: {error}", file.rfilename)))?;
             let status = response.status();
             if !status.is_success() {
@@ -146,8 +156,13 @@ impl Hub {
                 )))?;
                 return Err(Error(format!("cannot read published file {}: HTTP {status}: {detail}", file.rfilename)));
             }
-            let signature = Signature::stream(&mut response)
-                .map_err(|error| Error(format!("cannot hash published file {}: {error}", file.rfilename)))?;
+            let signature = stado_wait::blocking(
+                stado_wait::Kind::Network,
+                format!("hashing published file {repo}@{revision}/{}", file.rfilename),
+                self.endpoint.as_str(),
+                || Signature::stream(&mut response),
+            )
+            .map_err(|error| Error(format!("cannot hash published file {}: {error}", file.rfilename)))?;
             if signature.size != expected.size {
                 return Err(Error(format!("published file {} returned {} bytes, expected {}",
                     file.rfilename, signature.size, expected.size)));
@@ -171,7 +186,7 @@ impl Hub {
     }
 
     fn execute(operation: &str, repo: &str, mut command: Command) -> Result<()> {
-        let output = command.output()
+        let output = stado_wait::output(&mut command)
             .map_err(|error| Error(format!("cannot execute hf {operation} for {repo}: {error}")))?;
         if !output.status.success() {
             return Err(Error(format!(
