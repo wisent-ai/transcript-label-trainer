@@ -1,6 +1,7 @@
 //! Writing an output file whole: the bytes go to a sibling file that is
 //! renamed into place, so a reader never sees half of them. Every failure
-//! names the path and the step it failed at.
+//! names the path and the step it failed at, and a failed write removes the
+//! sibling it left, or says that it could not.
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,18 +32,32 @@ pub(crate) fn write_whole(output: &Path, bytes: &[u8]) -> Result<()> {
         })?;
     }
     let temporary = sibling(output);
-    fs::write(&temporary, bytes).map_err(|error| {
-        Error(format!(
-            "cannot write {} on the way to {}: {error}",
-            temporary.display(),
-            output.display()
-        ))
-    })?;
-    fs::rename(&temporary, output).map_err(|error| {
-        Error(format!(
-            "cannot move {} into place as {}: {error}",
-            temporary.display(),
-            output.display()
-        ))
-    })
+    let written = fs::write(&temporary, bytes)
+        .map_err(|error| {
+            Error(format!(
+                "cannot write {} on the way to {}: {error}",
+                temporary.display(),
+                output.display()
+            ))
+        })
+        .and_then(|()| {
+            fs::rename(&temporary, output).map_err(|error| {
+                Error(format!(
+                    "cannot move {} into place as {}: {error}",
+                    temporary.display(),
+                    output.display()
+                ))
+            })
+        });
+    match written {
+        Ok(()) => Ok(()),
+        Err(error) => Err(match fs::remove_file(&temporary) {
+            Ok(()) => error,
+            Err(cleanup) if cleanup.kind() == std::io::ErrorKind::NotFound => error,
+            Err(cleanup) => Error(format!(
+                "{error}; {} was left behind and cannot be removed: {cleanup}",
+                temporary.display()
+            )),
+        }),
+    }
 }
