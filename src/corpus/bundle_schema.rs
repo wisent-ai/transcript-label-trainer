@@ -71,7 +71,7 @@ pub fn adopt(path: &Path) -> Result<Value> {
             source_path.display()
         )));
     }
-    let raw = fs::read(&source_path)?;
+    let raw = crate::util::read_bytes(&source_path)?;
     Ok(adopt_raw(&raw, source_path, None)?)
 }
 
@@ -115,7 +115,7 @@ pub(crate) fn adopt_raw(
     let bundle_path = root.join(format!("{sha256}.json"));
     let already_present = bundle_path.exists();
     if already_present {
-        if fs::read(&bundle_path)? != canonical {
+        if crate::util::read_bytes(&bundle_path)? != canonical {
             return Err(AdoptRefusal::IdentityConflict(Error(format!(
                 "corpus identity conflict at {}; no corpus state was changed",
                 bundle_path.display()
@@ -212,7 +212,10 @@ pub fn selected_bundle_path() -> Result<Option<PathBuf>> {
             selected.bundle_path.display()
         )));
     }
-    let digest = format!("{:x}", Sha256::digest(fs::read(&selected.bundle_path)?));
+    let digest = format!(
+        "{:x}",
+        Sha256::digest(crate::util::read_bytes(&selected.bundle_path)?)
+    );
     if digest != selected.sha256 {
         return Err(Error(format!(
             "selected corpus bundle changed after adoption: {}",
