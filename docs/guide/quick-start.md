@@ -69,9 +69,12 @@ Identical content is idempotent and reports every row unchanged. A different
 valid corpus is preserved beside earlier data and becomes selected. Use
 `--skip-corpus` to keep an empty usable trainer and adopt later.
 
-Progress is recorded per operator per machine under
-`~/.local/state/transcript-label-trainer/onboarding.json`, outside the training
-root and outside the lake; `--reset` replays the journey. The journey continues
+Progress is recorded per operator (`USER`) per machine (`hostname`) under
+`$XDG_STATE_HOME/transcript-label-trainer/onboarding.json`, which is
+`~/.local/state/transcript-label-trainer/onboarding.json` when
+`XDG_STATE_HOME` is unset, outside the training root and outside the lake; an
+unset `USER`, a `hostname` that fails, or neither `XDG_STATE_HOME` nor `HOME`
+is refused by name. `--reset` replays the journey. The journey continues
 through training to real label suggestions, which are recorded by `infer` only
 when emitted.
 

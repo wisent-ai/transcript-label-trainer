@@ -15,20 +15,26 @@ pub(crate) fn string_field(value: &Value, key: &str) -> Option<String> {
 /// Recorded progress for this machine, or a fresh attempt. `reset` discards
 /// what was recorded rather than resuming it, which is what replay means here:
 /// the walk starts again at the journey's entry screen.
-pub(crate) fn load_or_start_state(definition: &Value, revision: &str, reset: bool) -> Result<Value> {
+pub(crate) fn load_or_start_state(
+    definition: &Value,
+    revision: &str,
+    reset: bool,
+) -> Result<Value> {
     if !reset {
         if let Some(existing) = read_state(definition)? {
             return Ok(existing);
         }
     }
+    let subject = subject_hash()?;
+    let attempt = attempt_id(&subject);
     let state = json!({
         "schema": STATE_SCHEMA,
         "product_id": PRODUCT_ID,
         "journey_id": JOURNEY_ID,
         "journey_version": definition.get("journey_version"),
         "source_revision": definition.get("source_revision"),
-        "subject_hash": subject_hash(),
-        "attempt_id": attempt_id(),
+        "subject_hash": subject,
+        "attempt_id": attempt,
         "started_at": now_iso(),
         "current_screen_id": definition.get("entry_screen_id"),
         "status": "in_progress",
@@ -40,7 +46,7 @@ pub(crate) fn load_or_start_state(definition: &Value, revision: &str, reset: boo
 
 /// What is on disk for this journey, or nothing usable.
 pub(crate) fn read_state(definition: &Value) -> Result<Option<Value>> {
-    let path = state_path();
+    let path = state_path()?;
     if !path.exists() {
         return Ok(None);
     }
@@ -73,7 +79,7 @@ pub(crate) fn recorded_state(definition: &Value) -> Result<Value> {
 }
 
 pub(crate) fn save_state(state: &Value) -> Result<()> {
-    let path = state_path();
+    let path = state_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -84,54 +90,72 @@ pub(crate) fn save_state(state: &Value) -> Result<()> {
 }
 
 /// Progress belongs to this operator on this machine, not to a training root:
-/// a second `--training-root` is still the same first use.
-pub(crate) fn subject_hash() -> String {
-    let user = std::env::var("USER").unwrap_or_else(|_| "unknown-user".to_string());
-    format!(
+/// a second `--training-root` is still the same first use. The operator is the
+/// account `USER` names; without it the progress has no owner and is refused.
+pub(crate) fn subject_hash() -> Result<String> {
+    let user = match std::env::var("USER") {
+        Ok(user) if !user.trim().is_empty() => user,
+        Ok(_) => return Err(Error("USER is set but empty; onboarding progress belongs to an account and needs its name".into())),
+        Err(error) => return Err(Error(format!("USER cannot be read ({error}); onboarding progress belongs to an account and needs its name"))),
+    };
+    Ok(format!(
         "{:x}",
         Sha256::digest(
             format!(
                 "transcript-label-trainer-onboarding\0{user}\0{}",
-                machine_name()
+                machine_name()?
             )
             .as_bytes()
         )
-    )
+    ))
 }
 
-/// This attempt, distinguishable from a later replay of the same journey.
-pub(crate) fn attempt_id() -> String {
-    let digest = Sha256::digest(
-        format!(
-            "{}\0{}\0{}",
-            subject_hash(),
-            now_iso(),
-            std::process::id()
-        )
-        .as_bytes(),
-    );
-    format!("{digest:x}")[..32].to_string()
+/// This attempt, distinguishable from a later replay of the same journey: the
+/// whole SHA-256 of the subject, the start instant and the process.
+pub(crate) fn attempt_id(subject: &str) -> String {
+    let digest =
+        Sha256::digest(format!("{subject}\0{}\0{}", now_iso(), std::process::id()).as_bytes());
+    format!("{digest:x}")
 }
 
 /// Local host name. The lake and Stado both identify this machine by it, and
-/// there is no crate here that answers the question.
-pub(crate) fn machine_name() -> String {
-    Command::new("hostname")
-        .output()
-        .ok()
-        .filter(|out| out.status.success())
-        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "unknown-host".to_string())
+/// there is no crate here that answers the question, so `hostname` is asked
+/// and its refusal is reported in its own words.
+pub(crate) fn machine_name() -> Result<String> {
+    let answer = stado_wait::output(&mut Command::new("hostname"))
+        .map_err(|error| Error(format!("could not run hostname: {error}")))?;
+    if !answer.status.success() {
+        return Err(Error(format!(
+            "hostname failed ({}): {}",
+            answer.status,
+            String::from_utf8_lossy(&answer.stderr).trim()
+        )));
+    }
+    let name = String::from_utf8_lossy(&answer.stdout).trim().to_string();
+    if name.is_empty() {
+        return Err(Error("hostname answered with no name".into()));
+    }
+    Ok(name)
 }
 
-pub(crate) fn state_path() -> PathBuf {
-    std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| home_dir().join(".local").join("state"))
-        .join(PRODUCT_ID)
-        .join("onboarding.json")
+/// Where this machine's onboarding progress is kept: under the XDG state
+/// directory, which is `$XDG_STATE_HOME`, or `$HOME/.local/state` when that is
+/// unset or empty, as the XDG Base Directory specification defines
+/// (https://specifications.freedesktop.org/basedir-spec/latest/).
+pub(crate) fn state_path() -> Result<PathBuf> {
+    let state_home = match std::env::var_os("XDG_STATE_HOME") {
+        Some(path) if !path.is_empty() => PathBuf::from(path),
+        _ => match std::env::var_os("HOME") {
+            Some(home) if !home.is_empty() => PathBuf::from(home).join(".local").join("state"),
+            _ => {
+                return Err(Error(
+                    "neither XDG_STATE_HOME nor HOME names a directory for onboarding progress"
+                        .into(),
+                ))
+            }
+        },
+    };
+    Ok(state_home.join(PRODUCT_ID).join("onboarding.json"))
 }
 
 pub(crate) fn wait_for_enter(unattended: bool, prompt: &str) -> Result<()> {

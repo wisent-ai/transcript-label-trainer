@@ -99,7 +99,7 @@ impl Report {
     pub(crate) fn emit(self) -> Result<i32> {
         if !self.json {
             println!("\nstatus: {}", self.status);
-            println!("state: {}", state_path().display());
+            println!("state: {}", state_path()?.display());
             println!("next: {}", self.next);
             return Ok(crate::cli::EXIT_SUCCESS);
         }
@@ -112,7 +112,7 @@ impl Report {
                 "status": self.status,
                 "current_screen_id": self.current_screen_id,
                 "first_success_fact": FIRST_SUCCESS_FACT,
-                "state_path": state_path().display().to_string(),
+                "state_path": state_path()?.display().to_string(),
                 "reset": self.reset,
                 "steps": self.steps,
                 "next": self.next,
