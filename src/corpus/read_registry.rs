@@ -37,8 +37,20 @@ pub(crate) fn read_registry(path: &Path) -> Result<Option<CorpusRegistry>> {
     Ok(Some(registry))
 }
 
+/// The directory a durable write syncs after it writes `path`; a path that
+/// names no directory has nothing to sync and is refused.
+fn parent_of(path: &Path) -> Result<&Path> {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => Ok(parent),
+        _ => Err(Error(format!(
+            "{} names no directory to write it durably into",
+            path.display()
+        ))),
+    }
+}
+
 pub(crate) fn durable_create(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = parent_of(path)?;
     fs::create_dir_all(parent)?;
     let mut file = fs::OpenOptions::new()
         .create_new(true)
@@ -51,7 +63,7 @@ pub(crate) fn durable_create(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 pub(crate) fn durable_replace(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = parent_of(path)?;
     fs::create_dir_all(parent)?;
     let temporary = parent.join(format!(".registry.{}.tmp", std::process::id()));
     let result = (|| -> Result<()> {
@@ -68,8 +80,17 @@ pub(crate) fn durable_replace(path: &Path, bytes: &[u8]) -> Result<()> {
         fs::File::open(parent)?.sync_all()?;
         Ok(())
     })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
+    // The write's own failure is what the caller is told; a temporary file it
+    // left behind that cannot be removed is said beside it.
+    if let Err(error) = &result {
+        if let Err(cleanup) = fs::remove_file(&temporary) {
+            if cleanup.kind() != std::io::ErrorKind::NotFound {
+                return Err(Error(format!(
+                    "{error}; {} was left behind and cannot be removed: {cleanup}",
+                    temporary.display()
+                )));
+            }
+        }
     }
     result
 }
