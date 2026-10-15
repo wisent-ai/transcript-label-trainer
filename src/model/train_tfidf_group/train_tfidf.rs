@@ -11,9 +11,8 @@ pub(crate) fn train_tfidf(plan: &Plan, settings: &jobs::TfidfTraining) -> Result
     // Stratified folds need every class in every fold, so the smallest class
     // decides how many folds there can be; a class of one member cannot be
     // both trained on and tested, and then no cross-validated accuracy exists.
-    let folds = counts.values().copied().min().filter(|members| *members > members.signum());
+    let folds = counts.values().copied().min().filter(|members| *members >= 2); // stratified k-fold needs at least two splits: https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.StratifiedKFold.html
     let cv_accuracy = folds.map(|folds| round4(cross_val_accuracy(&texts, &values, folds, settings)));
-    let cv_folds = folds.unwrap_or_default();
 
     let model = TfidfModel::fit(&texts, &values, settings);
 
@@ -35,7 +34,13 @@ pub(crate) fn train_tfidf(plan: &Plan, settings: &jobs::TfidfTraining) -> Result
             None => Value::Null,
         },
     );
-    metrics.insert("cv_folds".to_string(), json!(cv_folds));
+    metrics.insert(
+        "cv_folds".to_string(),
+        match folds {
+            Some(folds) => json!(folds),
+            None => Value::Null,
+        },
+    );
     metrics.insert("hyperparameters".to_string(), json!(settings));
     metrics.insert("eval_split".to_string(), plan.split.frozen.clone());
     metrics.insert(
@@ -111,19 +116,16 @@ pub(crate) fn train_hf(
         &counts,
     );
     // The backend's own fragment, with `eval_split` slotted in ahead of
-    // `model_path` so the key order matches what the Python build wrote.
-    let mut backend_model_path = None;
+    // `model_path`; the path is the directory the backend trained into.
     for (key, value) in trained.metrics {
-        if key == "model_path" {
-            backend_model_path = Some(value);
-        } else {
+        if key != "model_path" {
             metrics.insert(key, value);
         }
     }
     metrics.insert("eval_split".to_string(), plan.split.frozen.clone());
     metrics.insert(
         "model_path".to_string(),
-        backend_model_path.unwrap_or_else(|| json!(trained.dir.display().to_string())),
+        json!(trained.dir.display().to_string()),
     );
 
     let (holdout_texts, holdout_values) = side(plan, &plan.split.holdout_index);
@@ -186,98 +188,4 @@ pub fn train(
             Err(format!("{model_id} is fine-tuned with HuggingFace settings, not tfidf-logreg settings").into())
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// Declarative training jobs (run command)
-// ---------------------------------------------------------------------------
-
-/// A label record's timestamp as a comparable instant. An empty or
-/// unparseable `ts` sorts before every real one, which is what excludes it
-/// from a `since` window — the Python original did the same with
-/// `datetime.min`.
-pub(crate) fn label_instant(ts: &str) -> (i64, u32) {
-    if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(ts) {
-        return (parsed.timestamp(), parsed.timestamp_subsec_nanos());
-    }
-    // A timestamp without a zone is read as UTC rather than crashing the run.
-    for format in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"] {
-        if let Ok(parsed) = chrono::NaiveDateTime::parse_from_str(ts, format) {
-            let at = parsed.and_utc();
-            return (at.timestamp(), at.timestamp_subsec_nanos());
-        }
-    }
-    if let Ok(parsed) = chrono::NaiveDate::parse_from_str(ts, "%Y-%m-%d") {
-        if let Some(at) = parsed.and_hms_opt(0, 0, 0) {
-            let at = at.and_utc();
-            return (at.timestamp(), at.timestamp_subsec_nanos());
-        }
-    }
-    (i64::MIN, 0)
-}
-
-/// Label records matching an evaluator and scope filters.
-pub fn select_labels(evaluator: &str, scope: &jobs::Scope) -> Result<Vec<lake::SessionLabel>> {
-    let labels = lake::load_labels(&scope.aspect)?;
-    let since = scope.since.as_deref().map(label_instant);
-    Ok(labels
-        .into_iter()
-        .filter(|record| record.source.trim() == evaluator)
-        .filter(|record| match &scope.runtimes {
-            Some(allowed) => record
-                .runtime
-                .as_deref()
-                .is_some_and(|runtime| allowed.iter().any(|value| value == runtime)),
-            None => true,
-        })
-        .filter(|record| match since {
-            Some(since) => label_instant(&record.ts) >= since,
-            None => true,
-        })
-        .filter(|record| match &scope.values {
-            Some(allowed) => allowed.iter().any(|value| value == &record.value),
-            None => true,
-        })
-        .collect())
-}
-
-pub(crate) fn job_scope_json(scope: &jobs::Scope) -> Value {
-    let mut object = Map::new();
-    object.insert("aspect".to_string(), json!(scope.aspect));
-    object.insert("runtimes".to_string(), json!(scope.runtimes));
-    object.insert("since".to_string(), json!(scope.since));
-    object.insert("values".to_string(), json!(scope.values));
-    object.insert("min_text_chars".to_string(), json!(scope.min_text_chars));
-    Value::Object(object)
-}
-
-/// The inverse of [`job_scope_json`], for the scope an artifact recorded.
-/// `jobs::Scope` is deliberately not a serde type — it exists only as the
-/// output of the spec validator — so the artifact's copy is read back field
-/// by field here, and a field the artifact does not carry means "unset",
-/// exactly as an absent key did in the Python spec.
-pub(crate) fn scope_from_json(scope: &Value) -> Result<jobs::Scope> {
-    let string_list = |key: &str| -> Option<Vec<String>> {
-        let items: Vec<String> = scope
-            .get(key)?
-            .as_array()?
-            .iter()
-            .filter_map(|item| item.as_str().map(str::to_string))
-            .collect();
-        (!items.is_empty()).then_some(items)
-    };
-    let aspect = scope
-        .get("aspect")
-        .and_then(Value::as_str)
-        .ok_or_else(|| Error("artifact metrics carry a 'scope' without an 'aspect'".to_string()))?;
-    Ok(jobs::Scope {
-        aspect: aspect.to_string(),
-        runtimes: string_list("runtimes"),
-        since: scope
-            .get("since")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        values: string_list("values"),
-        min_text_chars: scope.get("min_text_chars").and_then(Value::as_u64),
-    })
 }
