@@ -163,7 +163,7 @@ pub(crate) fn remote_command(job: &Job, dataset_uri: &str, spec_uri: &str, key: 
     };
     format!(
         "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/tlt-{key}\"; mkdir -p \"$work\"; \
-         stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
+         stado=\"${{STADO_BIN:?Stado exports STADO_BIN to every job it runs, and this job has none}}\"; \
          \"$stado\" storage get '{dataset_uri}' \"$work/dataset.json\"; \
          \"$stado\" storage get '{spec_uri}' \"$work/job.yaml\"; \
          export TLT_DATASET_BUNDLE=\"$work/dataset.json\"; \

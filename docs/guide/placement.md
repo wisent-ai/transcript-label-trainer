@@ -54,7 +54,11 @@ artifact.
 Every Stado command the trainer runs, here and for releases, lifecycle and
 goal jobs, uses the program `TLT_STADO_BIN` names, or `stado` on `PATH` when it
 is unset; a set but empty or non-UTF-8 value is refused with the variable's
-name.
+name. Inside a job on the training host, the script fetches its inputs with
+the Stado that runs the job, which Stado exports to every job as `STADO_BIN`;
+a job that has none stops before fetching anything, its shell reporting
+`STADO_BIN: Stado exports STADO_BIN to every job it runs, and this job has none`,
+rather than guessing a Stado under `$HOME`.
 
 The input-staging workspace is keyed by the full submitted run identity:
 dataset, job specification and exact trainer source revision. Repeating the

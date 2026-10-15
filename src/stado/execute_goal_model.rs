@@ -26,7 +26,7 @@ pub fn execute_goal_model(
     upload(&stado, &dataset_uri, dataset_path, "application/x-ndjson")?;
     let command = format!(
         "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/jeden-goal-{run_key}\"; \
-         mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
+         mkdir -p \"$work\"; stado=\"${{STADO_BIN:?Stado exports STADO_BIN to every job it runs, and this job has none}}\"; \
          \"$stado\" storage get '{dataset_uri}' \"$work/reviewed-goals.jsonl\"; \
          export GOAL_MODEL_WORK_DIR=\"$work\"; export GOAL_STER_OPTIONS={}; \
          ./training/goal-model/run.sh \"$work/reviewed-goals.jsonl\"",
@@ -124,7 +124,7 @@ pub fn execute_lifecycle_model(
     upload(&stado, &eval_uri, eval_path, "application/x-ndjson")?;
     let command = format!(
         "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/oko-lifecycle-{run_key}\"; \
-         mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
+         mkdir -p \"$work\"; stado=\"${{STADO_BIN:?Stado exports STADO_BIN to every job it runs, and this job has none}}\"; \
          \"$stado\" storage get '{train_uri}' \"$work/reviewed-train.jsonl\"; \
          \"$stado\" storage get '{eval_uri}' \"$work/reviewed-eval.jsonl\"; \
          export BRAMA_URL={brama_url}; export LIFECYCLE_STER_OPTIONS={ster_options}; \
@@ -225,7 +225,7 @@ pub fn execute_humanizer_model(
     let hf_repo = shell_quote(hf_repo);
     let command = format!(
         "set -euo pipefail; work={work_root}/echo-humanizer-{run_key}; \
-         mkdir -p \"$work\"; stado=\"${{STADO_BIN:-$HOME/.stado/bin/stado}}\"; \
+         mkdir -p \"$work\"; stado=\"${{STADO_BIN:?Stado exports STADO_BIN to every job it runs, and this job has none}}\"; \
          \"$stado\" storage get '{targets_uri}' \"$work/targets.jsonl\"; \
          HUMANIZER_HF_REPO={hf_repo} HUMANIZER_WORK_DIR=\"$work\" \
          HUMANIZER_STER_OPTIONS={} \
