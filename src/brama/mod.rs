@@ -30,7 +30,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 
 use crate::bail;
 use crate::util::{Error, Result};

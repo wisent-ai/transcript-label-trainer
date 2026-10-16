@@ -49,7 +49,7 @@ impl BramaClient {
         let body_hash = if body.is_empty() {
             String::new()
         } else {
-            hex::encode(Sha256::digest(body.as_bytes()))
+            crate::util::sha256_hex(body)
         };
         let mut mac =
             <Hmac<Sha256> as Mac>::new_from_slice(self.secret.as_bytes()).map_err(|error| {
