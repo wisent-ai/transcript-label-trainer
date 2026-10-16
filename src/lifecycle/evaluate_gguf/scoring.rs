@@ -1,85 +1,118 @@
 //! The evaluation run: every row asked on one worker per slot the server
 //! chose, one progress line per finished row, then the predictions file and
 //! the metrics, which report each measured rate and leave out a rate with
-//! nothing to measure.
+//! nothing to measure. Both files are written whole, so a reader never sees
+//! half of either.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::num::NonZeroUsize;
+use std::sync::Mutex;
 
 use serde_json::json;
 
 use super::*;
 
+/// `count` of `total` as a rate; null when there was nothing to measure.
 fn rate(count: usize, total: usize) -> Value {
-    if total == 0 { Value::Null } else { json!(count as f64 / total as f64) }
+    match NonZeroUsize::new(total) {
+        Some(total) => json!(count as f64 / total.get() as f64),
+        None => Value::Null,
+    }
+}
+
+/// What one row's answer measured against its target.
+struct Scored {
+    /// The action the target took, which groups the row in `by_action`.
+    action: String,
+    valid: bool,
+    action_correct: bool,
+    goal_ref_correct: bool,
+    evidence_correct: bool,
+    joint_correct: bool,
+    /// For a prediction that declared an explicit completion, whether it
+    /// took the target's action.
+    finish: Option<bool>,
+}
+
+/// How many of `rows` `hit` holds for.
+fn counted<'a>(rows: impl IntoIterator<Item = &'a Scored>, hit: impl Fn(&Scored) -> bool) -> usize {
+    rows.into_iter().filter(|row| hit(row)).count()
 }
 
 pub fn evaluate_gguf(run: &GgufEvaluation) -> Result<Value> {
-    for (what, path) in [("model", &run.model), ("dataset", &run.dataset), ("server", &run.server), ("output schema", &run.output_schema)] {
+    for (what, path) in [
+        ("model", &run.model),
+        ("dataset", &run.dataset),
+        ("server", &run.server),
+        ("output schema", &run.output_schema),
+    ] {
         if !path.is_file() {
-            return Err(Error(format!("the GGUF evaluation {what} {} does not exist", path.display())));
+            return Err(Error(format!(
+                "the GGUF evaluation {what} {} does not exist",
+                path.display()
+            )));
         }
     }
-    let schema: Value = serde_json::from_str(&fs::read_to_string(&run.output_schema)?)?;
+    let schema: Value = serde_json::from_str(&crate::util::read_text(&run.output_schema)?)?;
     let rows = read_rows(&run.dataset)?;
     if rows.is_empty() {
-        return Err(Error(format!("{} holds no evaluation row", run.dataset.display())));
+        return Err(Error(format!(
+            "{} holds no evaluation row",
+            run.dataset.display()
+        )));
     }
-    let targets = rows.iter().map(|row| target(row, &schema)).collect::<Result<Vec<_>>>()?;
+    let targets = rows
+        .iter()
+        .map(|row| target(row, &schema))
+        .collect::<Result<Vec<_>>>()?;
     let server = crate::serving::Server::start(&run.serving())?;
-    let shared = &server;
-    let rows = Arc::new(rows);
-    let next = Arc::new(AtomicUsize::new(0));
-    let done = Arc::new(AtomicUsize::new(0));
-    let answers: Arc<Mutex<Vec<Option<Result<(String, Option<Decision>)>>>>> = Arc::new(Mutex::new((0..rows.len()).map(|_| None).collect()));
-    // Scoped workers borrow the one server; the scope ends when every worker
-    // has answered, before the server is stopped.
+    let queue = Mutex::new(rows.iter().enumerate());
+    let answers: Mutex<Vec<Option<Result<(String, Option<Decision>)>>>> =
+        Mutex::new(rows.iter().map(|_| None).collect());
+    // Scoped workers borrow the one server, the queue and the answers; the
+    // scope ends when every worker has answered, before the server is stopped.
     let joined: Result<()> = thread::scope(|scope| {
-    let workers: Vec<_> = (0..server.slots.min(rows.len()))
-        .map(|_| {
-            let (rows, next, done, answers) = (Arc::clone(&rows), Arc::clone(&next), Arc::clone(&done), Arc::clone(&answers));
-            let (server, schema) = (shared, schema.clone());
+        let (server, schema, queue, answers) = (&server, &schema, &queue, &answers);
+        let workers: Vec<_> = std::iter::repeat_with(|| {
             scope.spawn(move || loop {
-                let index = next.fetch_add(1, Ordering::SeqCst);
-                let Some(row) = rows.get(index) else { break };
-                let answer = classify(server, &schema, row);
-                answers.lock().expect("evaluation answers lock")[index] = Some(answer);
-                println!("quantized lifecycle predictions {}/{}", done.fetch_add(1, Ordering::SeqCst) + 1, rows.len());
+                let Some((index, row)) = queue.lock().expect("evaluation queue lock").next() else {
+                    break;
+                };
+                let answer = classify(server, schema, row);
+                let mut held = answers.lock().expect("evaluation answers lock");
+                held[index] = Some(answer);
+                let finished = held.iter().filter(|answer| answer.is_some()).count();
+                println!("quantized lifecycle predictions {finished}/{}", held.len());
             })
         })
+        .take(server.slots.min(rows.len()))
         .collect();
-    for worker in workers {
-        worker.join().map_err(|_| Error("an evaluation worker panicked".to_string()))?;
-    }
-    Ok(())
+        for worker in workers {
+            worker
+                .join()
+                .map_err(|_| Error("an evaluation worker panicked".to_string()))?;
+        }
+        Ok(())
     });
     server.stop();
     joined?;
 
-    let answers = std::mem::take(&mut *answers.lock().expect("evaluation answers lock"));
-    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-    let mut by_action: BTreeMap<String, BTreeMap<&str, usize>> = BTreeMap::new();
+    let answers = answers.into_inner().expect("evaluation answers lock");
+    let mut scored = Vec::with_capacity(rows.len());
     let mut lines = String::new();
     for ((row, target), answer) in rows.iter().zip(&targets).zip(answers) {
-        let (raw, prediction) = answer.ok_or_else(|| Error(format!("{} was never asked", row.id)))??;
-        let action = prediction.as_ref().is_some_and(|p| p.action == target.action);
-        let goal_ref = prediction.as_ref().is_some_and(|p| p.goal_ref == target.goal_ref);
-        let evidence = prediction.as_ref().is_some_and(|p| p.lifecycle_evidence == target.lifecycle_evidence);
+        let (raw, prediction) =
+            answer.ok_or_else(|| Error(format!("{} was never asked", row.id)))??;
+        let action = prediction
+            .as_ref()
+            .is_some_and(|p| p.action == target.action);
+        let goal_ref = prediction
+            .as_ref()
+            .is_some_and(|p| p.goal_ref == target.goal_ref);
+        let evidence = prediction
+            .as_ref()
+            .is_some_and(|p| p.lifecycle_evidence == target.lifecycle_evidence);
         let joint = action && goal_ref && evidence;
-        for (key, hit) in [("valid_json", prediction.is_some()), ("action_correct", action), ("goal_ref_correct", goal_ref), ("evidence_correct", evidence), ("joint_correct", joint)] {
-            *counts.entry(key).or_default() += usize::from(hit);
-        }
-        let bucket = by_action.entry(target.action.clone()).or_default();
-        *bucket.entry("rows").or_default() += 1;
-        *bucket.entry("action_correct").or_default() += usize::from(action);
-        *bucket.entry("joint_correct").or_default() += usize::from(joint);
-        if let Some(predicted) = &prediction {
-            if predicted.lifecycle_evidence == "explicit_completion" {
-                *counts.entry("predicted_finish").or_default() += 1;
-                *counts.entry("correct_finish").or_default() += usize::from(predicted.action == target.action);
-            }
-        }
         let record = json!({
             "id": row.id, "target": target, "input": input_envelope(row)?, "prediction": prediction, "raw": raw,
             "valid": prediction.is_some(), "action_correct": action, "goal_ref_correct": goal_ref,
@@ -87,21 +120,48 @@ pub fn evaluate_gguf(run: &GgufEvaluation) -> Result<Value> {
         });
         lines.push_str(&record.to_string());
         lines.push('\n');
+        scored.push(Scored {
+            action: target.action.clone(),
+            valid: prediction.is_some(),
+            action_correct: action,
+            goal_ref_correct: goal_ref,
+            evidence_correct: evidence,
+            joint_correct: joint,
+            finish: prediction
+                .as_ref()
+                .filter(|p| p.lifecycle_evidence == "explicit_completion")
+                .map(|p| p.action == target.action),
+        });
     }
-    fs::write(&run.predictions, lines)?;
-    let total = rows.len();
-    let count = |key: &str| counts.get(key).copied().unwrap_or(0);
+    crate::util::write_whole(&run.predictions, lines.as_bytes())?;
+
+    let total = scored.len();
+    let finishes: Vec<bool> = scored.iter().filter_map(|row| row.finish).collect();
+    let mut by_action: BTreeMap<&str, Value> = BTreeMap::new();
+    for row in &scored {
+        by_action.entry(row.action.as_str()).or_insert_with(|| {
+            let own: Vec<&Scored> = scored
+                .iter()
+                .filter(|other| other.action == row.action)
+                .collect();
+            json!({
+                "action_correct": counted(own.iter().copied(), |row| row.action_correct),
+                "joint_correct": counted(own.iter().copied(), |row| row.joint_correct),
+                "rows": own.len(),
+            })
+        });
+    }
     let report = json!({
         "rows": total,
         "model": run.model.display().to_string(),
-        "valid_json": rate(count("valid_json"), total),
-        "action_accuracy": rate(count("action_correct"), total),
-        "goal_ref_accuracy": rate(count("goal_ref_correct"), total),
-        "evidence_accuracy": rate(count("evidence_correct"), total),
-        "joint_accuracy": rate(count("joint_correct"), total),
-        "finish_precision": rate(count("correct_finish"), count("predicted_finish")),
+        "valid_json": rate(counted(&scored, |row| row.valid), total),
+        "action_accuracy": rate(counted(&scored, |row| row.action_correct), total),
+        "goal_ref_accuracy": rate(counted(&scored, |row| row.goal_ref_correct), total),
+        "evidence_accuracy": rate(counted(&scored, |row| row.evidence_correct), total),
+        "joint_accuracy": rate(counted(&scored, |row| row.joint_correct), total),
+        "finish_precision": rate(finishes.iter().filter(|correct| **correct).count(), finishes.len()),
         "by_action": by_action,
     });
-    fs::write(&run.metrics, serde_json::to_string_pretty(&report)? + "\n")?;
+    crate::util::write_json_pretty(&run.metrics, &report)?;
     Ok(report)
 }
