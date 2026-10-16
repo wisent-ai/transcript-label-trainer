@@ -129,12 +129,7 @@ fn action_counts(rows: &[(Value, String)]) -> BTreeMap<String, usize> {
 }
 
 fn write_rows(path: &Path, rows: &[(Value, String)]) -> Result<()> {
-    let mut lines = String::new();
-    for (row, _) in rows {
-        lines.push_str(&serde_json::to_string(row)?);
-        lines.push('\n');
-    }
-    crate::util::write_whole(path, lines.as_bytes())
+    crate::util::write_jsonl(path, rows.iter().map(|(row, _)| row))
 }
 
 fn unique_ids(rows: &[(Value, String)], split: &str) -> Result<HashSet<String>> {

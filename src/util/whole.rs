@@ -61,3 +61,16 @@ pub(crate) fn write_whole(output: &Path, bytes: &[u8]) -> Result<()> {
         }),
     }
 }
+
+/// Write each of `rows` as one JSON line of `output`, whole.
+pub(crate) fn write_jsonl<'a>(
+    output: &Path,
+    rows: impl IntoIterator<Item = &'a serde_json::Value>,
+) -> Result<()> {
+    let mut lines = String::new();
+    for row in rows {
+        lines.push_str(&serde_json::to_string(row)?);
+        lines.push('\n');
+    }
+    write_whole(output, lines.as_bytes())
+}

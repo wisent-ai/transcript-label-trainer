@@ -83,24 +83,7 @@ fn action_of(row: &Value) -> Result<String> {
 }
 
 fn write_split(path: &Path, rows: &[Value]) -> Result<()> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent)?;
-    }
-    let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".tmp");
-    let temporary = std::path::PathBuf::from(temporary);
-    let mut out = BufWriter::new(File::create(&temporary)?);
-    for row in rows {
-        writeln!(out, "{}", serde_json::to_string(row)?)?;
-    }
-    out.into_inner()
-        .map_err(|error| Error(error.to_string()))?
-        .sync_all()?;
-    fs::rename(&temporary, path)?;
-    Ok(())
+    crate::util::write_jsonl(path, rows)
 }
 
 fn merged(sources: &[&Path]) -> Result<BTreeMap<String, Value>> {

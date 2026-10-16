@@ -109,8 +109,7 @@ pub fn export_bundle(aspect: &str, labels: &[SessionLabel], path: &Path) -> Resu
         aspect: aspect.to_string(),
         labels: bundled,
     };
-    std::fs::write(path, serde_json::to_vec_pretty(&bundle)?)?;
-    Ok(())
+    crate::util::write_whole(path, &serde_json::to_vec_pretty(&bundle)?)
 }
 
 /// Command prefix that invokes the lake CLI: `TLT_LAKE_CLI` split on

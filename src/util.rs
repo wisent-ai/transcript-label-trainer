@@ -7,7 +7,7 @@ mod read;
 mod whole;
 
 pub(crate) use read::{read_bytes, read_text};
-pub(crate) use whole::write_whole;
+pub(crate) use whole::{write_jsonl, write_whole};
 
 #[derive(Debug)]
 pub struct Error(pub String);
