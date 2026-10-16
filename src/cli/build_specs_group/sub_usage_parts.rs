@@ -207,7 +207,7 @@ pub(crate) fn format_usage(prog: &str, optionals: &[String], positionals: &[Stri
             let mut lines = usage_lines(&parts, &indent, None);
             // argparse keeps optionals and positionals on separate line groups
             // once their joint wrap takes more than one line.
-            if matches!(lines.as_slice(), [_, _, ..]) {
+            if crate::model::at_least_two(lines.iter()) {
                 lines = usage_lines(optionals, &indent, None);
                 lines.extend(usage_lines(positionals, &indent, None));
             }

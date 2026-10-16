@@ -122,11 +122,11 @@ pub(crate) fn read_proposal(proposal: &Value) -> std::result::Result<Proposal, S
         })
         .collect::<std::result::Result<Vec<String>, String>>()?;
     // A dimension classifies only when a session can fall on more than one value.
-    let [_, _, ..] = values.as_slice() else {
+    if !crate::model::at_least_two(values.iter()) {
         return Err(format!(
             "proposal {aspect} offers fewer than two values: {proposal}"
         ));
-    };
+    }
     let description = proposal
         .get("description")
         .and_then(Value::as_str)
