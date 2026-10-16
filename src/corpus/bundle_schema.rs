@@ -80,7 +80,7 @@ pub fn adopt(path: &Path) -> Result<Value> {
 /// canonical bundle is retained by the same operation the path-based CLI uses.
 pub fn adopt_upload(file_name: &str, raw: &[u8]) -> std::result::Result<Value, AdoptRefusal> {
     validate_upload_name(file_name)?;
-    let source_sha256 = format!("{:x}", Sha256::digest(raw));
+    let source_sha256 = crate::util::sha256_hex(raw);
     let source_identity = PathBuf::from(format!("browser-upload:sha256:{source_sha256}"));
     adopt_raw(raw, source_identity, Some(file_name.to_string()))
 }
@@ -99,7 +99,7 @@ pub(crate) fn adopt_raw(
     validate_bundle(&bundle, &source_identity)?;
     let mut canonical = serde_json::to_vec_pretty(&bundle)?;
     canonical.push(b'\n');
-    let sha256 = format!("{:x}", Sha256::digest(&canonical));
+    let sha256 = crate::util::sha256_hex(&canonical);
     let id = format!("dataset-bundle:{sha256}");
     let root = corpora_root();
     let registry_path = root.join(REGISTRY_FILE);
@@ -212,10 +212,7 @@ pub fn selected_bundle_path() -> Result<Option<PathBuf>> {
             selected.bundle_path.display()
         )));
     }
-    let digest = format!(
-        "{:x}",
-        Sha256::digest(crate::util::read_bytes(&selected.bundle_path)?)
-    );
+    let digest = crate::util::sha256_hex(crate::util::read_bytes(&selected.bundle_path)?);
     if digest != selected.sha256 {
         return Err(Error(format!(
             "selected corpus bundle changed after adoption: {}",

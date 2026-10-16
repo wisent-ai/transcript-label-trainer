@@ -89,10 +89,6 @@ pub(crate) fn command_error(program: &Path, action: &str, output: &Output) -> Er
     ))
 }
 
-pub(crate) fn digest(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
-}
-
 pub(crate) fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
@@ -206,7 +202,7 @@ pub fn execute(job_path: &str, job: &Job, compute_target: &str) -> Result<i32> {
 
     let dataset_bytes = crate::util::read_bytes(&dataset_path)?;
     let spec_bytes = crate::util::read_bytes(&spec_path)?;
-    let key = digest(&[dataset_bytes.as_slice(), spec_bytes.as_slice()].concat());
+    let key = crate::util::sha256_hex([dataset_bytes.as_slice(), spec_bytes.as_slice()].concat());
     let base = format!("stado://probierz/inputs/transcript-label-trainer/{key}");
     let dataset_uri = format!("{base}/dataset.json");
     let spec_uri = format!("{base}/job.yaml");

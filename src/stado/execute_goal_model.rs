@@ -16,11 +16,12 @@ pub fn execute_goal_model(
     }
     let ster_options = stated_ster_options(ster_options)?;
     let dataset_bytes = crate::util::read_bytes(dataset_path)?;
-    let key = digest(&dataset_bytes);
+    let key = crate::util::sha256_hex(&dataset_bytes);
     let dataset_uri =
         format!("stado://probierz/inputs/transcript-label-trainer/goal-model/{key}.jsonl");
     let source_ref = repo_ref()?;
-    let run_key = digest(format!("{key}\nster={ster_options}\nsource={source_ref}\n").as_bytes());
+    let run_key =
+        crate::util::sha256_hex(format!("{key}\nster={ster_options}\nsource={source_ref}\n"));
     let output_uri = format!("stado://probierz/artifacts/models/jeden/goal-qwen3-4b/{run_key}");
     let stado = PathBuf::from(crate::brama::stado_bin()?);
     upload(&stado, &dataset_uri, dataset_path, "application/x-ndjson")?;
@@ -103,20 +104,18 @@ pub fn execute_lifecycle_model(
     let brama_url = shell_quote(brama_url);
     let train_bytes = crate::util::read_bytes(train_path)?;
     let eval_bytes = crate::util::read_bytes(eval_path)?;
-    let key = digest(
-        format!(
-            "train={}\neval={}\n",
-            digest(&train_bytes),
-            digest(&eval_bytes)
-        )
-        .as_bytes(),
-    );
+    let key = crate::util::sha256_hex(format!(
+        "train={}\neval={}\n",
+        crate::util::sha256_hex(&train_bytes),
+        crate::util::sha256_hex(&eval_bytes)
+    ));
     let base = format!("stado://probierz/inputs/transcript-label-trainer/lifecycle-model/{key}");
     let train_uri = format!("{base}/reviewed-train.jsonl");
     let eval_uri = format!("{base}/reviewed-eval.jsonl");
     // Source, data and settings jointly identify both the workspace and output.
     let source_ref = repo_ref()?;
-    let run_key = digest(format!("{key}\nster={ster_options}\nsource={source_ref}\n").as_bytes());
+    let run_key =
+        crate::util::sha256_hex(format!("{key}\nster={ster_options}\nsource={source_ref}\n"));
     let ster_options = shell_quote(&ster_options);
     let output_uri = format!("stado://probierz/artifacts/models/oko/lifecycle-qwen3-4b/{run_key}");
     let stado = PathBuf::from(crate::brama::stado_bin()?);
@@ -205,12 +204,12 @@ pub fn execute_humanizer_model(
         return Err(Error("HUMANIZER_HF_REPO cannot be empty".to_string()));
     }
     let targets_bytes = crate::util::read_bytes(targets_path)?;
-    let key = digest(&targets_bytes);
+    let key = crate::util::sha256_hex(&targets_bytes);
     let targets_uri = format!(
         "stado://probierz/inputs/transcript-label-trainer/humanizer-model/{key}/targets.jsonl"
     );
     let ster_options = stated_ster_options(&training.ster_options)?;
-    let run_key = digest(format!("{key}\nster={ster_options}\n").as_bytes());
+    let run_key = crate::util::sha256_hex(format!("{key}\nster={ster_options}\n"));
     let output_uri = format!(
         "stado://probierz/artifacts/models/echo/lukasz-humanizer-cydonia-24b-lora/{run_key}"
     );

@@ -136,7 +136,7 @@ pub fn audit_predictions(input: &Path, output: &Path, review_model: &str) -> Res
             input.display()
         ))
     })?;
-    let input_sha256 = hex::encode(Sha256::digest(source.as_bytes()));
+    let input_sha256 = crate::util::sha256_hex(&source);
     let predictions: Vec<Prediction> = source
         .lines()
         .filter(|line| !line.trim().is_empty())

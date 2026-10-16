@@ -20,7 +20,6 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use serde_json::{json, Map, Value};
-use sha2::{Digest, Sha256};
 
 use crate::util::{now_iso, Error, Result};
 use crate::{corpus, lake, model};

@@ -178,8 +178,8 @@ pub fn prepare_dataset(
         "test_share": crate::jobs::TEST_SIZE,
         "teacher_model": teacher,
         "review_model": reviewer,
-        "system_prompt_sha256": hex::encode(Sha256::digest(SYSTEM_PROMPT.as_bytes())),
-        "input_sha256": hex::encode(Sha256::digest(&bytes)),
+        "system_prompt_sha256": crate::util::sha256_hex(SYSTEM_PROMPT),
+        "input_sha256": crate::util::sha256_hex(&bytes),
     });
     let path = output_dir.join("preparation.json");
     crate::util::write_whole(

@@ -105,24 +105,16 @@ pub(crate) fn subject_hash() -> Result<String> {
         Ok(_) => return Err(Error("USER is set but empty; onboarding progress belongs to an account and needs its name".into())),
         Err(error) => return Err(Error(format!("USER cannot be read ({error}); onboarding progress belongs to an account and needs its name"))),
     };
-    Ok(format!(
-        "{:x}",
-        Sha256::digest(
-            format!(
-                "transcript-label-trainer-onboarding\0{user}\0{}",
-                machine_name()?
-            )
-            .as_bytes()
-        )
-    ))
+    Ok(crate::util::sha256_hex(format!(
+        "transcript-label-trainer-onboarding\0{user}\0{}",
+        machine_name()?
+    )))
 }
 
 /// This attempt, distinguishable from a later replay of the same journey: the
 /// whole SHA-256 of the subject, the start instant and the process.
 pub(crate) fn attempt_id(subject: &str) -> String {
-    let digest =
-        Sha256::digest(format!("{subject}\0{}\0{}", now_iso(), std::process::id()).as_bytes());
-    format!("{digest:x}")
+    crate::util::sha256_hex(format!("{subject}\0{}\0{}", now_iso(), std::process::id()))
 }
 
 /// Local host name. The lake and Stado both identify this machine by it, and

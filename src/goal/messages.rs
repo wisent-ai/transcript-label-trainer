@@ -251,7 +251,7 @@ pub fn build_dataset(output: &Path, teacher_model: Option<&str>) -> Result<Value
         rows.push(b'\n');
     }
     crate::util::write_whole(output, &rows)?;
-    let digest = hex::encode(Sha256::digest(&rows));
+    let digest = crate::util::sha256_hex(&rows);
     let summary = serde_json::json!({
         "created_at": now_iso(),
         "source": "Transcript Lake normalized events",

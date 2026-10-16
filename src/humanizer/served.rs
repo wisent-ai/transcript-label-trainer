@@ -15,7 +15,6 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
 use super::{MODEL_CONTRACT, REPORT_SCHEMA_VERSION};
 use crate::serving::{Server, Serving};
@@ -264,7 +263,7 @@ pub(crate) fn evaluate_gguf(run: &HumanizerEvaluation) -> Result<Value> {
         "contract": MODEL_CONTRACT,
         "base_model": run.base_model,
         "base_revision": run.base_revision,
-        "test_sha256": hex::encode(Sha256::digest(std::fs::read(&run.dataset)?)),
+        "test_sha256": crate::util::sha256_hex(crate::util::read_bytes(&run.dataset)?),
         "test_rows": rows.len(),
         "chrf": { "char_order": CHAR_ORDER, "beta": BETA, "whitespace": false, "lowercase": false, "source": CHRF_SOURCE },
         "evaluation_surface": "base and merged student as full-precision GGUFs through llama-server, one after the other",

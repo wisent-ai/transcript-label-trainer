@@ -3,9 +3,11 @@
 use std::fmt;
 use std::path::PathBuf;
 
+mod digest;
 mod read;
 mod whole;
 
+pub(crate) use digest::sha256_hex;
 pub(crate) use read::{read_bytes, read_text};
 pub(crate) use whole::{write_jsonl, write_whole};
 
