@@ -12,8 +12,7 @@ use crate::util::{Error, Result};
 
 fn read(output: &Path, name: &str) -> Result<Value> {
     let path = output.join(name);
-    let text = std::fs::read_to_string(&path)
-        .map_err(|error| Error(format!("cannot read {}: {error}", path.display())))?;
+    let text = crate::util::read_text(&path)?;
     serde_json::from_str(&text).map_err(|error| Error(format!("{}: {error}", path.display())))
 }
 
