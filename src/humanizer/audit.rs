@@ -3,12 +3,11 @@
 //! adapter qualifies only when it beats the base on voice without losing
 //! meaning.
 
-use std::collections::BTreeMap;
-use std::fs;
+use std::ops::RangeInclusive;
 use std::path::Path;
 
-use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use super::calls::{ask, fan_out, json_object, read_jsonl};
 use super::prompts::JUDGE_PROMPT;
@@ -16,9 +15,8 @@ use super::{MODEL_CONTRACT, REPORT_SCHEMA_VERSION};
 use crate::brama::BramaClient;
 use crate::util::{Error, Result};
 
-const CANDIDATES: [&str; 2] = ["base", "student"];
-const SCORES: [&str; 2] = ["semantic_fidelity", "voice_match"];
-const VERDICTS: [&str; 2] = ["ai_boilerplate", "passed"];
+/// The scale JUDGE_PROMPT asks the judge to score each candidate on.
+const SCORE_SCALE: RangeInclusive<f64> = 0.0..=1.0; // https://github.com/wisent-ai/transcript-label-trainer/blob/main/src/humanizer/prompts.rs ("Score each candidate independently from 0 to 1")
 
 #[derive(Deserialize)]
 struct Prediction {
@@ -29,41 +27,48 @@ struct Prediction {
     student: Value,
 }
 
-fn parse_verdict(answer: &str) -> Result<Map<String, Value>> {
-    let verdict = json_object(answer, "judge output")?;
-    if verdict.len() != CANDIDATES.len()
-        || !CANDIDATES.iter().all(|name| verdict.contains_key(*name))
-    {
-        crate::bail!("judge output has invalid candidates");
-    }
-    for name in CANDIDATES {
-        let Some(result) = verdict[name].as_object() else {
-            crate::bail!("judge output has invalid {name} shape");
-        };
-        let fields = SCORES.len() + VERDICTS.len();
-        let complete = SCORES
-            .iter()
-            .chain(VERDICTS.iter())
-            .all(|key| result.contains_key(*key));
-        if result.len() != fields || !complete {
-            crate::bail!("judge output has invalid {name} shape");
-        }
-        for score in SCORES {
-            let valid = result[score]
-                .as_f64()
-                .is_some_and(|value| (0.0..=1.0).contains(&value));
-            if !valid {
-                crate::bail!("judge output has invalid {name}.{score}");
+/// The judge's answer, exactly the shape JUDGE_PROMPT asks for.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Verdict {
+    base: Judged,
+    student: Judged,
+}
+
+/// How the judge rated one candidate.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Judged {
+    semantic_fidelity: f64,
+    voice_match: f64,
+    ai_boilerplate: bool,
+    passed: bool,
+}
+
+fn parse_verdict(answer: &str) -> Result<Verdict> {
+    let object = json_object(answer, "judge output")?;
+    let verdict: Verdict = serde_json::from_value(Value::Object(object))
+        .map_err(|error| Error(format!("judge output is not the asked verdict: {error}")))?;
+    for (name, judged) in [("base", &verdict.base), ("student", &verdict.student)] {
+        for (score, value) in [
+            ("semantic_fidelity", judged.semantic_fidelity),
+            ("voice_match", judged.voice_match),
+        ] {
+            if !SCORE_SCALE.contains(&value) {
+                crate::bail!("judge output scores {name}.{score} {value}, outside {SCORE_SCALE:?}");
             }
-        }
-        if !VERDICTS.iter().all(|key| result[*key].is_boolean()) {
-            crate::bail!("judge output has invalid {name} verdict");
         }
     }
     Ok(verdict)
 }
 
-fn judge(row: &Prediction, client: &BramaClient, model: &str) -> Result<Value> {
+/// One judged case.
+struct Record {
+    id: String,
+    verdict: Verdict,
+}
+
+fn judge(row: &Prediction, client: &BramaClient, model: &str) -> Result<Record> {
     let question = json!({
         "source": row.source,
         "target": row.target,
@@ -73,92 +78,96 @@ fn judge(row: &Prediction, client: &BramaClient, model: &str) -> Result<Value> {
     .to_string();
     let verdict = ask(client, model, JUDGE_PROMPT, question, parse_verdict)
         .map_err(|error| Error(format!("{}: {error}", row.id)))?;
-    Ok(json!({"id": row.id, "verdict": verdict}))
-}
-
-fn mean(records: &[Value], candidate: &str, field: &str) -> f64 {
-    let total: f64 = records
-        .iter()
-        .map(|record| &record["verdict"][candidate][field])
-        .map(|value| {
-            value
-                .as_f64()
-                .unwrap_or(f64::from(u8::from(value.as_bool() == Some(true))))
-        })
-        .sum();
-    total / records.len() as f64
-}
-
-fn aggregate(records: &[Value], candidate: &str) -> Value {
-    json!({
-        "semantic_fidelity": mean(records, candidate, "semantic_fidelity"),
-        "voice_match": mean(records, candidate, "voice_match"),
-        "ai_boilerplate_rate": mean(records, candidate, "ai_boilerplate"),
-        "pass_rate": mean(records, candidate, "passed"),
+    Ok(Record {
+        id: row.id.clone(),
+        verdict,
     })
+}
+
+/// One candidate's measures over every judged case: the mean of each score
+/// and the share of cases each verdict holds true for.
+#[derive(Serialize)]
+struct Measures {
+    semantic_fidelity: f64,
+    voice_match: f64,
+    ai_boilerplate_rate: f64,
+    pass_rate: f64,
+}
+
+impl Measures {
+    /// `judged` holds at least one rating.
+    fn of(judged: &[&Judged]) -> Self {
+        let cases = judged.len() as f64;
+        let mean = |score: fn(&Judged) -> f64| judged.iter().map(|one| score(one)).sum::<f64>() / cases;
+        let rate = |held: fn(&Judged) -> bool| judged.iter().filter(|one| held(one)).count() as f64 / cases;
+        Self {
+            semantic_fidelity: mean(|one| one.semantic_fidelity),
+            voice_match: mean(|one| one.voice_match),
+            ai_boilerplate_rate: rate(|one| one.ai_boilerplate),
+            pass_rate: rate(|one| one.passed),
+        }
+    }
 }
 
 /// Judge every row of `predictions` (JSONL of `{id, source, target, base,
 /// student}`) through `model` and write the full record to `output`. The
 /// returned summary carries `passed`; an incomplete audit is an error and
-/// writes nothing. The adapter passes when the judge measures it better than
-/// the base it was trained from on the same held-out cases: closer to the
-/// author's voice, no less faithful to the meaning, passed no less often and
-/// called AI boilerplate no more often. The base's own scores are the bound;
-/// nobody states one.
+/// writes nothing, and so is a predictions file without a row. The adapter
+/// passes when the judge measures it better than the base it was trained from
+/// on the same held-out cases: closer to the author's voice, no less faithful
+/// to the meaning, passed no less often and called AI boilerplate no more
+/// often. The base's own scores are the bound; nobody states one.
 pub fn audit_outputs(
     predictions: &Path,
     output: &Path,
     model: &str,
 ) -> Result<Value> {
     let rows: Vec<Prediction> = read_jsonl(predictions)?;
+    if rows.is_empty() {
+        crate::bail!("{} holds no predictions to audit", predictions.display());
+    }
     let client = BramaClient::from_env()?;
     let workers = client.allowance(model)?.get();
     let outcomes = fan_out(&rows, workers, "audited", |row| {
         judge(row, &client, model)
     });
     let mut records = Vec::new();
-    let mut failures: BTreeMap<String, usize> = BTreeMap::new();
+    let mut failures = Vec::new();
     for outcome in outcomes {
         match outcome {
             Ok(record) => records.push(record),
-            Err(error) => {
-                *failures
-                    .entry(error.0.clone())
-                    .or_default() += 1
-            }
+            Err(error) => failures.push(error.0),
         }
     }
     if !failures.is_empty() {
-        crate::bail!("audit incomplete: {}", json!(failures));
+        let counted = crate::model::class_counts(failures.iter().map(String::as_str));
+        crate::bail!("audit incomplete: {}", json!(counted));
     }
-    records.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
-    let base = aggregate(&records, "base");
-    let student = aggregate(&records, "student");
-    let score = |value: &Value, field: &str| value[field].as_f64().unwrap_or(f64::NAN);
-    let voice_gain = score(&student, "voice_match") - score(&base, "voice_match");
-    let semantic_delta = score(&student, "semantic_fidelity") - score(&base, "semantic_fidelity");
-    let better = |field: &str| score(&student, field) > score(&base, field);
-    let no_worse = |field: &str| score(&student, field) >= score(&base, field);
-    let passed = better("voice_match")
-        && no_worse("semantic_fidelity")
-        && no_worse("pass_rate")
-        && score(&student, "ai_boilerplate_rate") <= score(&base, "ai_boilerplate_rate");
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    let base = Measures::of(&records.iter().map(|record| &record.verdict.base).collect::<Vec<_>>());
+    let student =
+        Measures::of(&records.iter().map(|record| &record.verdict.student).collect::<Vec<_>>());
+    let passed = student.voice_match > base.voice_match
+        && student.semantic_fidelity >= base.semantic_fidelity
+        && student.pass_rate >= base.pass_rate
+        && student.ai_boilerplate_rate <= base.ai_boilerplate_rate;
     let mut report = json!({
         "schema_version": REPORT_SCHEMA_VERSION,
         "contract": MODEL_CONTRACT,
         "review_model": model,
         "rows": records.len(),
+        "voice_match_gain": student.voice_match - base.voice_match,
+        "semantic_fidelity_delta": student.semantic_fidelity - base.semantic_fidelity,
         "base": base,
         "student": student,
-        "voice_match_gain": voice_gain,
-        "semantic_fidelity_delta": semantic_delta,
         "gate": "student better than base: voice_match higher, semantic_fidelity and pass_rate no lower, ai_boilerplate_rate no higher",
         "passed": passed,
-        "records": records,
+        "records": records
+            .iter()
+            .map(|record| json!({"id": record.id, "verdict": record.verdict}))
+            .collect::<Vec<_>>(),
     });
-    fs::write(output, serde_json::to_string_pretty(&report)? + "\n")
-        .map_err(|error| Error(format!("cannot write {}: {error}", output.display())))?;
+    crate::util::write_json_pretty(output, &report)?;
     if let Some(fields) = report.as_object_mut() {
         fields.remove("records");
     }
