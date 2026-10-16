@@ -37,7 +37,7 @@ fn answer(row: &GoalRow) -> String {
 
 /// Every reviewed row of `path`, refusing a file without one.
 fn reviewed_rows(path: &Path) -> Result<Vec<GoalRow>> {
-    let text = fs::read_to_string(path).map_err(|error| Error(format!("{}: {error}", path.display())))?;
+    let text = crate::util::read_text(path)?;
     let rows = text
         .lines()
         .filter(|line| !line.trim().is_empty())
