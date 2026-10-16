@@ -103,9 +103,10 @@ pub(crate) fn repr(value: &Value) -> String {
 /// Python's `repr()` of a string: single quotes unless the text holds a
 /// single quote and no double quote.
 pub(crate) fn repr_str(value: &str) -> String {
-    let quote = match value.contains('\'') && !value.contains('"') {
-        true => '"',
-        false => '\'',
+    let quote = if value.contains('\'') && !value.contains('"') {
+        '"'
+    } else {
+        '\''
     };
     let mut out = String::new();
     out.push(quote);

@@ -33,9 +33,10 @@ pub(crate) fn parse_goal(answer: &str) -> Result<ParsedGoal> {
         .join(" ")
         .trim_end_matches('.')
         .to_string();
-    match goal.is_empty() {
-        true => Ok(ParsedGoal::NoTask),
-        false => Ok(ParsedGoal::Task(goal)),
+    if goal.is_empty() {
+        Ok(ParsedGoal::NoTask)
+    } else {
+        Ok(ParsedGoal::Task(goal))
     }
 }
 

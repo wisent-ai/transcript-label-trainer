@@ -39,10 +39,7 @@ pub(crate) fn print_info(entries: &[Value]) {
             let metrics = field(artifact, "metrics");
             let backend = text(field(artifact, "backend"));
             // The artifact `info` would load is marked; the others are not.
-            let marker = match backend == active {
-                true => '*',
-                false => ' ',
-            };
+            let marker = if backend == active { '*' } else { ' ' };
             let job = field(metrics, "job");
             if json_truthy(job) {
                 outln!(

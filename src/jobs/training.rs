@@ -98,9 +98,10 @@ pub(crate) fn flag_name(key: &str) -> String {
 }
 
 fn backend_keys(model: &str) -> (&'static [&'static str], &'static [&'static str]) {
-    match model == SKLEARN_MODEL {
-        true => (TFIDF_KEYS, HF_KEYS),
-        false => (HF_KEYS, TFIDF_KEYS),
+    if model == SKLEARN_MODEL {
+        (TFIDF_KEYS, HF_KEYS)
+    } else {
+        (HF_KEYS, TFIDF_KEYS)
     }
 }
 

@@ -120,9 +120,10 @@ pub(crate) fn parse_sub(spec: &Spec, argv: &[String]) -> Outcome {
             _ => (arg.as_str(), None),
         };
         let Some(opt) = spec.opts.iter().find(|opt| opt.flag == name) else {
-            match looks_like_option(arg) {
-                true => extras.push(arg.clone()),
-                false => parsed.positionals.push(arg.clone()),
+            if looks_like_option(arg) {
+                extras.push(arg.clone());
+            } else {
+                parsed.positionals.push(arg.clone());
             }
             continue;
         };

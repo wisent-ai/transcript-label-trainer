@@ -105,9 +105,10 @@ fn named_or<'a>(args: &'a Parsed, flag: &str, documented: &'a str) -> &'a str {
 
 /// The status of a command that succeeds only when `report[field]` is true.
 fn status_of(report: &Value, field: &str) -> i32 {
-    match report[field] == Value::Bool(true) {
-        true => EXIT_SUCCESS,
-        false => EXIT_FAILURE,
+    if report[field] == Value::Bool(true) {
+        EXIT_SUCCESS
+    } else {
+        EXIT_FAILURE
     }
 }
 

@@ -71,9 +71,10 @@ pub fn run(args: Vec<String>) -> Result<i32> {
                     )));
                 }
             };
-            match name == "--training-root" {
-                true => training_root = Some(value),
-                false => storage_root = Some(value),
+            if name == "--training-root" {
+                training_root = Some(value);
+            } else {
+                storage_root = Some(value);
             }
             continue;
         }
@@ -228,9 +229,10 @@ pub(crate) fn cmd_run(args: &Parsed) -> Result<i32> {
 }
 
 pub(crate) fn cmd_evaluate(args: &Parsed) -> Result<i32> {
-    let judge = match args.flag("--no-judge") {
-        true => Some(false),
-        false => None,
+    let judge = if args.flag("--no-judge") {
+        Some(false)
+    } else {
+        None
     };
     let verdict = match evaluate::evaluate(
         args.positional("name"),

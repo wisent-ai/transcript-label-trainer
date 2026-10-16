@@ -43,9 +43,10 @@ fn parse_review(answer: &str) -> Result<serde_json::Map<String, Value>> {
         && REVIEW_FIELDS
             .iter()
             .all(|field| review.get(*field).is_some_and(Value::is_boolean));
-    match shaped {
-        true => Ok(review),
-        false => crate::bail!("review has invalid shape: {}", Value::Object(review)),
+    if shaped {
+        Ok(review)
+    } else {
+        crate::bail!("review has invalid shape: {}", Value::Object(review))
     }
 }
 
@@ -56,9 +57,10 @@ fn split_of(session_id: &str) -> Split {
     let digest = Sha256::digest(session_id.as_bytes());
     let head = digest.first_chunk().map(|bytes| u32::from_be_bytes(*bytes));
     let point = head.map(|head| f64::from(head) / f64::from(u32::MAX));
-    match point.is_some_and(|point| point < crate::jobs::TEST_SIZE) {
-        true => Split::Test,
-        false => Split::Train,
+    if point.is_some_and(|point| point < crate::jobs::TEST_SIZE) {
+        Split::Test
+    } else {
+        Split::Train
     }
 }
 

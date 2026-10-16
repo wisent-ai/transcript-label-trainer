@@ -7,19 +7,20 @@ const SYSTEM_CHOSEN_PORT: i64 = 0; // https://doc.rust-lang.org/std/net/struct.T
 /// The status a reviewed command exits with: success only when `--best` was
 /// not asked for, or its audit called every result sensible.
 pub(crate) fn reviewed_status(args: &Parsed, summary: &Value) -> i32 {
-    match !args.flag("--best")
-        || summary.pointer("/best_review/sensible") == Some(&Value::Bool(true))
+    if !args.flag("--best") || summary.pointer("/best_review/sensible") == Some(&Value::Bool(true))
     {
-        true => EXIT_SUCCESS,
-        false => EXIT_FAILURE,
+        EXIT_SUCCESS
+    } else {
+        EXIT_FAILURE
     }
 }
 
 /// The status an audit exits with: success only when the audit passed.
 fn audited_status(result: &Value) -> i32 {
-    match result["passed"] == Value::Bool(true) {
-        true => EXIT_SUCCESS,
-        false => EXIT_FAILURE,
+    if result["passed"] == Value::Bool(true) {
+        EXIT_SUCCESS
+    } else {
+        EXIT_FAILURE
     }
 }
 
