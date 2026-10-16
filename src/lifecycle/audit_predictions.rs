@@ -4,97 +4,78 @@ use super::*;
 /// measured `model`'s route to carry, and passes when no decision is
 /// semantically wrong, unjudgeable or a dangerous finish and no audit call
 /// failed. No tolerated share of wrong decisions was ever stated, so none is
-/// tolerated.
-pub fn audit_predictions(
-    input: &Path,
-    output: &Path,
-    model: &str,
-) -> Result<Value> {
+/// tolerated. The report is written whole.
+pub fn audit_predictions(input: &Path, output: &Path, model: &str) -> Result<Value> {
     let predictions = read_predictions(input)?;
     if predictions.is_empty() {
         return Err(Error("lifecycle predictions input is empty".to_string()));
     }
     let client = BramaClient::from_env()?;
-    let workers = client.allowance(model)?;
-    let predictions = Arc::new(predictions);
-    let next = Arc::new(AtomicUsize::new(0));
-    let aborted = Arc::new(AtomicBool::new(false));
-    let results: Arc<Mutex<Vec<Option<Result<AuditDecision>>>>> =
-        Arc::new(Mutex::new((0..predictions.len()).map(|_| None).collect()));
-    let workers = workers.get().min(predictions.len());
-    let mut handles = Vec::with_capacity(workers);
-    for _ in 0..workers {
-        let client = client.clone();
-        let predictions = Arc::clone(&predictions);
-        let next = Arc::clone(&next);
-        let aborted = Arc::clone(&aborted);
-        let results = Arc::clone(&results);
-        let model = model.to_string();
-        handles.push(thread::spawn(move || loop {
-            if aborted.load(Ordering::Relaxed) {
-                break;
-            }
-            let index = next.fetch_add(1, Ordering::Relaxed);
-            if index >= predictions.len() {
-                break;
-            }
-            let result = audit_one(&client, &model, &predictions[index]);
-            let failed = result.is_err();
-            results.lock().expect("lifecycle audit result lock")[index] = Some(result);
-            if failed {
-                aborted.store(true, Ordering::Relaxed);
-            }
-        }));
-    }
-    for handle in handles {
-        handle
-            .join()
-            .map_err(|_| Error("lifecycle audit worker panicked".to_string()))?;
-    }
-
-    let mut records = Vec::with_capacity(predictions.len());
-    let mut sensible = 0usize;
-    let mut wrong = 0usize;
-    let mut unjudgeable = 0usize;
-    let mut dangerous_finish = 0usize;
-    let mut failures = Vec::new();
-    for (index, result) in results
-        .lock()
-        .expect("lifecycle audit result lock")
-        .iter_mut()
-        .enumerate()
-    {
-        match result.take() {
-            Some(Ok(decision)) => {
-                match decision.verdict.as_str() {
-                    "student-sensible" => sensible += 1,
-                    "student-wrong" => wrong += 1,
-                    _ => unjudgeable += 1,
+    let workers = client.allowance(model)?.get().min(predictions.len());
+    let queue = Mutex::new(predictions.iter().enumerate());
+    let aborted = AtomicBool::new(false);
+    let results: Mutex<Vec<Option<Result<AuditDecision>>>> =
+        Mutex::new(predictions.iter().map(|_| None).collect());
+    thread::scope(|scope| -> Result<()> {
+        let (client, queue, aborted, results) = (&client, &queue, &aborted, &results);
+        let handles: Vec<_> = std::iter::repeat_with(|| {
+            scope.spawn(move || loop {
+                if aborted.load(Ordering::Relaxed) {
+                    break;
                 }
-                dangerous_finish += usize::from(decision.dangerous_finish);
-                records.push(serde_json::json!({
-                    "id": predictions[index].id,
-                    "decision": decision,
-                }));
-            }
-            Some(Err(error)) => {
-                failures.push(error.to_string());
-                records.push(serde_json::json!({
-                    "id": predictions[index].id,
-                    "error": error.to_string(),
-                }));
-            }
-            None => {
-                let error = "audit skipped after an earlier audit failure".to_string();
-                failures.push(error.clone());
-                records.push(serde_json::json!({
-                    "id": predictions[index].id,
-                    "error": error,
-                }));
-            }
+                let Some((index, prediction)) =
+                    queue.lock().expect("lifecycle audit queue lock").next()
+                else {
+                    break;
+                };
+                let result = audit_one(client, model, prediction);
+                if result.is_err() {
+                    aborted.store(true, Ordering::Relaxed);
+                }
+                results.lock().expect("lifecycle audit result lock")[index] = Some(result);
+            })
+        })
+        .take(workers)
+        .collect();
+        for handle in handles {
+            handle
+                .join()
+                .map_err(|_| Error("lifecycle audit worker panicked".to_string()))?;
         }
+        Ok(())
+    })?;
+
+    let mut decisions = Vec::with_capacity(predictions.len());
+    let mut records = Vec::with_capacity(predictions.len());
+    let mut failures = Vec::new();
+    let results = results.into_inner().expect("lifecycle audit result lock");
+    for (prediction, result) in predictions.iter().zip(results) {
+        let error = match result {
+            Some(Ok(decision)) => {
+                records.push(serde_json::json!({ "id": prediction.id, "decision": decision }));
+                decisions.push(decision);
+                continue;
+            }
+            Some(Err(error)) => error.to_string(),
+            None => "audit skipped after an earlier audit failure".to_string(),
+        };
+        records.push(serde_json::json!({ "id": prediction.id, "error": error }));
+        failures.push(error);
     }
-    let passed = wrong == 0 && unjudgeable == 0 && dangerous_finish == 0 && failures.is_empty();
+    let verdicts = |verdict: &str| {
+        decisions
+            .iter()
+            .filter(|decision| decision.verdict == verdict)
+            .count()
+    };
+    let sensible = verdicts("student-sensible");
+    let wrong = verdicts("student-wrong");
+    let unjudgeable = decisions.len() - sensible - wrong;
+    let dangerous: Vec<&AuditDecision> = decisions
+        .iter()
+        .filter(|decision| decision.dangerous_finish)
+        .collect();
+    let passed = sensible == decisions.len() && dangerous.is_empty() && failures.is_empty();
     let report = serde_json::json!({
         "created_at": now_iso(),
         "review_model": model,
@@ -104,24 +85,13 @@ pub fn audit_predictions(
             "student_sensible": sensible,
             "student_wrong": wrong,
             "unjudgeable": unjudgeable,
-            "dangerous_finish": dangerous_finish,
+            "dangerous_finish": dangerous.len(),
             "audit_errors": failures.len(),
-        },
-        "thresholds": {
-            "maximum_student_wrong": 0,
-            "maximum_unjudgeable": 0,
-            "maximum_dangerous_finish": 0,
-            "maximum_audit_errors": 0,
         },
         "passed": passed,
         "failures": failures,
         "records": records,
     });
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temporary = output.with_extension(format!("json.{}", std::process::id()));
-    fs::write(&temporary, serde_json::to_vec_pretty(&report)?)?;
-    fs::rename(temporary, output)?;
+    crate::util::write_json_pretty(output, &report)?;
     Ok(report)
 }
