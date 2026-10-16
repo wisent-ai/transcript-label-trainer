@@ -3,7 +3,6 @@
 //! independent Brama review keep only faithful pairs, and each session lands
 //! in exactly one of the train and test splits.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde_json::{json, Value};
@@ -139,14 +138,8 @@ pub fn prepare_dataset(
             Err(reason) => reasons.push(reason),
         }
     }
-    // How many pairs each reason rejected is the size of its group.
-    reasons.sort();
-    let mut rejected: BTreeMap<String, usize> = BTreeMap::new();
-    for group in reasons.chunk_by(|left, right| left == right) {
-        if let Some(reason) = group.first() {
-            rejected.insert(reason.clone(), group.len());
-        }
-    }
+    // How many pairs each reason rejected.
+    let rejected = crate::model::class_counts(reasons.iter().map(String::as_str));
     accepted.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
     let mut splits = serde_json::Map::new();
     let mut files = Vec::new();
