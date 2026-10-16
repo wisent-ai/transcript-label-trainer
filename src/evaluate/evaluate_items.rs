@@ -202,10 +202,9 @@ pub fn evaluate(
         )));
     }
 
-    let acceptable_verdict = ACCEPTABLE;
     let acceptable = records
         .iter()
-        .filter(|record| record.get("verdict").and_then(Value::as_str) == Some(acceptable_verdict))
+        .filter(|record| record.get("verdict").and_then(Value::as_str) == Some(ACCEPTABLE))
         .count();
     let mut block = Map::new();
     block.insert("enabled".to_string(), Value::Bool(true));
