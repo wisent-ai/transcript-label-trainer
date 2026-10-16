@@ -269,9 +269,6 @@ pub fn build_dataset(output: &Path, teacher_model: Option<&str>) -> Result<Value
         "output": output.to_string_lossy(),
     });
     let manifest_path = output.with_extension("manifest.json");
-    crate::util::write_whole(
-        &manifest_path,
-        (serde_json::to_string_pretty(&summary)? + "\n").as_bytes(),
-    )?;
+    crate::util::write_json_pretty(&manifest_path, &summary)?;
     Ok(summary)
 }

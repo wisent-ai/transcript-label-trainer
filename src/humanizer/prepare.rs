@@ -182,9 +182,6 @@ pub fn prepare_dataset(
         "input_sha256": crate::util::sha256_hex(&bytes),
     });
     let path = output_dir.join("preparation.json");
-    crate::util::write_whole(
-        &path,
-        (serde_json::to_string_pretty(&report)? + "\n").as_bytes(),
-    )?;
+    crate::util::write_json_pretty(&path, &report)?;
     Ok(report)
 }

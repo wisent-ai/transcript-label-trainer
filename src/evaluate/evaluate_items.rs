@@ -236,8 +236,7 @@ pub fn evaluate(
     result.insert("failures".to_string(), Value::Array(failures));
 
     let path = judge_path(name)?;
-    let body = serde_json::to_string_pretty(&Value::Object(result.clone()))?;
-    crate::util::write_whole(&path, (body + "\n").as_bytes())?;
+    crate::util::write_json_pretty(&path, &result)?;
     result.insert(
         "judge_path".to_string(),
         Value::String(path.to_string_lossy().into_owned()),

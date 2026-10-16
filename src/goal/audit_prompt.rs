@@ -52,10 +52,7 @@ pub(crate) fn audit_result(
 
 /// Write the audit result whole, so a reader never sees half of it.
 pub(crate) fn write_audit_result(output: &Path, result: &Value) -> Result<()> {
-    crate::util::write_whole(
-        output,
-        (serde_json::to_string_pretty(result)? + "\n").as_bytes(),
-    )
+    crate::util::write_json_pretty(output, result)
 }
 
 /// The audit so far: verdicts by the prediction's position in the input, and

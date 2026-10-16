@@ -124,6 +124,6 @@ pub(crate) fn evaluate_gguf(run: &GoalEvaluation) -> Result<Value> {
         "gold_rows": gold.len(),
         "exact_match": exact as f64 / gold.len() as f64,
     });
-    write_whole(&run.metrics, (serde_json::to_string_pretty(&metrics)? + "\n").as_bytes())?;
+    crate::util::write_json_pretty(&run.metrics, &metrics)?;
     Ok(metrics)
 }

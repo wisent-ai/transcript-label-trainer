@@ -137,8 +137,7 @@ pub fn resolve_split(
             "session_ids".to_string(),
             Value::Array(holdout_ids.iter().cloned().map(Value::String).collect()),
         );
-        let body = serde_json::to_string_pretty(&Value::Object(record)).map_err(Error::from)?;
-        crate::util::write_whole(&path, (body + "\n").as_bytes())?;
+        crate::util::write_json_pretty(&path, &record)?;
     }
 
     let mut split = Split {

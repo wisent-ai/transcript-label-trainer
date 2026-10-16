@@ -74,3 +74,10 @@ pub(crate) fn write_jsonl<'a>(
     }
     write_whole(output, lines.as_bytes())
 }
+
+/// Write `value` to `output` whole as indented JSON ending in a newline.
+pub(crate) fn write_json_pretty(output: &Path, value: &impl serde::Serialize) -> Result<()> {
+    let mut text = serde_json::to_string_pretty(value)?;
+    text.push('\n');
+    write_whole(output, text.as_bytes())
+}
