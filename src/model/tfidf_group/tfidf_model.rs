@@ -43,12 +43,12 @@ impl TfidfModel {
     pub(crate) fn to_file(&self, settings: &jobs::TfidfTraining) -> ModelFile {
         ModelFile {
             backend: TFIDF_BACKEND.to_string(),
-            format: 1,
+            format: MODEL_FILE_FORMAT,
             vectorizer: VectorizerFile {
                 analyzer: "word".to_string(),
                 lowercase: self.vectorizer.lowercase,
                 token_pattern: TOKEN_PATTERN.to_string(),
-                ngram_range: [1, self.vectorizer.ngram_max],
+                ngram_range: [NGRAM_MIN, self.vectorizer.ngram_max],
                 sublinear_tf: self.vectorizer.sublinear_tf,
                 smooth_idf: settings.smooth_idf,
                 norm: "l2".to_string(),
@@ -73,6 +73,12 @@ impl TfidfModel {
     }
 
     pub(crate) fn from_file(file: ModelFile) -> Result<TfidfModel> {
+        if file.format != MODEL_FILE_FORMAT {
+            crate::bail!(
+                "model file has layout {}, and this trainer reads only layout {MODEL_FILE_FORMAT} (docs/guide/models/artifact.md)",
+                file.format
+            );
+        }
         let VectorizerFile {
             lowercase,
             ngram_range,
@@ -104,10 +110,11 @@ impl TfidfModel {
             .enumerate()
             .map(|(column, term)| (term.clone(), column as u32))
             .collect();
+        let [_, ngram_max] = ngram_range;
         Ok(TfidfModel {
             vectorizer: Vectorizer {
                 lowercase,
-                ngram_max: ngram_range[1],
+                ngram_max,
                 sublinear_tf,
                 vocabulary,
                 index,
@@ -122,6 +129,14 @@ impl TfidfModel {
     }
 }
 
+/// The `model.json` layout this binary writes and `from_file` reads.
+const MODEL_FILE_FORMAT: u32 = 1; // https://github.com/wisent-ai/transcript-label-trainer/blob/main/docs/guide/models/artifact.md field `format`
+
+/// The shortest n-gram the vectorizer counts: single words, as
+/// `count_document` counts every length from one word up to `ngram_max`
+/// (scikit-learn's `ngram_range` lower bound).
+const NGRAM_MIN: usize = 1; // https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.text.TfidfVectorizer.html ngram_range=(1, n)
+
 // ---------------------------------------------------------------------------
 // Cross-validated accuracy
 // ---------------------------------------------------------------------------
@@ -133,40 +148,48 @@ impl TfidfModel {
 /// does by default (shuffle=False,
 /// https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.StratifiedKFold.html),
 /// so no seed is needed and the same labels always give the same folds.
+///
+/// A fold is scored only when its test side holds a row and its training
+/// side holds more than one class. When no fold can be scored there is no
+/// accuracy, and the answer is `None`, not a measured zero.
 pub(crate) fn cross_val_accuracy(
     texts: &[String],
     values: &[String],
     folds: usize,
     settings: &jobs::TfidfTraining,
-) -> f64 {
+) -> Option<f64> {
     let mut by_class: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (i, value) in values.iter().enumerate() {
         by_class.entry(value.as_str()).or_default().push(i);
     }
-    let mut assignment = vec![0usize; texts.len()];
+    let mut assignment: HashMap<usize, usize> = HashMap::with_capacity(texts.len());
     for members in by_class.values() {
         for (position, &row) in members.iter().enumerate() {
-            assignment[row] = position % folds;
+            assignment.insert(row, position % folds);
         }
     }
+    let fold_ids: std::collections::BTreeSet<usize> = assignment.values().copied().collect();
 
     let mut scores = Vec::with_capacity(folds);
-    for fold in 0..folds {
+    for fold in fold_ids {
         let mut train_texts = Vec::new();
         let mut train_values = Vec::new();
         let mut test_texts = Vec::new();
         let mut test_values = Vec::new();
-        for i in 0..texts.len() {
-            if assignment[i] == fold {
-                test_texts.push(texts[i].clone());
-                test_values.push(values[i].clone());
+        for (i, (text, value)) in texts.iter().zip(values).enumerate() {
+            if assignment.get(&i) == Some(&fold) {
+                test_texts.push(text.clone());
+                test_values.push(value.clone());
             } else {
-                train_texts.push(texts[i].clone());
-                train_values.push(values[i].clone());
+                train_texts.push(text.clone());
+                train_values.push(value.clone());
             }
         }
-        let distinct: HashSet<&String> = train_values.iter().collect();
-        if test_texts.is_empty() || distinct.len() < 2 {
+        let mut trained = train_values.iter();
+        let one_class = trained
+            .next()
+            .is_none_or(|first| trained.all(|value| value == first));
+        if test_texts.is_empty() || one_class {
             continue;
         }
         let model = TfidfModel::fit(&train_texts, &train_values, settings);
@@ -179,13 +202,9 @@ pub(crate) fn cross_val_accuracy(
         scores.push(correct as f64 / test_texts.len() as f64);
     }
     if scores.is_empty() {
-        return 0.0;
+        return None;
     }
-    scores.iter().sum::<f64>() / scores.len() as f64
-}
-
-pub(crate) fn round4(value: f64) -> f64 {
-    (value * 10_000.0).round() / 10_000.0
+    Some(scores.iter().sum::<f64>() / scores.len() as f64)
 }
 
 // ---------------------------------------------------------------------------
@@ -228,11 +247,4 @@ pub(crate) fn counts_json(counts: &BTreeMap<String, usize>) -> Value {
         object.insert(value.clone(), json!(count));
     }
     Value::Object(object)
-}
-
-pub(crate) fn write_pretty(path: &Path, value: &Value) -> Result<()> {
-    let mut text = serde_json::to_string_pretty(value)?;
-    text.push('\n');
-    std::fs::write(path, text)?;
-    Ok(())
 }

@@ -12,7 +12,9 @@ pub(crate) fn train_tfidf(plan: &Plan, settings: &jobs::TfidfTraining) -> Result
     // decides how many folds there can be; a class of one member cannot be
     // both trained on and tested, and then no cross-validated accuracy exists.
     let folds = counts.values().copied().min().filter(|members| *members >= 2); // stratified k-fold needs at least two splits: https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.StratifiedKFold.html
-    let cv_accuracy = folds.map(|folds| round4(cross_val_accuracy(&texts, &values, folds, settings)));
+    let cv_accuracy = folds
+        .and_then(|folds| cross_val_accuracy(&texts, &values, folds, settings))
+        .map(evaluate::round4);
 
     let model = TfidfModel::fit(&texts, &values, settings);
 
@@ -64,9 +66,9 @@ pub(crate) fn train_tfidf(plan: &Plan, settings: &jobs::TfidfTraining) -> Result
     // Python build wrote them in, so an interrupted run leaves a model without
     // metrics rather than metrics pointing at a model that was never written.
     let serialized = serde_json::to_string(&model.to_file(settings)).map_err(Error::from)?;
-    std::fs::write(&model_path, serialized + "\n").map_err(Error::from)?;
+    crate::util::write_whole(&model_path, (serialized + "\n").as_bytes())?;
     let metrics = Value::Object(metrics);
-    write_pretty(&out_dir.join(METRICS_FILE), &metrics)?;
+    crate::util::write_json_pretty(&out_dir.join(METRICS_FILE), &metrics)?;
     Ok(metrics)
 }
 
@@ -142,7 +144,7 @@ pub(crate) fn train_hf(
     }
 
     let metrics = Value::Object(metrics);
-    write_pretty(&trained.dir.join(METRICS_FILE), &metrics)?;
+    crate::util::write_json_pretty(&trained.dir.join(METRICS_FILE), &metrics)?;
     Ok(metrics)
 }
 
