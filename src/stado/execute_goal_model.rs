@@ -25,12 +25,15 @@ pub fn execute_goal_model(
     let output_uri = format!("stado://probierz/artifacts/models/jeden/goal-qwen3-4b/{run_key}");
     let stado = PathBuf::from(crate::brama::stado_bin()?);
     upload(&stado, &dataset_uri, dataset_path, "application/x-ndjson")?;
+    let work = job_work_dir(&stado, compute_target, &format!("jeden-goal-{run_key}"))?;
+    // The script copies its dataset into the work directory, so the job
+    // fetches it to inputs/ there rather than onto that copy.
     let command = format!(
-        "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/jeden-goal-{run_key}\"; \
-         mkdir -p \"$work\"; stado=\"${{STADO_BIN:?Stado exports STADO_BIN to every job it runs, and this job has none}}\"; \
-         \"$stado\" storage get '{dataset_uri}' \"$work/reviewed-goals.jsonl\"; \
+        "set -euo pipefail; work={work}; \
+         mkdir -p \"$work/inputs\"; stado=\"${{STADO_BIN:?Stado exports STADO_BIN to every job it runs, and this job has none}}\"; \
+         \"$stado\" storage get '{dataset_uri}' \"$work/inputs/reviewed-goals.jsonl\"; \
          export GOAL_MODEL_WORK_DIR=\"$work\"; export GOAL_STER_OPTIONS={}; \
-         ./training/goal-model/run.sh \"$work/reviewed-goals.jsonl\"",
+         ./training/goal-model/run.sh \"$work/inputs/reviewed-goals.jsonl\"",
         shell_quote(&ster_options),
     );
     // The same data, settings and source revision is the same run: Stado
@@ -121,14 +124,18 @@ pub fn execute_lifecycle_model(
     let stado = PathBuf::from(crate::brama::stado_bin()?);
     upload(&stado, &train_uri, train_path, "application/x-ndjson")?;
     upload(&stado, &eval_uri, eval_path, "application/x-ndjson")?;
+    let work = job_work_dir(&stado, compute_target, &format!("oko-lifecycle-{run_key}"))?;
+    // As for the goal job, inputs/ keeps the fetched splits apart from the
+    // copies the script makes in its work directory.
     let command = format!(
-        "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/oko-lifecycle-{run_key}\"; \
-         mkdir -p \"$work\"; stado=\"${{STADO_BIN:?Stado exports STADO_BIN to every job it runs, and this job has none}}\"; \
-         \"$stado\" storage get '{train_uri}' \"$work/reviewed-train.jsonl\"; \
-         \"$stado\" storage get '{eval_uri}' \"$work/reviewed-eval.jsonl\"; \
+        "set -euo pipefail; work={work}; \
+         mkdir -p \"$work/inputs\"; stado=\"${{STADO_BIN:?Stado exports STADO_BIN to every job it runs, and this job has none}}\"; \
+         \"$stado\" storage get '{train_uri}' \"$work/inputs/reviewed-train.jsonl\"; \
+         \"$stado\" storage get '{eval_uri}' \"$work/inputs/reviewed-eval.jsonl\"; \
+         export LIFECYCLE_MODEL_WORK_DIR=\"$work\"; \
          export BRAMA_URL={brama_url}; export LIFECYCLE_STER_OPTIONS={ster_options}; \
          ./training/lifecycle-model/run.sh \
-         \"$work/reviewed-train.jsonl\" \"$work/reviewed-eval.jsonl\""
+         \"$work/inputs/reviewed-train.jsonl\" \"$work/inputs/reviewed-eval.jsonl\""
     );
     let run_id = format!("oko-lifecycle-{run_key}-{source_ref}");
     let args = vec![
@@ -216,14 +223,10 @@ pub fn execute_humanizer_model(
     let stado = PathBuf::from(crate::brama::stado_bin()?);
     upload(&stado, &targets_uri, targets_path, "application/x-ndjson")?;
     let source_ref = repo_ref()?;
-    let work_root = crate::placement::resolve_placement()
-        .training_root
-        .join("humanizer-model")
-        .join("jobs");
-    let work_root = shell_quote(&work_root.to_string_lossy());
+    let work = job_work_dir(&stado, compute_target, &format!("echo-humanizer-{run_key}"))?;
     let hf_repo = shell_quote(hf_repo);
     let command = format!(
-        "set -euo pipefail; work={work_root}/echo-humanizer-{run_key}; \
+        "set -euo pipefail; work={work}; \
          mkdir -p \"$work\"; stado=\"${{STADO_BIN:?Stado exports STADO_BIN to every job it runs, and this job has none}}\"; \
          \"$stado\" storage get '{targets_uri}' \"$work/targets.jsonl\"; \
          HUMANIZER_HF_REPO={hf_repo} HUMANIZER_WORK_DIR=\"$work\" \

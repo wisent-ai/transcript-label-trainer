@@ -1,5 +1,6 @@
 //! Real generic training dispatch, replay and staged-input source isolation.
-//! Worker staging and model roots must be readable on this qualification host.
+//! The worker's declared training root, which holds every job's work
+//! directory under jobs/, must be readable on this qualification host.
 mod support;
 
 use std::fs;
@@ -56,7 +57,6 @@ fn journey(evidence: &mut Evidence) -> Result<()> {
     }
     let stado = required("STADO_BIN")?;
     let target = required("TLT_TEST_COMPUTE_TARGET")?;
-    let staging = PathBuf::from(required("TLT_TEST_WORKER_STAGING_ROOT")?).canonicalize()?;
     let training = PathBuf::from(required("TLT_TEST_WORKER_TRAINING_ROOT")?).canonicalize()?;
     let input = PathBuf::from(required("TLT_TEST_JOB_SPEC")?).canonicalize()?;
     let input_sha = digest(&input)?;
@@ -78,6 +78,7 @@ fn journey(evidence: &mut Evidence) -> Result<()> {
     evidence.report["binary_sha256"] = json!(digest(Path::new(BINARY))?);
     evidence.report["input_sha256"] = json!(input_sha);
     evidence.report["owned_model_path"] = json!(model);
+    let staging = training.join("jobs");
     evidence.report["worker_staging_root"] = json!(staging);
     evidence.save()?;
     let args = ["run", spec_path.to_str().ok_or("job path is not UTF-8")?, "--compute-target", &target];

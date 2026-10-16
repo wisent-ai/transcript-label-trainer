@@ -157,7 +157,9 @@ pub(crate) fn cargo_command(job: &Job) -> &'static str {
     }
 }
 
-pub(crate) fn remote_command(job: &Job, dataset_uri: &str, spec_uri: &str, key: &str) -> String {
+/// The job's shell command; `work` is its shell-quoted work directory on the
+/// target, from [`super::job_work_dir`].
+pub(crate) fn remote_command(job: &Job, dataset_uri: &str, spec_uri: &str, work: &str) -> String {
     let cargo = cargo_command(job);
     let evaluate = if job.eval_split.enabled && job.judge.enabled {
         format!("; {cargo} evaluate '{}' --best", job.name)
@@ -165,7 +167,7 @@ pub(crate) fn remote_command(job: &Job, dataset_uri: &str, spec_uri: &str, key: 
         String::new()
     };
     format!(
-        "set -euo pipefail; work=\"${{TMPDIR:-/tmp}}/tlt-{key}\"; mkdir -p \"$work\"; \
+        "set -euo pipefail; work={work}; mkdir -p \"$work\"; \
          stado=\"${{STADO_BIN:?Stado exports STADO_BIN to every job it runs, and this job has none}}\"; \
          \"$stado\" storage get '{dataset_uri}' \"$work/dataset.json\"; \
          \"$stado\" storage get '{spec_uri}' \"$work/job.yaml\"; \
@@ -213,7 +215,8 @@ pub fn execute(job_path: &str, job: &Job, compute_target: &str) -> Result<i32> {
     // The same dataset, spec and source revision is the same run: Stado
     // answers a repeated submission with the job it already holds.
     let run_id = format!("tlt-run-{key}-{source_ref}");
-    let command = remote_command(job, &dataset_uri, &spec_uri, &run_id);
+    let work = super::job_work_dir(&stado, compute_target, &format!("tlt-{run_id}"))?;
+    let command = remote_command(job, &dataset_uri, &spec_uri, &work);
     let mut args = vec![
         OsString::from("submit"),
         OsString::from("--run-id"),

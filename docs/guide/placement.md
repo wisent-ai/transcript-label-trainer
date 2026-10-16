@@ -60,11 +60,18 @@ a job that has none stops before fetching anything, its shell reporting
 `STADO_BIN: Stado exports STADO_BIN to every job it runs, and this job has none`,
 rather than guessing a Stado under `$HOME`.
 
-The input-staging workspace is keyed by the full submitted run identity:
-dataset, job specification and exact trainer source revision. Repeating the
-same run selects the same staging path; another source revision selects a
-different one. This does not move model artifacts away from the target's
-declared training root or promise filesystem retention after a host is retired.
+Every remote job - `run --compute-target`, `goal-model`, `lifecycle-model`
+and `humanizer-model` - works in `<models_dir>/jobs/<run>` on its target,
+where `<models_dir>` is the training root that target declares as
+`targets.<target>.training.models_dir` and the trainer reads it from the Stado
+registry before submitting. The path is the target's own, never one resolved
+on the machine that submits; a target the registry does not answer for, or
+one declaring a root that is not an absolute path, is refused before anything
+is submitted, naming the registry path and what it said. `<run>` is keyed by
+the full submitted run identity: dataset, job specification or settings, and
+exact trainer source revision. Repeating the same run selects the same work
+directory; another source revision selects a different one. This does not
+promise filesystem retention after a host is retired.
 
 ### Qualify generic remote submission and replay
 
@@ -80,11 +87,8 @@ a unique qualification name, leaving training settings and model gates intact.
 The ordinary lake and Brama credential declarations still apply.
 
 `TLT_TEST_WORKER_TRAINING_ROOT` must match the target's declared
-`training.models_dir`; the journey reads that registry field before submitting.
-`TLT_TEST_WORKER_STAGING_ROOT` names the worker's actual `TMPDIR`, where the
-current generic dispatcher places `tlt-<run-id>`. Supply an existing,
-qualification-owned staging root in the checkout's ignored build area through
-the worker's normal environment declaration, not a fabricated local copy.
+`training.models_dir`; the journey reads that registry field before submitting
+and reads each job's staged inputs from `jobs/tlt-<run-id>` under it.
 Unavailable worker files fail the journey rather than reducing it to an argv
 check.
 
