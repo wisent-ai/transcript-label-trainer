@@ -129,24 +129,12 @@ fn action_counts(rows: &[(Value, String)]) -> BTreeMap<String, usize> {
 }
 
 fn write_rows(path: &Path, rows: &[(Value, String)]) -> Result<()> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent)?;
-    }
-    let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".tmp");
-    let temporary = std::path::PathBuf::from(temporary);
-    let mut out = BufWriter::new(File::create(&temporary)?);
+    let mut lines = String::new();
     for (row, _) in rows {
-        writeln!(out, "{}", serde_json::to_string(row)?)?;
+        lines.push_str(&serde_json::to_string(row)?);
+        lines.push('\n');
     }
-    out.into_inner()
-        .map_err(|error| Error(error.to_string()))?
-        .sync_all()?;
-    fs::rename(&temporary, path)?;
-    Ok(())
+    crate::util::write_whole(path, lines.as_bytes())
 }
 
 fn unique_ids(rows: &[(Value, String)], split: &str) -> Result<HashSet<String>> {

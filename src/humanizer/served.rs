@@ -14,12 +14,12 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::{MODEL_CONTRACT, REPORT_SCHEMA_VERSION};
 use crate::serving::{Server, Serving};
-use crate::util::{Error, Result};
+use crate::util::{read_text, write_whole, Error, Result};
 
 /// One prepared row's three turns: system prompt, source, target.
 struct Turns {
@@ -27,11 +27,14 @@ struct Turns {
     system: String,
     source: String,
     target: String,
-    metadata: Value,
+    metadata: Option<Value>,
 }
 
 fn turns(row: &Value) -> Result<Turns> {
-    let id = row.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+    let Some(id) = row.get("id").and_then(Value::as_str) else {
+        return Err(Error(format!("a prepared row states no text id: {row}")));
+    };
+    let id = id.to_string();
     let content = |role: &str| -> Result<String> {
         let mut found = row
             .get("messages")
@@ -53,14 +56,14 @@ fn turns(row: &Value) -> Result<Turns> {
         system: content("system")?,
         source: content("user")?,
         target: content("assistant")?,
-        metadata: row.get("metadata").cloned().unwrap_or(Value::Null),
+        metadata: row.get("metadata").cloned(),
         id,
     })
 }
 
 /// Every prepared row of `path`, refusing a file without one.
 fn split_rows(path: &Path) -> Result<Vec<Turns>> {
-    let text = std::fs::read_to_string(path).map_err(|error| Error(format!("{}: {error}", path.display())))?;
+    let text = read_text(path)?;
     let rows = text
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -73,19 +76,6 @@ fn split_rows(path: &Path) -> Result<Vec<Turns>> {
         return Err(Error(format!("{} holds no prepared row", path.display())));
     }
     Ok(rows)
-}
-
-/// Write `bytes` to `output` whole, through a sibling file renamed into place.
-fn write_whole(output: &Path, bytes: &[u8]) -> Result<()> {
-    if let Some(parent) = output.parent().filter(|parent| !parent.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut temporary = output.as_os_str().to_owned();
-    temporary.push(".tmp");
-    let temporary = PathBuf::from(temporary);
-    std::fs::write(&temporary, bytes)?;
-    std::fs::rename(&temporary, output)?;
-    Ok(())
 }
 
 /// Write the prepared split `rows` as the Ster supervised example set.
@@ -148,29 +138,66 @@ fn chrf(reference: &str, candidate: &str) -> f64 {
         // Precision and recall are both zero: so is their product.
         return precision * recall;
     }
-    // F-beta, https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/chrf.py: (1 + beta^2) P R / (beta^2 P + R)
+    // F-beta: (1 + beta^2) P R / (beta^2 P + R), the one added to beta squared
+    // as sacrebleu writes it: https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/chrf.py
     (1.0 + weight) * precision * recall / denominator
 }
 
-fn score(row: &Turns, candidate: &str) -> Value {
-    json!({
-        "target_chrf": chrf(&row.target, candidate),
-        "source_chrf": chrf(&row.source, candidate),
-        "length_ratio": candidate.chars().count() as f64 / row.target.chars().count() as f64,
-    })
+/// One answer's scores: chrF against the target and the source, and its
+/// length against the target's.
+struct Score {
+    target_chrf: f64,
+    source_chrf: f64,
+    length_ratio: f64,
 }
 
-/// The mean of every score of `scores`, key by key.
-fn means(scores: &[Value]) -> Value {
-    let mut sums: Map<String, Value> = Map::new();
-    for score in scores {
-        for (key, value) in score.as_object().into_iter().flatten() {
-            let sum = sums.get(key).and_then(Value::as_f64).unwrap_or_default() + value.as_f64().unwrap_or_default();
-            sums.insert(key.clone(), json!(sum));
+impl Score {
+    fn json(&self) -> Value {
+        json!({
+            "target_chrf": self.target_chrf,
+            "source_chrf": self.source_chrf,
+            "length_ratio": self.length_ratio,
+        })
+    }
+}
+
+/// The scores of `candidate` for `row`. A score that is not a finite number
+/// is refused naming the row and the metric: written as JSON it would be a
+/// null, and averaged it would invent a value.
+fn score(row: &Turns, which: &str, candidate: &str) -> Result<Score> {
+    let score = Score {
+        target_chrf: chrf(&row.target, candidate),
+        source_chrf: chrf(&row.source, candidate),
+        length_ratio: candidate.chars().count() as f64 / row.target.chars().count() as f64,
+    };
+    for (metric, value) in [
+        ("target_chrf", score.target_chrf),
+        ("source_chrf", score.source_chrf),
+        ("length_ratio", score.length_ratio),
+    ] {
+        if !value.is_finite() {
+            return Err(Error(format!(
+                "the {which} answer for row {:?} has a {metric} of {value}, which is not a finite number",
+                row.id
+            )));
         }
     }
+    Ok(score)
+}
+
+/// The mean of each score over `scores`; an empty set has no mean and is
+/// refused.
+fn means(scores: &[Score], which: &str) -> Result<Score> {
+    if scores.is_empty() {
+        return Err(Error(format!("the {which} model has no scored answer to average")));
+    }
     let count = scores.len() as f64;
-    Value::Object(sums.into_iter().map(|(key, sum)| (key, json!(sum.as_f64().unwrap_or_default() / count))).collect())
+    let mean = |metric: fn(&Score) -> f64| scores.iter().map(metric).sum::<f64>() / count;
+    Ok(Score {
+        target_chrf: mean(|score| score.target_chrf),
+        source_chrf: mean(|score| score.source_chrf),
+        length_ratio: mean(|score| score.length_ratio),
+    })
 }
 
 /// What one humanizer evaluation is given; every field is the caller's.
@@ -214,15 +241,15 @@ pub(crate) fn evaluate_gguf(run: &HumanizerEvaluation) -> Result<Value> {
     let mut lines = String::new();
     let (mut base_scores, mut student_scores) = (Vec::new(), Vec::new());
     for ((row, base), student) in rows.iter().zip(&base).zip(&student) {
-        let (base_score, student_score) = (score(row, base), score(row, student));
+        let (base_score, student_score) = (score(row, "base", base)?, score(row, "student", student)?);
         let prediction = json!({
             "id": row.id,
             "source": row.source,
             "target": row.target,
             "base": base,
             "student": student,
-            "base_metrics": base_score,
-            "student_metrics": student_score,
+            "base_metrics": base_score.json(),
+            "student_metrics": student_score.json(),
             "metadata": row.metadata,
         });
         lines.push_str(&format!("{prediction}\n"));
@@ -230,8 +257,8 @@ pub(crate) fn evaluate_gguf(run: &HumanizerEvaluation) -> Result<Value> {
         student_scores.push(student_score);
     }
     write_whole(&run.predictions, lines.as_bytes())?;
-    let (base_means, student_means) = (means(&base_scores), means(&student_scores));
-    let gain = student_means["target_chrf"].as_f64().unwrap_or_default() - base_means["target_chrf"].as_f64().unwrap_or_default();
+    let (base_means, student_means) = (means(&base_scores, "base")?, means(&student_scores, "student")?);
+    let gain = student_means.target_chrf - base_means.target_chrf;
     let metrics = json!({
         "schema_version": REPORT_SCHEMA_VERSION,
         "contract": MODEL_CONTRACT,
@@ -241,8 +268,8 @@ pub(crate) fn evaluate_gguf(run: &HumanizerEvaluation) -> Result<Value> {
         "test_rows": rows.len(),
         "chrf": { "char_order": CHAR_ORDER, "beta": BETA, "whitespace": false, "lowercase": false, "source": CHRF_SOURCE },
         "evaluation_surface": "base and merged student as full-precision GGUFs through llama-server, one after the other",
-        "base": base_means,
-        "student": student_means,
+        "base": base_means.json(),
+        "student": student_means.json(),
         "target_chrf_gain": gain,
     });
     write_whole(&run.metrics, (serde_json::to_string_pretty(&metrics)? + "\n").as_bytes())?;
