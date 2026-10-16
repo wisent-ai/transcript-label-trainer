@@ -91,19 +91,19 @@ pub(crate) fn frame_from_labels(
     let texts_by_id = lake::session_texts(&ids)?;
 
     let mut rows: Vec<lake::SessionLabel> = Vec::with_capacity(labels.len());
-    let mut skipped = 0usize;
-    let mut skipped_short = 0usize;
+    let mut without_text: Vec<&str> = Vec::new();
+    let mut too_short: Vec<&str> = Vec::new();
     for label in labels {
         let text = match texts_by_id.get(&label.session_id) {
             Some(entry) if !entry.text.trim().is_empty() => &entry.text,
             _ => {
-                skipped += 1;
+                without_text.push(&label.session_id);
                 continue;
             }
         };
         if let Some(min_chars) = min_text_chars {
             if (text.chars().count() as u64) < min_chars {
-                skipped_short += 1;
+                too_short.push(&label.session_id);
                 continue;
             }
         }
@@ -111,16 +111,18 @@ pub(crate) fn frame_from_labels(
         row.text = text.clone();
         rows.push(row);
     }
-    if skipped > 0 {
+    if !without_text.is_empty() {
         lake::warn(&format!(
-            "{skipped} labeled session(s) had no text in the lake and were skipped"
+            "{} labeled session(s) had no text in the lake and were skipped",
+            without_text.len()
         ));
     }
-    if skipped_short > 0 {
-        let min_chars = min_text_chars.unwrap_or(0);
+    // Only a stated minimum can make a session too short.
+    if let (Some(min_chars), false) = (min_text_chars, too_short.is_empty()) {
         lake::warn(&format!(
-            "{skipped_short} labeled session(s) were shorter than \
-             scope.min_text_chars={min_chars} and were skipped"
+            "{} labeled session(s) were shorter than \
+             scope.min_text_chars={min_chars} and were skipped",
+            too_short.len()
         ));
     }
 
@@ -137,10 +139,15 @@ pub(crate) fn frame_from_labels(
     Ok((rows, counts))
 }
 
+/// How many times each value occurs: the size of its group once sorted.
 pub(crate) fn class_counts<'a>(values: impl Iterator<Item = &'a str>) -> BTreeMap<String, usize> {
+    let mut sorted: Vec<&str> = values.collect();
+    sorted.sort_unstable();
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-    for value in values {
-        *counts.entry(value.to_string()).or_insert(0) += 1;
+    for group in sorted.chunk_by(|left, right| left == right) {
+        if let Some(value) = group.first() {
+            counts.insert(value.to_string(), group.len());
+        }
     }
     counts
 }
@@ -206,23 +213,21 @@ pub(crate) type SparseRow = Vec<(u32, f64)>;
 /// the whole of the pattern.
 pub(crate) fn tokenize(prepared: &str, out: &mut Vec<String>) {
     let mut start: Option<usize> = None;
-    let mut len = 0usize;
+    let mut keep = |word: &str| {
+        if at_least_two(word.chars()) {
+            out.push(word.to_string());
+        }
+    };
     for (offset, ch) in prepared.char_indices() {
         if ch.is_alphanumeric() || ch == '_' {
             if start.is_none() {
                 start = Some(offset);
-                len = 0;
             }
-            len += 1;
         } else if let Some(begin) = start.take() {
-            if len >= 2 {
-                out.push(prepared[begin..offset].to_string());
-            }
+            keep(&prepared[begin..offset]);
         }
     }
     if let Some(begin) = start {
-        if len >= 2 {
-            out.push(prepared[begin..].to_string());
-        }
+        keep(&prepared[begin..]);
     }
 }
