@@ -37,7 +37,10 @@ twice (beta 2), all recorded under `chrf` in `metrics.json` — against the targ
 source and by its length against the target's; `predictions.jsonl` carries both answers
 for `humanizer-audit`, and `metrics.json` the means and the target chrF gain the manifest
 records. A model file that does not exist is refused before a server starts, and a failed
-request fails the run naming its row. To see an example set before any job:
+request fails the run naming its row. A row without a text `id` is refused, a score that
+is not a finite number fails the run naming the model, the row and the metric (it would
+otherwise be written as `null`), and the means and the gain are computed from the scores
+themselves, never from a missing value read as zero. To see an example set before any job:
 
 ```sh
 transcript-label-trainer humanizer-examples --rows train.jsonl --output humanizer-examples.json
