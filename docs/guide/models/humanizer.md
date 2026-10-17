@@ -97,6 +97,10 @@ is stored in source. `TLT_PUBLICATION_FIXTURE` must point to an actual qualified
 humanizer job output containing `adapter/`, `metrics.json`, `audit.json` and
 `preparation.json`; the runner does not manufacture a passed audit or weights.
 
+`preparation.json`, `audit.json`, the job output's `model-manifest.json` and
+the receipt `humanizer-publish` writes to `--output` name their record
+layout: each of these records carries schema_version 1.
+
 The public-destination journey creates an empty isolated public repository,
 requires refusal without visibility or revision changes, and deletes it.
 The private journey publishes the real fixture into a new private repository,

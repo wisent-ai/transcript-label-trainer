@@ -4,10 +4,9 @@ use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
-use super::MODEL_CONTRACT;
-use crate::util::{Error, Result};
+use super::{MODEL_CONTRACT, REPORT_SCHEMA_VERSION};
+use crate::util::{sha256_hex, Error, Result};
 
 use crate::hub::{Hub, ModelInfo, Signature};
 
@@ -45,7 +44,7 @@ fn evidence(path: &Path, gate: Gate) -> Result<Signature> {
         }
         _ => {}
     }
-    Ok(Signature { size: bytes.len() as u64, sha256: hex::encode(Sha256::digest(&bytes)) })
+    Ok(Signature { size: bytes.len() as u64, sha256: sha256_hex(&bytes) })
 }
 
 fn refusal(repository: &str, info: &ModelInfo) -> Option<Value> {
@@ -90,7 +89,7 @@ pub fn publish_adapter(request: Publication<'_>) -> Result<Value> {
 
     // The vendor CLI returns a mutable file URL, not its commit id. Give each
     // publication its own branch so readback cannot name another writer's head.
-    let branch = format!("humanizer-publication-{}", hex::encode(rand::random::<[u8; 16]>()));
+    let branch = format!("humanizer-publication-{}", hex::encode(rand::random::<u128>().to_be_bytes()));
     for (source, destination) in [
         (request.model, ""),
         (request.metrics, "evaluation/metrics.json"),
@@ -128,7 +127,7 @@ pub fn publish_adapter(request: Publication<'_>) -> Result<Value> {
         }
     }
     Ok(json!({
-        "schema_version": 1,
+        "schema_version": REPORT_SCHEMA_VERSION,
         "contract": MODEL_CONTRACT,
         "repo_id": repository,
         "revision": revision,
