@@ -112,6 +112,23 @@ impl BramaClient {
         description: &str,
         parameters: serde_json::Value,
     ) -> Result<serde_json::Map<String, serde_json::Value>> {
+        match self.called(model, messages, name, description, parameters)? {
+            Called::Arguments(arguments) => Ok(arguments),
+            Called::DoesNotFit(detail) => bail!("Brama answered HTTP 400: {detail}"),
+        }
+    }
+
+    /// [`Self::call`], telling a prompt the routed model cannot take (Brama's
+    /// `context_length_exceeded`) apart from every other failure, so a caller
+    /// can ask about less instead of guessing a size up front.
+    pub(crate) fn called(
+        &self,
+        model: &str,
+        messages: &[Message],
+        name: &str,
+        description: &str,
+        parameters: serde_json::Value,
+    ) -> Result<Called> {
         let body = serde_json::json!({
             "model": model,
             "messages": messages,
@@ -123,7 +140,7 @@ impl BramaClient {
         });
         let payload = match self.completion(&body)? {
             Completion::Answered(payload) => payload,
-            Completion::DoesNotFit(detail) => bail!("Brama answered HTTP 400: {detail}"),
+            Completion::DoesNotFit(detail) => return Ok(Called::DoesNotFit(detail)),
         };
         let calls = first_message(&payload)
             .and_then(|message| message.get("tool_calls"))
@@ -140,7 +157,7 @@ impl BramaClient {
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| Error(format!("{model}'s call of {name} carries no arguments: {payload}")))?;
         match serde_json::from_str::<serde_json::Value>(arguments) {
-            Ok(serde_json::Value::Object(object)) => Ok(object),
+            Ok(serde_json::Value::Object(object)) => Ok(Called::Arguments(object)),
             Ok(other) => bail!("{model}'s call of {name} has arguments that are not an object: {other}"),
             Err(error) => bail!("{model}'s call of {name} has arguments that are not JSON ({error}): {arguments}"),
         }
@@ -214,6 +231,14 @@ fn first_message(payload: &serde_json::Value) -> Option<&serde_json::Value> {
 pub(crate) enum ChatAnswer {
     /// The model's message content.
     Content(String),
+    /// The prompt does not fit the routed model; Brama's answer body.
+    DoesNotFit(String),
+}
+
+/// What Brama answered one required function call.
+pub(crate) enum Called {
+    /// The arguments of the model's one call.
+    Arguments(serde_json::Map<String, serde_json::Value>),
     /// The prompt does not fit the routed model; Brama's answer body.
     DoesNotFit(String),
 }

@@ -25,11 +25,8 @@ pub(crate) fn teacher_prompt(excerpts: &[(String, String)]) -> Vec<brama::Messag
                       from a transcript alone; at least two mutually exclusive \
                       values in lowercase-kebab-case; no aspect that would be \
                       true of every session or of almost none; no restating of \
-                      obvious metadata (language, length, runtime). Answer with \
-                      strict JSON only: an array of objects, each \
-                      {\"aspect\": \"kebab-case-name\", \"values\": [..], \
-                      \"description\": \"one sentence\", \
-                      \"evidence\": [\"session ids from the input\"]}."
+                      obvious metadata (language, length, runtime). Answer by \
+                      calling propose_aspects with every aspect you propose."
                 .to_string(),
         },
         brama::Message {
@@ -62,24 +59,55 @@ pub(crate) fn kebab(name: &str) -> String {
     out.trim_end_matches('-').to_string()
 }
 
-/// The teacher's JSON array of proposals, with a possible ```json fence
-/// stripped, or why it is not one.
-pub(crate) fn parse_proposals(answer: &str) -> std::result::Result<Vec<Value>, String> {
-    let trimmed = answer
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
-    match serde_json::from_str::<Value>(trimmed) {
-        Ok(Value::Array(proposals)) => Ok(proposals),
-        Ok(other) => Err(format!(
-            "the teacher answered JSON that is not an array: {other}"
-        )),
-        Err(error) => Err(format!(
-            "the teacher's answer is not JSON ({error}): {answer}"
-        )),
+/// The function the teacher answers by: its parameters are the proposals, as
+/// a strict JSON Schema, so they are the teacher's answer itself and never
+/// JSON looked for in its prose. `read_proposal` still holds each one to what
+/// the schema cannot state (kebab names, two values or more).
+pub(crate) const PROPOSALS: &str = "propose_aspects";
+
+pub(crate) fn proposals_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["proposals"],
+        "properties": {
+            "proposals": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["aspect", "values", "description", "evidence"],
+                    "properties": {
+                        "aspect": { "type": "string", "description": "The aspect's name in lowercase-kebab-case." },
+                        "values": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Its mutually exclusive values, in lowercase-kebab-case.",
+                        },
+                        "description": { "type": "string", "description": "One sentence." },
+                        "evidence": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Session ids from the input the aspect is grounded in.",
+                        },
+                    },
+                },
+            },
+        },
+    })
+}
+
+/// The proposals list of the teacher's call.
+pub(crate) fn called_proposals(
+    arguments: Map<String, Value>,
+) -> std::result::Result<Vec<Value>, String> {
+    if let Some(Value::Array(proposals)) = arguments.get("proposals") {
+        return Ok(proposals.clone());
     }
+    Err(format!(
+        "the teacher's call of {PROPOSALS} holds no proposals list: {}",
+        Value::Object(arguments)
+    ))
 }
 
 pub(crate) struct Merged {

@@ -65,7 +65,7 @@ pub fn discover(
     let sampled: usize = answers.iter().map(|(sessions, _)| sessions).sum();
     let chunks = answers.len();
     for (chunk, (_, answer)) in answers.into_iter().enumerate() {
-        let proposals = match answer.map(|answer| parse_proposals(&answer)) {
+        let proposals = match answer.map(called_proposals) {
             Ok(Ok(proposals)) => proposals,
             Ok(Err(why)) => {
                 failures.push(json!({ "chunk": chunk, "error": why }));
@@ -211,19 +211,27 @@ pub fn discover(
 /// How many parts a batch that does not fit is split into.
 const BISECTION_PARTS: usize = 2; // https://en.wikipedia.org/wiki/Bisection_method "repeatedly bisecting the interval" — halving keeps the number of calls logarithmic in the batch
 
-/// Ask the teacher about every session of `batch` in one call. When Brama
-/// answers that the prompt does not fit the routed model, ask about each half
-/// instead, so the model's own context decides how many sessions one call
-/// shows. A single session that does not fit alone is a failure naming it.
+/// Ask the teacher about every session of `batch` in one required call of
+/// [`PROPOSALS`]. When Brama answers that the prompt does not fit the routed
+/// model, ask about each half instead, so the model's own context decides how
+/// many sessions one call shows. A single session that does not fit alone is
+/// a failure naming it.
 fn teacher_answers(
     client: &brama::BramaClient,
     model: &str,
     batch: &[(String, String)],
-    answers: &mut Vec<(usize, Result<String>)>,
+    answers: &mut Vec<(usize, Result<Map<String, Value>>)>,
 ) {
-    match client.answer(model, &teacher_prompt(batch)) {
-        Ok(brama::ChatAnswer::Content(answer)) => answers.push((batch.len(), Ok(answer))),
-        Ok(brama::ChatAnswer::DoesNotFit(detail)) => match batch {
+    let called = client.called(
+        model,
+        &teacher_prompt(batch),
+        PROPOSALS,
+        "The aspects proposed from the sessions shown, each grounded in them.",
+        proposals_schema(),
+    );
+    match called {
+        Ok(brama::Called::Arguments(arguments)) => answers.push((batch.len(), Ok(arguments))),
+        Ok(brama::Called::DoesNotFit(detail)) => match batch {
             [only] => answers.push((
                 batch.len(),
                 Err(crate::util::Error(format!(
