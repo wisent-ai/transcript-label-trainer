@@ -9,7 +9,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::calls::{ask, fan_out, json_object, read_jsonl};
+use super::calls::{ask_call, fan_out, read_jsonl};
 use super::prompts::JUDGE_PROMPT;
 use super::{MODEL_CONTRACT, REPORT_SCHEMA_VERSION};
 use crate::brama::BramaClient;
@@ -45,10 +45,35 @@ struct Judged {
     passed: bool,
 }
 
-fn parse_verdict(answer: &str) -> Result<Verdict> {
-    let object = json_object(answer, "judge output")?;
-    let verdict: Verdict = serde_json::from_value(Value::Object(object))
-        .map_err(|error| Error(format!("judge output is not the asked verdict: {error}")))?;
+/// The function the judge answers through: its arguments are the verdict.
+fn verdict_function() -> (&'static str, &'static str, Value) {
+    let judged = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["semantic_fidelity", "voice_match", "ai_boilerplate", "passed"],
+        "properties": {
+            "semantic_fidelity": { "type": "number" },
+            "voice_match": { "type": "number" },
+            "ai_boilerplate": { "type": "boolean" },
+            "passed": { "type": "boolean" },
+        },
+    });
+    (
+        "record_verdict",
+        "The judge's rating of the base and the student candidate.",
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["base", "student"],
+            "properties": { "base": judged, "student": judged },
+        }),
+    )
+}
+
+fn parse_verdict(arguments: serde_json::Map<String, Value>) -> Result<Verdict> {
+    let verdict: Verdict = serde_json::from_value(Value::Object(arguments.clone())).map_err(|error| {
+        Error(format!("judge output is not the record_verdict object ({error}): {}", Value::Object(arguments)))
+    })?;
     for (name, judged) in [("base", &verdict.base), ("student", &verdict.student)] {
         for (score, value) in [
             ("semantic_fidelity", judged.semantic_fidelity),
@@ -76,7 +101,7 @@ fn judge(row: &Prediction, client: &BramaClient, model: &str) -> Result<Record> 
         "student": row.student,
     })
     .to_string();
-    let verdict = ask(client, model, JUDGE_PROMPT, question, parse_verdict)
+    let verdict = ask_call(client, model, JUDGE_PROMPT, question, verdict_function(), parse_verdict)
         .map_err(|error| Error(format!("{}: {error}", row.id)))?;
     Ok(Record {
         id: row.id.clone(),
@@ -127,7 +152,7 @@ pub fn audit_outputs(
         crate::bail!("{} holds no predictions to audit", predictions.display());
     }
     let client = BramaClient::from_env()?;
-    let workers = client.allowance(model)?.get();
+    let workers = client.allowance(model)?;
     let outcomes = fan_out(&rows, workers, "audited", |row| {
         judge(row, &client, model)
     });

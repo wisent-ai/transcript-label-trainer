@@ -5,11 +5,12 @@
 
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::anchors::valid_source;
-use super::calls::{ask, fan_out, json_object, read_jsonl};
+use super::calls::{ask, ask_call, fan_out, read_jsonl};
 use super::prompts::{REVIEW_PROMPT, SYSTEM_PROMPT, TEACHER_PROMPT};
 use super::{TargetRow, REPORT_SCHEMA_VERSION};
 use crate::brama::BramaClient;
@@ -34,19 +35,42 @@ impl Split {
     }
 }
 
-const REVIEW_FIELDS: &[&str] = &["authored", "faithful", "generic_ai", "same_language", "usable"];
+/// The reviewer's verdict on one pair, exactly the record_review arguments.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Review {
+    authored: bool,
+    faithful: bool,
+    generic_ai: bool,
+    same_language: bool,
+    usable: bool,
+}
 
-fn parse_review(answer: &str) -> Result<serde_json::Map<String, Value>> {
-    let review = json_object(answer, "review")?;
-    let shaped = review.len() == REVIEW_FIELDS.len()
-        && REVIEW_FIELDS
-            .iter()
-            .all(|field| review.get(*field).is_some_and(Value::is_boolean));
-    if shaped {
-        Ok(review)
-    } else {
-        crate::bail!("review has invalid shape: {}", Value::Object(review))
-    }
+/// The function the reviewer answers through: its arguments are the review.
+fn review_function() -> (&'static str, &'static str, Value) {
+    let flag = json!({ "type": "boolean" });
+    (
+        "record_review",
+        "The review of one proposed inverse style-transfer pair.",
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["authored", "faithful", "generic_ai", "same_language", "usable"],
+            "properties": {
+                "authored": flag,
+                "faithful": flag,
+                "generic_ai": flag,
+                "same_language": flag,
+                "usable": flag,
+            },
+        }),
+    )
+}
+
+fn parse_review(arguments: serde_json::Map<String, Value>) -> Result<Review> {
+    serde_json::from_value(Value::Object(arguments.clone())).map_err(|error| {
+        Error(format!("review is not the record_review object ({error}): {}", Value::Object(arguments)))
+    })
 }
 
 /// The split of a session: its digest read as a point between none and all,
@@ -80,9 +104,9 @@ fn pair(
         return Err("source_contract".to_string());
     }
     let question = json!({"source": source, "target": target}).to_string();
-    let review = ask(client, reviewer, REVIEW_PROMPT, question, parse_review)
+    let review = ask_call(client, reviewer, REVIEW_PROMPT, question, review_function(), parse_review)
         .map_err(excerpt)?;
-    if review.get("usable") != Some(&Value::Bool(true)) {
+    if !review.usable {
         return Err("review_rejected".to_string());
     }
     Ok(json!({
@@ -126,7 +150,7 @@ pub fn prepare_dataset(
     let client = BramaClient::from_env()?;
     // Each target is asked of the teacher and then reviewed, one after the
     // other, so the calls at once are the smaller of the two allowances.
-    let workers = client.allowance(teacher)?.min(client.allowance(reviewer)?).get();
+    let workers = client.allowance(teacher)?.min(client.allowance(reviewer)?);
     let outcomes = fan_out(&targets, workers, "prepared", |row| {
         pair(row, &client, teacher, reviewer)
     });

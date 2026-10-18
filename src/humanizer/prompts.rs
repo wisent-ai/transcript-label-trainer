@@ -21,10 +21,10 @@ pub(crate) const REVIEW_PROMPT: &str =
 must be a message a person typed in their own words: not pasted logs, tool or command output, code, \
 a credential, an error dump, or text a program or harness injected (system reminders, notices, \
 instructions to an agent). The source must be generic polished AI prose; the target must preserve \
-the same complete meaning while retaining the author's natural voice. Return exactly JSON with \
-booleans authored, faithful, generic_ai, same_language, and usable. usable may be true only when all \
-other fields are true and neither side adds or drops any fact, name, number, technical term, \
-request, question, uncertainty, or emotional force.";
+the same complete meaning while retaining the author's natural voice. Answer by calling \
+record_review with the booleans authored, faithful, generic_ai, same_language, and usable. usable \
+may be true only when all other fields are true and neither side adds or drops any fact, name, \
+number, technical term, request, question, uncertainty, or emotional force.";
 
 pub(crate) const JUDGE_PROMPT: &str = "Compare a base model and a trained personal-voice model on \
 one held-out style-transfer case. The source is generic AI prose. The reference is a real message \
@@ -32,6 +32,5 @@ by the target author. Score each candidate independently from 0 to 1 for semanti
 source and voice_match to the reference author's cadence, directness, register, and phrasing \
 without requiring exact wording. ai_boilerplate is true when canned AI phrasing remains. passed \
 is true only when the candidate keeps the source's complete meaning, reads as the reference author \
-wrote it, and carries no canned AI phrasing. Return exactly JSON: \
-{\"base\":{\"semantic_fidelity\":0.0,\"voice_match\":0.0,\"ai_boilerplate\":true,\"passed\":false},\
-\"student\":{\"semantic_fidelity\":0.0,\"voice_match\":0.0,\"ai_boilerplate\":true,\"passed\":false}}.";
+wrote it, and carries no canned AI phrasing. Answer by calling record_verdict with base and \
+student, each carrying semantic_fidelity, voice_match, ai_boilerplate, and passed.";

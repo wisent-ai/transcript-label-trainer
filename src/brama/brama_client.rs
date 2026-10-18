@@ -87,10 +87,70 @@ impl BramaClient {
     /// (Brama's `context_length_exceeded`) apart from every other failure, so
     /// a caller can ask about less instead of guessing a size up front.
     pub(crate) fn answer(&self, model: &str, messages: &[Message]) -> Result<ChatAnswer> {
-        let body = serde_json::to_string(&serde_json::json!({
+        let body = serde_json::json!({ "model": model, "messages": messages });
+        let payload = match self.completion(&body)? {
+            Completion::Answered(payload) => payload,
+            Completion::DoesNotFit(detail) => return Ok(ChatAnswer::DoesNotFit(detail)),
+        };
+        let content = first_message(&payload)
+            .and_then(|message| message.get("content"))
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error(format!("Brama response was not an OpenAI chat completion: {payload}")))?;
+        Ok(ChatAnswer::Content(content.trim().to_string()))
+    }
+
+    /// The arguments of the one call of the function `name` the model must
+    /// make: `parameters` is its JSON Schema, and the request names it as the
+    /// required tool, so the answer is that object and is never searched for
+    /// inside prose. An answer without exactly that one call, or whose
+    /// arguments are not a JSON object, is refused with what Brama sent.
+    pub(crate) fn call(
+        &self,
+        model: &str,
+        messages: &[Message],
+        name: &str,
+        description: &str,
+        parameters: serde_json::Value,
+    ) -> Result<serde_json::Map<String, serde_json::Value>> {
+        let body = serde_json::json!({
             "model": model,
             "messages": messages,
-        }))?;
+            "tools": [{
+                "type": "function",
+                "function": { "name": name, "description": description, "parameters": parameters },
+            }],
+            "tool_choice": { "type": "function", "function": { "name": name } },
+        });
+        let payload = match self.completion(&body)? {
+            Completion::Answered(payload) => payload,
+            Completion::DoesNotFit(detail) => bail!("Brama answered HTTP 400: {detail}"),
+        };
+        let calls = first_message(&payload)
+            .and_then(|message| message.get("tool_calls"))
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| Error(format!("{model} made no call of {name}: {payload}")))?;
+        let [call] = calls.as_slice() else {
+            bail!("{model} did not answer by exactly one call of {name}: {payload}");
+        };
+        if call.pointer("/function/name").and_then(serde_json::Value::as_str) != Some(name) {
+            bail!("{model} called a function other than {name}: {payload}");
+        }
+        let arguments = call
+            .pointer("/function/arguments")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error(format!("{model}'s call of {name} carries no arguments: {payload}")))?;
+        match serde_json::from_str::<serde_json::Value>(arguments) {
+            Ok(serde_json::Value::Object(object)) => Ok(object),
+            Ok(other) => bail!("{model}'s call of {name} has arguments that are not an object: {other}"),
+            Err(error) => bail!("{model}'s call of {name} has arguments that are not JSON ({error}): {arguments}"),
+        }
+    }
+
+    /// POST one chat completion `body`, signed; the JSON Brama answered, or
+    /// the prompt-does-not-fit body Brama names `context_length_exceeded`.
+    /// Any other refusal is the error, with Brama's status and body.
+    fn completion(&self, body: &serde_json::Value) -> Result<Completion> {
+        let body = serde_json::to_string(body)?;
         let mut request = self.http.post(format!("{}/v1/chat/completions", self.url));
         for (name, value) in self.auth_headers(&body)? {
             request = request.header(name, value);
@@ -118,31 +178,36 @@ impl BramaClient {
                     .and_then(serde_json::Value::as_str)
                     == Some("context_length_exceeded")
                 {
-                    return Ok(ChatAnswer::DoesNotFit(detail.to_string()));
+                    return Ok(Completion::DoesNotFit(detail.to_string()));
                 }
             }
             bail!("Brama answered HTTP {status}: {detail}")
         }
-        let payload: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
+        let payload = serde_json::from_str(&text).map_err(|error| {
             Error(format!(
                 "Brama answered HTTP {status} with a body that is not JSON ({error}): {}",
                 text.trim()
             ))
         })?;
-        let content = payload
-            .get("choices")
-            .and_then(serde_json::Value::as_array)
-            .and_then(|choices| choices.first())
-            .and_then(|choice| choice.pointer("/message/content"))
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| {
-                Error(format!(
-                    "Brama response was not an OpenAI chat completion: {}",
-                    text.trim()
-                ))
-            })?;
-        Ok(ChatAnswer::Content(content.trim().to_string()))
+        Ok(Completion::Answered(payload))
     }
+}
+
+/// What Brama answered one signed chat completion request.
+enum Completion {
+    /// The completion's JSON body.
+    Answered(serde_json::Value),
+    /// The prompt does not fit the routed model; Brama's answer body.
+    DoesNotFit(String),
+}
+
+/// The message of a completion's first choice.
+fn first_message(payload: &serde_json::Value) -> Option<&serde_json::Value> {
+    payload
+        .get("choices")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
 }
 
 /// What Brama answered one chat completion.
