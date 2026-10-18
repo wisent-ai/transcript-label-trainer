@@ -38,20 +38,13 @@ pub(crate) fn read_rows(path: &Path) -> Result<Vec<TrainingRow>> {
         .collect()
 }
 
+/// The JSON object `answer` is, read whole: a stored decision is the object
+/// this crate wrote, and a served answer is decoded under the output schema,
+/// so neither is searched for an object inside other text.
 pub(crate) fn parse_json_object(answer: &str) -> Result<Value> {
-    let trimmed = answer.trim();
-    let candidate = if trimmed.starts_with('{') && trimmed.ends_with('}') {
-        trimmed
-    } else {
-        let start = trimmed
-            .find('{')
-            .ok_or_else(|| Error("lifecycle reviewer returned no JSON object".to_string()))?;
-        let end = trimmed
-            .rfind('}')
-            .ok_or_else(|| Error("lifecycle reviewer returned incomplete JSON".to_string()))?;
-        &trimmed[start..=end]
-    };
-    serde_json::from_str(candidate).map_err(Error::from)
+    serde_json::from_str(answer.trim()).map_err(|error| {
+        Error(format!("lifecycle answer is not one JSON object ({error}): {answer}"))
+    })
 }
 
 pub(crate) fn input_envelope(row: &TrainingRow) -> Result<Value> {
@@ -124,6 +117,26 @@ pub(crate) fn validate_decision(row: &TrainingRow, value: Value) -> Result<Decis
     Ok(decision)
 }
 
+/// The function the reviewer answers by: its one parameter is the decision,
+/// held to the declared output schema, so the decision is the reviewer's
+/// answer itself. The schema's root is a `oneOf`, which a function's
+/// parameters cannot be, so it is the schema of that one property.
+const DECISION_FUNCTION: &str = "lifecycle_decision";
+
+fn decision_parameters() -> Result<Value> {
+    let mut schema: Value = serde_json::from_str(OUTPUT_SCHEMA)?;
+    if let Some(root) = schema.as_object_mut() {
+        // A dialect is declared once, by a document's root.
+        root.remove("$schema");
+    }
+    Ok(serde_json::json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["decision"],
+        "properties": { "decision": schema },
+    }))
+}
+
 pub(crate) fn classify(client: &BramaClient, model: &str, row: &TrainingRow) -> Result<Decision> {
     let envelope = input_envelope(row)?;
     let request = [
@@ -136,9 +149,14 @@ pub(crate) fn classify(client: &BramaClient, model: &str, row: &TrainingRow) -> 
             content: serde_json::to_string(&envelope)?,
         },
     ];
+    let description = "The lifecycle decision for the envelope, under the output schema.";
     client
-        .chat(model, &request)
-        .and_then(|answer| parse_json_object(&answer))
+        .call(model, &request, DECISION_FUNCTION, description, decision_parameters()?)
+        .and_then(|mut arguments| {
+            arguments.remove("decision").ok_or_else(|| {
+                Error(format!("the call of {DECISION_FUNCTION} carries no decision"))
+            })
+        })
         .and_then(|value| validate_decision(row, value))
         .map_err(|error| Error(format!("{}: {error}", row.id)))
 }
