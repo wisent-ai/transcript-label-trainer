@@ -11,7 +11,6 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
 
 use crate::brama::{BramaClient, Message, BEST_MODEL, DEFAULT_MODEL};
 use crate::util::{now_iso, Error, Result};

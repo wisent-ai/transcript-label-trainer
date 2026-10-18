@@ -70,7 +70,7 @@ pub(crate) fn normalized_digest(value: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase();
-    hex::encode(Sha256::digest(normalized.as_bytes()))
+    crate::util::sha256_hex(normalized)
 }
 
 pub(crate) fn gold_rows() -> Result<Vec<GoalRow>> {
