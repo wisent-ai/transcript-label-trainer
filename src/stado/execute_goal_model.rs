@@ -216,13 +216,18 @@ pub fn execute_humanizer_model(
         "stado://probierz/inputs/transcript-label-trainer/humanizer-model/{key}/targets.jsonl"
     );
     let ster_options = stated_ster_options(&training.ster_options)?;
-    let run_key = crate::util::sha256_hex(format!("{key}\nster={ster_options}\n"));
+    let source_ref = repo_ref()?;
+    let run_key = crate::util::sha256_hex(serde_json::to_vec(&(
+        &key,
+        &ster_options,
+        &source_ref,
+        hf_repo,
+    ))?);
     let output_uri = format!(
         "stado://probierz/artifacts/models/echo/lukasz-humanizer-cydonia-24b-lora/{run_key}"
     );
     let stado = PathBuf::from(crate::brama::stado_bin()?);
     upload(&stado, &targets_uri, targets_path, "application/x-ndjson")?;
-    let source_ref = repo_ref()?;
     let work = job_work_dir(&stado, compute_target, &format!("echo-humanizer-{run_key}"))?;
     let hf_repo = shell_quote(hf_repo);
     let command = format!(

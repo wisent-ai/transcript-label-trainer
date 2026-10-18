@@ -73,6 +73,12 @@ exact trainer source revision. Repeating the same run selects the same work
 directory; another source revision selects a different one. This does not
 promise filesystem retention after a host is retired.
 
+For `humanizer-model`, the declared publication destination also participates in
+that identity. Dataset digest, Ster settings, exact trainer revision and destination
+repository are serialized as separate values before hashing; changing any one
+selects another workspace, Stado run and published output URI. Source admission
+precedes corpus upload, so an invalid `TLT_REPO_REF` cannot upload that corpus.
+
 ### Qualify generic remote submission and replay
 
 `cargo test --test run-dispatch` executes real `run --compute-target` jobs.
