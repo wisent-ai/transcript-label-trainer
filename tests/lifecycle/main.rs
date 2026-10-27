@@ -142,6 +142,82 @@ fn a_decision_outside_the_contract_is_refused_by_id() {
 }
 
 #[test]
+fn a_blank_reviewed_identity_is_refused_before_writing_either_split() {
+    let mut run = Run::start("split-blank-id");
+    let train = run.root.join("reviewed-train.jsonl");
+    let eval = run.root.join("reviewed-eval.jsonl");
+    let output_train = run.root.join("train.jsonl");
+    let output_eval = run.root.join("eval.jsonl");
+    write_rows(&train, &[json!({"id": " ", "split_day": "day-under-test"})]);
+    write_rows(&eval, &[]);
+
+    let answer = run.run(&[
+        "lifecycle-split-by-day",
+        "--train", path(&train),
+        "--eval", path(&eval),
+        "--eval-day", "day-under-test",
+        "--output-train", path(&output_train),
+        "--output-eval", path(&output_eval),
+    ]);
+    let stderr = String::from_utf8_lossy(&answer.stderr);
+    assert!(!answer.status.success(), "{stderr}");
+    assert!(stderr.contains("a reviewed row has no nonblank string id"), "{stderr}");
+    assert!(stderr.contains(&train.display().to_string()), "{stderr}");
+    assert!(!output_train.exists() && !output_eval.exists(), "neither output was written");
+    run.passed();
+}
+
+#[test]
+fn reviewed_rows_are_resplit_by_day_and_persisted_in_disjoint_outputs() {
+    let mut run = Run::start("split-by-day");
+    let train = run.root.join("reviewed-train.jsonl");
+    let eval = run.root.join("reviewed-eval.jsonl");
+    let output_train = run.root.join("train.jsonl");
+    let output_eval = run.root.join("eval.jsonl");
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../training/lifecycle-model/lifecycle-output-schema.json"
+    )).unwrap();
+    let actions = schema["oneOf"].as_array().unwrap();
+    let mut rows = Vec::new();
+    for branch in actions {
+        let action = branch["properties"]["action"]["const"].as_str().unwrap();
+        for day in ["earlier", "held-out"] {
+            let mut row = reviewed_row(
+                &format!("{day}-{action}"),
+                Some(&json!({"action": action})),
+            );
+            row["split_day"] = json!(day);
+            rows.push(row);
+        }
+    }
+    write_rows(&train, &rows);
+    write_rows(&eval, &[]);
+
+    let answer = run.run(&[
+        "lifecycle-split-by-day",
+        "--train", path(&train),
+        "--eval", path(&eval),
+        "--eval-day", "held-out",
+        "--output-train", path(&output_train),
+        "--output-eval", path(&output_eval),
+    ]);
+    assert!(answer.status.success(), "{}", String::from_utf8_lossy(&answer.stderr));
+    for (output, day, split) in [
+        (&output_train, "earlier", "train"),
+        (&output_eval, "held-out", "eval"),
+    ] {
+        let written = fs::read_to_string(output).unwrap();
+        let persisted: Vec<Value> = written.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        assert_eq!(persisted.len(), actions.len(), "{}", output.display());
+        assert!(persisted.iter().all(|row|
+            row["split_day"] == day && row["split"] == split
+                && row["id"].as_str().unwrap().starts_with(day)
+        ), "{}", output.display());
+    }
+    run.passed();
+}
+
+#[test]
 fn a_lifecycle_job_without_ster_settings_is_refused_before_anything_is_read() {
     let mut run = Run::start("model-no-ster-options");
     let absent = run.root.join("absent.jsonl");

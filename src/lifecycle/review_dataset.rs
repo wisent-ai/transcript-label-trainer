@@ -1,5 +1,24 @@
 use super::*;
 
+use std::collections::{BTreeMap, VecDeque};
+
+/// The immutable dataset split a review records.
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Split {
+    Train,
+    Eval,
+}
+
+/// What a panicked worker said, in its own words when it gave any.
+fn panic_words(panic: &(dyn std::any::Any + Send)) -> String {
+    match (panic.downcast_ref::<&str>(), panic.downcast_ref::<String>()) {
+        (Some(words), _) => (*words).to_string(),
+        (None, Some(words)) => words.clone(),
+        (None, None) => "a panic that carried no message".to_string(),
+    }
+}
+
 /// Review the lifecycle dataset with `model`, as many calls at once as Brama
 /// measured that route to carry.
 pub fn review_dataset(
@@ -9,9 +28,8 @@ pub fn review_dataset(
     model: &str,
     limit: Option<usize>,
 ) -> Result<Value> {
-    if !["train", "eval"].contains(&split) {
-        return Err(Error("--split must be train or eval".to_string()));
-    }
+    serde_json::from_value::<Split>(Value::String(split.to_string()))
+        .map_err(|error| Error(format!("--split must be train or eval: {error}")))?;
     // A reviewed label is ground truth for every model trained from it, so the
     // reviewer must use an operator-approved judgment route, not a
     // product-serving route.
@@ -43,84 +61,93 @@ pub fn review_dataset(
             "review_model": model,
             "rows": existing,
             "resumed": existing,
-            "contract": "oko-goal-lifecycle-v1"
+            "contract": LIFECYCLE_CONTRACT
         }));
     }
     let client = BramaClient::from_env()?;
-    let workers = client.allowance(model)?.get();
-    let rows = Arc::new(rows);
-    let next = Arc::new(AtomicUsize::new(0));
-    let results: Arc<Mutex<Vec<Option<Result<Value>>>>> =
-        Arc::new(Mutex::new((0..rows.len()).map(|_| None).collect()));
-    let workers = workers.min(rows.len());
-    let mut handles = Vec::with_capacity(workers);
-    for _ in 0..workers {
+    let allowance = client.allowance(model)?.get();
+    let total = rows.len();
+    let queue = Arc::new(Mutex::new(
+        rows.into_iter().enumerate().collect::<VecDeque<_>>(),
+    ));
+    let results: Arc<Mutex<BTreeMap<usize, Result<(Value, String)>>>> =
+        Arc::new(Mutex::new(BTreeMap::new()));
+    let handles: Vec<_> = std::iter::repeat_with(|| {
         let client = client.clone();
-        let rows = Arc::clone(&rows);
-        let next = Arc::clone(&next);
+        let queue = Arc::clone(&queue);
         let results = Arc::clone(&results);
         let model = model.to_string();
         let split = split.to_string();
-        handles.push(thread::spawn(move || loop {
-            let index = next.fetch_add(1, Ordering::Relaxed);
-            if index >= rows.len() {
+        thread::spawn(move || loop {
+            let Some((index, row)) = queue
+                .lock()
+                .expect("lifecycle review queue lock")
+                .pop_front()
+            else {
                 break;
-            }
-            let row = rows[index].clone();
-            let result = classify(&client, &model, &row)
-                .and_then(|decision| reviewed_row(row, decision, &model, &split));
-            results.lock().expect("lifecycle result lock")[index] = Some(result);
-        }));
-    }
+            };
+            let result = classify(&client, &model, &row).and_then(|decision| {
+                let action = decision.action.clone();
+                reviewed_row(row, decision, &model, &split).map(|value| (value, action))
+            });
+            results
+                .lock()
+                .expect("lifecycle result lock")
+                .insert(index, result);
+        })
+    })
+    .take(allowance.min(total))
+    .collect();
     for handle in handles {
-        handle
-            .join()
-            .map_err(|_| Error("lifecycle review worker panicked".to_string()))?;
+        handle.join().map_err(|panic| {
+            Error(format!(
+                "a lifecycle review worker panicked: {}",
+                panic_words(&*panic)
+            ))
+        })?;
     }
+    let results = std::mem::take(&mut *results.lock().expect("lifecycle result lock"));
     let file = OpenOptions::new().create(true).append(true).open(output)?;
     let mut writer = BufWriter::new(file);
-    let mut counts = serde_json::Map::new();
-    let mut written = 0usize;
+    let mut by_action: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut failures = Vec::new();
-    for result in results.lock().expect("lifecycle result lock").iter_mut() {
-        let Some(result) = result.take() else {
-            failures.push("lifecycle review produced a missing row".to_string());
-            continue;
-        };
-        let value = match result {
-            Ok(value) => value,
+    if results.len() != total {
+        failures.push(format!(
+            "lifecycle review answered {} of {total} rows",
+            results.len()
+        ));
+    }
+    for result in results.into_values() {
+        let (value, action) = match result {
+            Ok(reviewed) => reviewed,
             Err(error) => {
                 failures.push(error.to_string());
                 continue;
             }
         };
-        let action = value
-            .pointer("/messages/2/content")
-            .and_then(Value::as_str)
-            .and_then(|content| serde_json::from_str::<Value>(content).ok())
-            .and_then(|decision| {
-                decision
-                    .get("action")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            })
-            .unwrap_or_else(|| "invalid".to_string());
-        let count = counts.entry(action).or_insert(Value::from(0));
-        *count = Value::from(count.as_u64().unwrap_or(0) + 1);
+        let id = value["id"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| Error("a reviewed lifecycle row has no id".to_string()))?;
         serde_json::to_writer(&mut writer, &value)?;
         writer.write_all(b"\n")?;
-        written += 1;
+        by_action.entry(action).or_default().push(id);
     }
     writer.flush()?;
+    let written: usize = by_action.values().map(Vec::len).sum();
     if !failures.is_empty() {
         return Err(Error(format!(
             "lifecycle review failed for {} row(s); preserved {} newly reviewed row(s) in {}: {}",
             failures.len(),
             written,
             output.display(),
-            failures[0]
+            failures.join("; ")
         )));
     }
+    let counts: serde_json::Map<String, Value> = by_action
+        .into_iter()
+        .map(|(action, ids)| (action, Value::from(ids.len())))
+        .collect();
     Ok(serde_json::json!({
         "input": input,
         "output": output,
@@ -129,7 +156,7 @@ pub fn review_dataset(
         "rows": existing + written,
         "resumed": existing,
         "actions": counts,
-        "contract": "oko-goal-lifecycle-v1"
+        "contract": LIFECYCLE_CONTRACT
     }))
 }
 
@@ -151,7 +178,7 @@ pub(crate) fn read_predictions(path: &Path) -> Result<Vec<AuditPrediction>> {
     let file = File::open(path)?;
     BufReader::new(file)
         .lines()
-        .filter(|line| line.as_ref().map_or(true, |value| !value.trim().is_empty()))
+        .filter(|line| !line.as_ref().is_ok_and(|value| value.trim().is_empty()))
         .map(|line| {
             let line = line?;
             serde_json::from_str(&line).map_err(Error::from)

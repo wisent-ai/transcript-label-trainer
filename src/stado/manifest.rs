@@ -37,7 +37,8 @@ pub(crate) enum ManifestModel {
 }
 
 impl ManifestModel {
-    pub(crate) const EVERY: &'static [ManifestModel] = &[Self::Goal, Self::Lifecycle, Self::Humanizer];
+    pub(crate) const EVERY: &'static [ManifestModel] =
+        &[Self::Goal, Self::Lifecycle, Self::Humanizer];
 
     pub(crate) fn name(self) -> &'static str {
         match self {
@@ -49,7 +50,11 @@ impl ManifestModel {
 
     /// Every model's name, as the refusals and the help list them.
     pub(crate) fn names() -> String {
-        Self::EVERY.iter().map(|model| model.name()).collect::<Vec<_>>().join(", ")
+        Self::EVERY
+            .iter()
+            .map(|model| model.name())
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     /// The model `name` names, refused with every model that takes a manifest.
@@ -58,7 +63,12 @@ impl ManifestModel {
             .iter()
             .copied()
             .find(|model| model.name() == name)
-            .ok_or_else(|| Error(format!("--model must be one of {}, not {name:?}", Self::names())))
+            .ok_or_else(|| {
+                Error(format!(
+                    "--model must be one of {}, not {name:?}",
+                    Self::names()
+                ))
+            })
     }
 }
 
@@ -66,7 +76,11 @@ impl ManifestModel {
 /// `artifact` is the assembled GGUF the job split into `<name>.part-*` parts;
 /// the humanizer is a LoRA adapter published to its own repository and takes
 /// none.
-pub(crate) fn write_manifest(model: ManifestModel, output: &Path, artifact: Option<&Path>) -> Result<Value> {
+pub(crate) fn write_manifest(
+    model: ManifestModel,
+    output: &Path,
+    artifact: Option<&Path>,
+) -> Result<Value> {
     let manifest = match (model, artifact) {
         (ManifestModel::Goal, Some(artifact)) => goal(output, artifact)?,
         (ManifestModel::Lifecycle, Some(artifact)) => lifecycle(output, artifact)?,
@@ -107,11 +121,16 @@ pub(crate) fn write_manifest(model: ManifestModel, output: &Path, artifact: Opti
 /// size and SHA-256. `parts_too` keeps the model parts in the listing, as the
 /// GGUF manifests have always listed them.
 pub(crate) fn evidence(output: &Path, parts_too: bool) -> Result<Map<String, Value>> {
-    let entries = fs::read_dir(output)
-        .map_err(|error| Error(format!("cannot list the job output {}: {error}", output.display())))?;
+    let entries = fs::read_dir(output).map_err(|error| {
+        Error(format!(
+            "cannot list the job output {}: {error}",
+            output.display()
+        ))
+    })?;
     let mut names = Vec::new();
     for entry in entries {
-        let entry = entry.map_err(|error| Error(format!("cannot list {}: {error}", output.display())))?;
+        let entry =
+            entry.map_err(|error| Error(format!("cannot list {}: {error}", output.display())))?;
         let is_file = entry
             .file_type()
             .map_err(|error| Error(format!("cannot read {}: {error}", entry.path().display())))?
@@ -125,7 +144,10 @@ pub(crate) fn evidence(output: &Path, parts_too: bool) -> Result<Map<String, Val
     let mut files = Map::new();
     for name in names {
         let signature = Signature::read(&output.join(&name))?;
-        files.insert(name, json!({ "bytes": signature.size, "sha256": signature.sha256 }));
+        files.insert(
+            name,
+            json!({ "bytes": signature.size, "sha256": signature.sha256 }),
+        );
     }
     Ok(files)
 }
@@ -134,7 +156,10 @@ pub(crate) fn evidence(output: &Path, parts_too: bool) -> Result<Map<String, Val
 fn transport(output: &Path, artifact: &Path, files: &Map<String, Value>) -> Result<Value> {
     let name = file_name(artifact)?;
     let prefix = format!("{name}.part-");
-    let parts: Vec<&String> = files.keys().filter(|file| file.starts_with(&prefix)).collect();
+    let parts: Vec<&String> = files
+        .keys()
+        .filter(|file| file.starts_with(&prefix))
+        .collect();
     if parts.is_empty() {
         return Err(Error(format!(
             "{} holds no {prefix}* parts of {}; split the artifact into the output before writing its manifest",
@@ -165,8 +190,19 @@ fn judged(output: &Path) -> Result<(bool, Value)> {
     let passed = judge
         .get("passed")
         .and_then(Value::as_bool)
-        .ok_or_else(|| Error(format!("{} carries no boolean passed verdict", path.display())))?;
-    Ok((passed, judge.get("review_model").cloned().unwrap_or(Value::Null)))
+        .ok_or_else(|| {
+            Error(format!(
+                "{} carries no boolean passed verdict",
+                path.display()
+            ))
+        })?;
+    let review_model = judge.get("review_model").cloned().ok_or_else(|| {
+        Error(format!(
+            "{} names no review_model, so who judged the model is unknown",
+            path.display()
+        ))
+    })?;
+    Ok((passed, review_model))
 }
 
 fn goal(output: &Path, artifact: &Path) -> Result<Value> {
@@ -201,7 +237,7 @@ fn lifecycle(output: &Path, artifact: &Path) -> Result<Value> {
     let files = evidence(output, true)?;
     Ok(json!({
         "product": "Oko goal lifecycle model",
-        "contract": "oko-goal-lifecycle-v1",
+        "contract": crate::lifecycle::LIFECYCLE_CONTRACT,
         "format": "GGUF",
         "default_artifact": file_name(artifact)?,
         "base_model": BASE_MODEL,

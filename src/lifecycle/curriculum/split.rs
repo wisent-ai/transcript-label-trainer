@@ -97,12 +97,16 @@ fn merged(sources: &[&Path]) -> Result<BTreeMap<String, Value>> {
                 continue;
             }
             let row: Value = serde_json::from_str(&line)?;
-            let id = row["id"].as_str().map(str::to_string).ok_or_else(|| {
-                Error(format!(
-                    "{}: a reviewed row has no string id: {line}",
-                    source.display()
-                ))
-            })?;
+            let id = row["id"]
+                .as_str()
+                .filter(|id| !id.trim().is_empty())
+                .ok_or_else(|| {
+                    Error(format!(
+                        "{}: a reviewed row has no nonblank string id: {line}",
+                        source.display()
+                    ))
+                })?
+                .to_string();
             match by_id.get(&id) {
                 Some(previous) if previous != &row => {
                     return Err(Error(format!("conflicting reviewed rows for {id}")));

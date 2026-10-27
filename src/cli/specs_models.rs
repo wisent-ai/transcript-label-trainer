@@ -132,7 +132,7 @@ pub(crate) fn model_specs() -> Vec<Spec> {
         help: "replace Oko lifecycle silver answers with Brama-reviewed decisions".to_string(),
         description: Some(
             "Read masked Oko training envelopes, classify each one through a named Brama route, \
-             enforce the oko-goal-lifecycle-v1 contract, and write ordered JSONL with reviewer \
+             enforce the oko-goal-lifecycle-v2 contract, and write ordered JSONL with reviewer \
              provenance."
                 .to_string(),
         ),

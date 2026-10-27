@@ -27,4 +27,6 @@ intercepts and weight rows differ in length, is refused with both lengths.
 of the training side, rounded as Python's `round(x, 4)` rounds. When no fold
 can be scored (every fold's training side holds a single class, or no fold has
 a test row), `cv_accuracy` is `null`: the model was not cross-validated, which
-is not the same as an accuracy of zero.
+is not the same as an accuracy of zero. `cv_unavailable` then says why: a class
+with fewer than two training sessions (and `cv_folds` is `null`), or the number
+of folds drawn none of which could be scored.

@@ -4,6 +4,9 @@ use std::fs::{self, File};
 
 use serde_json::{json, Value};
 
+mod private;
+use private::publish_private;
+
 /// Where a qualified model's weights go, decided by where the model runs.
 pub(crate) enum Destination {
     /// The fleet's public release channel, under this prefix with the
@@ -28,7 +31,7 @@ pub(crate) struct ReleaseModel {
     metadata: &'static [&'static str],
 }
 
-pub(crate) const RELEASE_MODELS: [ReleaseModel; 2] = [
+pub(crate) const RELEASE_MODELS: &[ReleaseModel] = &[
     ReleaseModel {
         name: "goal",
         destination: Destination::ReleaseStore(
@@ -47,7 +50,7 @@ pub(crate) const RELEASE_MODELS: [ReleaseModel; 2] = [
     ReleaseModel {
         name: "lifecycle",
         destination: Destination::PrivateHub,
-        contract: Some("oko-goal-lifecycle-v1"),
+        contract: Some(crate::lifecycle::LIFECYCLE_CONTRACT),
         metadata: &[
             "final-judge.json",
             "metrics.json",
@@ -129,12 +132,14 @@ fn publish(stado: &Path, uri: &str, path: &Path) -> Result<()> {
 /// Stream `paths` in order through one SHA-256; returns digest and byte count.
 fn hash_files(paths: &[PathBuf]) -> Result<(String, u64)> {
     let mut hasher = Sha256::new();
-    let mut bytes = 0;
-    for path in paths {
-        let mut file = File::open(path)
-            .map_err(|error| Error(format!("cannot read {}: {error}", path.display())))?;
-        bytes += io::copy(&mut file, &mut hasher)?;
-    }
+    let bytes = paths
+        .iter()
+        .map(|path| -> Result<u64> {
+            let mut file = File::open(path)
+                .map_err(|error| Error(format!("cannot read {}: {error}", path.display())))?;
+            Ok(io::copy(&mut file, &mut hasher)?)
+        })
+        .sum::<Result<u64>>()?;
     Ok((hex::encode(hasher.finalize()), bytes))
 }
 
@@ -157,7 +162,11 @@ fn text<'a>(value: &'a Value, pointer: &str) -> Result<&'a str> {
 /// digest in the release channel, or as one immutable revision of the
 /// private repository `repo` names. Objects already present at a release
 /// coordinate are left as they are.
-pub(crate) fn publish_release(model: &ReleaseModel, source: &str, repo: Option<&str>) -> Result<Value> {
+pub(crate) fn publish_release(
+    model: &ReleaseModel,
+    source: &str,
+    repo: Option<&str>,
+) -> Result<Value> {
     let repo = repository(model, repo)?;
     let stado = PathBuf::from(crate::brama::stado_bin()?);
     let source = source.trim_end_matches('/');
@@ -235,7 +244,9 @@ pub(crate) fn publish_release(model: &ReleaseModel, source: &str, repo: Option<&
             return publish_private(model, repo, root, &part_paths, artifact, (&digest, bytes));
         }
         (Destination::ReleaseStore(prefix), _) => format!("{prefix}/{digest}"),
-        (Destination::PrivateHub, None) => unreachable!("repository() refuses a hub model without --repo"),
+        (Destination::PrivateHub, None) => {
+            unreachable!("repository() refuses a hub model without --repo")
+        }
     };
     for name in &parts {
         publish(
@@ -270,79 +281,4 @@ pub(crate) fn publish_release(model: &ReleaseModel, source: &str, repo: Option<&
         &manifest_path,
     )?;
     Ok(json!({"base": base, "digest": digest, "parts": parts.len()}))
-}
-
-/// Join the verified parts into the qualified artifact and upload it, the
-/// manifest and every evidence file as one new branch of the private
-/// repository `repo`, then read that branch's immutable revision back and
-/// check each file's size and SHA-256 against what was verified here. A
-/// repository that exists and is public is refused before anything uploads.
-fn publish_private(
-    model: &ReleaseModel,
-    repo: &str,
-    root: &Path,
-    parts: &[PathBuf],
-    artifact: &str,
-    (digest, bytes): (&str, u64),
-) -> Result<Value> {
-    use crate::hub::{Hub, Signature};
-    let hub = Hub::new()?;
-    let public = |info: &crate::hub::ModelInfo| -> Result<()> {
-        match info.private {
-            true => Ok(()),
-            false => crate::bail!("Hugging Face repository {repo} is public; a model is published only to a private one"),
-        }
-    };
-    match hub.info(repo, None, false)? {
-        Some(info) => public(&info)?,
-        None => hub.create_private(repo)?,
-    }
-    let assembled = root.join(artifact);
-    {
-        let mut output = File::create(&assembled)
-            .map_err(|error| Error(format!("cannot create {}: {error}", assembled.display())))?;
-        for part in parts {
-            io::copy(&mut File::open(part)?, &mut output)?;
-            fs::remove_file(part)?;
-        }
-    }
-    let mut signatures = std::collections::BTreeMap::from([(
-        artifact.to_string(),
-        Signature { size: bytes, sha256: digest.to_string() },
-    )]);
-    for name in model.metadata.iter().chain(["model-manifest.json"].iter()) {
-        signatures.insert(name.to_string(), Signature::read(&root.join(name))?);
-    }
-    let branch = format!("{}-publication-{}", model.name, hex::encode(rand::random::<[u8; 16]>()));
-    let message = format!("Publish qualified {} model {digest}", model.name);
-    for name in signatures.keys() {
-        hub.upload(repo, &branch, &root.join(name), name, &message)
-            .map_err(|error| Error(format!("publication {repo}@{branch}, path {name:?}: {error}")))?;
-    }
-    let info = hub
-        .info(repo, Some(&branch), true)?
-        .ok_or_else(|| Error(format!("published Hugging Face branch is unavailable: {repo}@{branch}")))?;
-    public(&info)?;
-    let revision = info
-        .sha
-        .clone()
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| Error("Hugging Face model_info returned no immutable revision".into()))?;
-    for (name, signature) in &signatures {
-        let file = info
-            .siblings
-            .iter()
-            .find(|file| &file.rfilename == name)
-            .ok_or_else(|| Error(format!("published revision {repo}@{revision} is missing {name}")))?;
-        hub.verify(repo, &revision, signature, file)?;
-    }
-    Ok(json!({
-        "repo_id": repo,
-        "revision": revision,
-        "branch": branch,
-        "artifact": artifact,
-        "digest": digest,
-        "bytes": bytes,
-        "verified_files": signatures,
-    }))
 }

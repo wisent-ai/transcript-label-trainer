@@ -81,7 +81,10 @@ pub(crate) fn cmd_aspect_discover(args: &Parsed) -> Result<i32> {
     Ok(reviewed_status(args, &summary))
 }
 
-/// Where a dataset curated now is written under the training root.
+/// Where a dataset curated now is written under the training root. Two
+/// curations write through it: the goal model's reviewed goals
+/// (`goal-model`, `reviewed-goals`) and the humanizer model's targets
+/// (`humanizer-model`, `lukasz-targets`); no lifecycle command does.
 fn stamped_dataset(model: &str, prefix: &str) -> Result<std::path::PathBuf> {
     let root = placement::resolve_placement()
         .training_root

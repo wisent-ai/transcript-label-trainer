@@ -1,9 +1,14 @@
 ## Reviewed Oko goal-lifecycle model
 
 Oko uses a separate contextual model for lifecycle decisions. Its
-`oko-goal-lifecycle-v1` contract classifies each prompt as `startGoal`,
+`oko-goal-lifecycle-v2` contract classifies each prompt as `startGoal`,
 `continueCurrent`, `finishGoal`, or `ignore`, selects an existing goal by
 reference when required, and records only explicit open/completion evidence.
+Each candidate in the envelope carries what Oko knows of it — reference, goal,
+title, status, session, whether it is the member's last goal — and no score:
+v1 envelopes carried a `score` that nothing computed, so a model trained on
+v1 rows learned from a field without information, and v1 reviewed rows are
+exported from Oko again and reviewed again before a v2 model is trained.
 The existing title model remains the sole source of titles for newly started
 goals.
 The lifecycle model therefore emits an empty `title` for every action; Oko
@@ -30,8 +35,12 @@ action. Deterministic hard-case curricula are written by
 `transcript-label-trainer lifecycle-generate-curriculum --source reviewed-train.jsonl
 --output curriculum.jsonl --per-family N --seed N` from the families and sentences in
 `training/lifecycle-model/curriculum/templates.json`; each row copies a real envelope
-with an active candidate, keeps only the fields Oko sends, and records its family and
-intended action. The curriculum is also sent through Brama; the assembler keeps only
+with an active candidate (the member's last goal among the same-session candidates,
+else among all, else the first Oko offered), keeps only the fields Oko sends (a
+`lifecycle_features` block or candidate `score` of an older row is dropped), and
+records its family and intended action. A source row without a `turn_index`, or whose
+active candidate has no title, is refused. The curriculum is also sent through Brama;
+the assembler keeps only
 examples whose independent review agrees with the intended action and keeps
 evaluation curriculum disjoint from training:
 
@@ -44,18 +53,21 @@ transcript-label-trainer lifecycle-assemble-curriculum \
   --minimum-eval-per-action N
 ```
 
-Every row's one decision is checked against the decision contract, the actions the
-evaluation minimum covers are the ones `lifecycle-output-schema.json` declares, and it
-refuses an underrepresented evaluation curriculum, a duplicate id within a split, and an
-id shared between the splits; it prints the kept, refused and per-action counts.
+Every row's one decision is checked against `lifecycle-output-schema.json`: the variant
+its action names fixes which goal references and evidence it may carry, and its goal
+reference must be one of the row's candidates. The actions the evaluation minimum covers
+are the ones that schema declares, and it refuses an underrepresented evaluation
+curriculum, a duplicate id within a split, and an id shared between the splits; it
+prints the kept, refused and per-action counts.
 
 To hold a different day out for evaluation, `transcript-label-trainer lifecycle-split-by-day
 --train reviewed-train.jsonl --eval reviewed-eval.jsonl --eval-day DAY --output-train
 new-train.jsonl --output-eval new-eval.jsonl` merges the reviewed rows by id (refusing one
 id with two different rows), puts the rows of that `split_day` into evaluation and the rest
 into training, and refuses a split that lacks an action the output schema declares.
-Both commands refuse a reviewed row without a string `id`, naming the file or split it
-came from, rather than merging such rows or counting them under an empty id.
+Both commands refuse a reviewed row without a nonblank string `id`, naming the
+file or split it came from, rather than merging such rows or counting them
+under an empty id. The refusal occurs before either output split is written.
 
 The same reviewed rows are Ster labelled decisions with `transcript-label-trainer
 lifecycle-decisions --rows reviewed-train.jsonl --output lifecycle-decisions.json`: each

@@ -29,13 +29,30 @@ pub(crate) fn train_tfidf(plan: &Plan, settings: &jobs::TfidfTraining) -> Result
         texts.len(),
         &counts,
     );
-    metrics.insert(
-        "cv_accuracy".to_string(),
-        match cv_accuracy {
-            Some(value) => json!(value),
-            None => Value::Null,
-        },
-    );
+    // An accuracy that does not exist is null with the reason beside it, never
+    // a number: a class too small to fold, or folds none of which could be
+    // scored (every training side held one class).
+    match (cv_accuracy, folds) {
+        (Some(value), _) => {
+            metrics.insert("cv_accuracy".to_string(), json!(value));
+        }
+        (None, None) => {
+            metrics.insert("cv_accuracy".to_string(), Value::Null);
+            metrics.insert(
+                "cv_unavailable".to_string(),
+                json!("a class has fewer than two training sessions"),
+            );
+        }
+        (None, Some(folds)) => {
+            metrics.insert("cv_accuracy".to_string(), Value::Null);
+            metrics.insert(
+                "cv_unavailable".to_string(),
+                json!(format!(
+                    "none of the {folds} folds could be scored: each training side held a single class or its test side was empty"
+                )),
+            );
+        }
+    }
     metrics.insert(
         "cv_folds".to_string(),
         match folds {

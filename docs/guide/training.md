@@ -78,6 +78,15 @@ folds in each class's own order, without shuffling, as scikit-learn's
 give the same folds. The Train panel's **Fill with scikit-learn's documented
 defaults** button types the same values into its fields.
 
+If a training class has fewer than two sessions, no stratified fold can be
+scored. The model can still train, but `metrics.json` records `null` for both
+`cv_accuracy` and `cv_folds`, with `cv_unavailable` saying `a class has fewer
+than two training sessions`. When folds were drawn but none could be scored,
+`cv_folds` keeps their number, `cv_accuracy` is `null` and `cv_unavailable`
+says `none of the <k> folds could be scored: …`. `info` prints
+`cv_accuracy=unavailable (<cv_unavailable>)` rather than presenting zero as a
+measured result.
+
 The data path is identical: labels from the lake label store, session text via
 Transcript Lake, and the same session floor and frozen evaluation split all
 apply, and the HF path additionally requires at least two sessions per class so

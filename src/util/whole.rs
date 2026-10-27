@@ -17,28 +17,37 @@ fn sibling(output: &Path) -> PathBuf {
     PathBuf::from(temporary)
 }
 
-/// Write `bytes` to `output` whole, creating its directory first.
+/// Write `bytes` to `output` whole and durably, creating its directory first:
+/// the sibling is flushed to disk before it is renamed into place, and the
+/// directory after, so a machine that stops right after the write still
+/// holds the new file and not the old one or nothing. Every writer of a whole
+/// file in this program writes through here.
 pub(crate) fn write_whole(output: &Path, bytes: &[u8]) -> Result<()> {
-    if let Some(parent) = output
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent).map_err(|error| {
-            Error(format!(
-                "cannot create {} to write {} into: {error}",
-                parent.display(),
-                output.display()
-            ))
-        })?;
-    }
+    let parent = match output.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        Some(parent) => parent,
+        None => Path::new("."),
+    };
+    fs::create_dir_all(parent).map_err(|error| {
+        Error(format!(
+            "cannot create {} to write {} into: {error}",
+            parent.display(),
+            output.display()
+        ))
+    })?;
     let temporary = sibling(output);
-    let written = fs::write(&temporary, bytes)
-        .map_err(|error| {
-            Error(format!(
-                "cannot write {} on the way to {}: {error}",
-                temporary.display(),
-                output.display()
-            ))
+    let step = |what: &str, error: std::io::Error| {
+        Error(format!(
+            "cannot {what} {} on the way to {}: {error}",
+            temporary.display(),
+            output.display()
+        ))
+    };
+    let written = fs::File::create(&temporary)
+        .map_err(|error| step("create", error))
+        .and_then(|mut file| {
+            use std::io::Write;
+            file.write_all(bytes).map_err(|error| step("write", error))?;
+            file.sync_all().map_err(|error| step("flush to disk", error))
         })
         .and_then(|()| {
             fs::rename(&temporary, output).map_err(|error| {
@@ -50,7 +59,13 @@ pub(crate) fn write_whole(output: &Path, bytes: &[u8]) -> Result<()> {
             })
         });
     match written {
-        Ok(()) => Ok(()),
+        Ok(()) => fs::File::open(parent).and_then(|directory| directory.sync_all()).map_err(|error| {
+            Error(format!(
+                "{} was written, but its directory {} could not be flushed to disk: {error}",
+                output.display(),
+                parent.display()
+            ))
+        }),
         Err(error) => Err(match fs::remove_file(&temporary) {
             Ok(()) => error,
             Err(cleanup) if cleanup.kind() == std::io::ErrorKind::NotFound => error,

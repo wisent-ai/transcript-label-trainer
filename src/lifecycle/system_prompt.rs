@@ -1,6 +1,16 @@
 use super::*;
 
-pub(crate) const SYSTEM_PROMPT: &str = include_str!("../../training/lifecycle-model/lifecycle-system-prompt.txt");
+pub(crate) const SYSTEM_PROMPT: &str =
+    include_str!("../../training/lifecycle-model/lifecycle-system-prompt.txt");
+
+/// The decision contract: one variant per action, each naming the goal
+/// references and the evidence that action allows.
+const OUTPUT_SCHEMA: &str =
+    include_str!("../../training/lifecycle-model/lifecycle-output-schema.json");
+
+/// The input and decision contract Oko asks the lifecycle model under: the
+/// envelope Oko sends, without a candidate score, and the decision schema.
+pub(crate) const LIFECYCLE_CONTRACT: &str = "oko-goal-lifecycle-v2";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct ChatMessage {
@@ -30,7 +40,7 @@ pub(crate) fn read_rows(path: &Path) -> Result<Vec<TrainingRow>> {
     let file = File::open(path)?;
     BufReader::new(file)
         .lines()
-        .filter(|line| line.as_ref().map_or(true, |value| !value.trim().is_empty()))
+        .filter(|line| !line.as_ref().is_ok_and(|value| value.trim().is_empty()))
         .map(|line| {
             let line = line?;
             serde_json::from_str(&line).map_err(Error::from)
@@ -59,6 +69,24 @@ pub(crate) fn input_envelope(row: &TrainingRow) -> Result<Value> {
         .map_err(|error| Error(format!("{} has invalid user envelope: {error}", row.id)))
 }
 
+/// The values one schema property allows: its `const`, else its `enum`; none
+/// when it constrains the value another way (a pattern).
+fn allowed(property: &Value) -> Vec<&str> {
+    match property.get("const") {
+        Some(value) => value.as_str().into_iter().collect(),
+        None => property["enum"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect(),
+    }
+}
+
+/// The reviewer's decision, held to the declared output schema: the variant
+/// its action names fixes which goal references and evidence it may carry,
+/// and its goal reference must be one of the row's candidates. The title is
+/// cleared, since the contract keeps it empty.
 pub(crate) fn validate_decision(row: &TrainingRow, value: Value) -> Result<Decision> {
     let mut decision: Decision = serde_json::from_value(value)
         .map_err(|error| Error(format!("{} has invalid reviewer decision: {error}", row.id)))?;
@@ -70,50 +98,46 @@ pub(crate) fn validate_decision(row: &TrainingRow, value: Value) -> Result<Decis
         .flatten()
         .filter_map(|candidate| candidate.get("ref").and_then(Value::as_str))
         .collect::<Vec<_>>();
-    if !["startGoal", "continueCurrent", "finishGoal", "ignore"].contains(&decision.action.as_str())
-    {
-        return Err(Error(format!(
-            "{} has unknown action {}",
-            row.id, decision.action
-        )));
-    }
+    let schema: Value = serde_json::from_str(OUTPUT_SCHEMA)?;
+    let variants: Vec<&Value> = schema["oneOf"].as_array().into_iter().flatten().collect();
+    // The references a variant fixes by value start a goal; every other
+    // variant names an existing candidate.
+    let new_refs: Vec<&str> = variants
+        .iter()
+        .flat_map(|variant| allowed(&variant["properties"]["goal_ref"]))
+        .collect();
+    let properties = &variants
+        .iter()
+        .find(|variant| {
+            allowed(&variant["properties"]["action"]).contains(&decision.action.as_str())
+        })
+        .ok_or_else(|| Error(format!("{} has unknown action {}", row.id, decision.action)))?
+        ["properties"];
     if !refs.contains(&decision.goal_ref.as_str()) {
         return Err(Error(format!(
             "{} has unknown goal_ref {}",
             row.id, decision.goal_ref
         )));
     }
-    if !["none", "explicit_open", "explicit_completion"]
-        .contains(&decision.lifecycle_evidence.as_str())
-    {
+    let fixed = allowed(&properties["goal_ref"]);
+    let reference_fits = if fixed.is_empty() {
+        !new_refs.contains(&decision.goal_ref.as_str())
+    } else {
+        fixed.contains(&decision.goal_ref.as_str())
+    };
+    if !reference_fits {
         return Err(Error(format!(
-            "{} has unknown lifecycle_evidence {}",
-            row.id, decision.lifecycle_evidence
+            "{} uses goal_ref {} for {}, which the output schema does not allow",
+            row.id, decision.goal_ref, decision.action
+        )));
+    }
+    if !allowed(&properties["lifecycle_evidence"]).contains(&decision.lifecycle_evidence.as_str()) {
+        return Err(Error(format!(
+            "{} gives lifecycle_evidence {} for {}, which the output schema does not allow",
+            row.id, decision.lifecycle_evidence, decision.action
         )));
     }
     decision.title.clear();
-    if decision.action == "startGoal" {
-        if decision.goal_ref != "NEW_GOAL" {
-            return Err(Error(format!("{} has invalid startGoal ref", row.id)));
-        }
-    } else if decision.goal_ref == "NEW_GOAL" {
-        return Err(Error(format!(
-            "{} uses NEW_GOAL for {}",
-            row.id, decision.action
-        )));
-    }
-    if decision.action == "finishGoal" && decision.lifecycle_evidence != "explicit_completion" {
-        return Err(Error(format!(
-            "{} finishGoal lacks explicit completion evidence",
-            row.id
-        )));
-    }
-    if decision.lifecycle_evidence == "explicit_completion" && decision.action != "finishGoal" {
-        return Err(Error(format!(
-            "{} completion evidence has non-finish action",
-            row.id
-        )));
-    }
     Ok(decision)
 }
 
@@ -196,7 +220,7 @@ pub(crate) fn reviewed_row(
     metadata.insert("reviewedAt".to_string(), Value::String(now_iso()));
     metadata.insert(
         "contract".to_string(),
-        Value::String("oko-goal-lifecycle-v1".to_string()),
+        Value::String(LIFECYCLE_CONTRACT.to_string()),
     );
     Ok(value)
 }
@@ -208,7 +232,7 @@ pub(crate) fn reviewed_ids(path: &Path) -> Result<HashSet<String>> {
     let file = File::open(path)?;
     BufReader::new(file)
         .lines()
-        .filter(|line| line.as_ref().map_or(true, |value| !value.trim().is_empty()))
+        .filter(|line| !line.as_ref().is_ok_and(|value| value.trim().is_empty()))
         .map(|line| {
             let line = line?;
             let value: Value = serde_json::from_str(&line)?;

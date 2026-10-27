@@ -2,17 +2,17 @@
 //! for Brama review, built from real reviewed envelopes.
 //!
 //! Every family in `templates.json` gets the stated number of rows. Each row
-//! copies a real envelope that has an active candidate (the same-session
-//! candidate with the highest score, else any), writes one of the family's
-//! sentences into it with that candidate's title (and, for a switch, the
-//! title of a candidate the envelope does not hold), and records the family
-//! and its intended action, which the assembler later holds the review to.
-//! The turn index of a generated row follows every source turn, so no
-//! generated turn sits among real ones. The envelope carries only what Oko
-//! sends: any `lifecycle_features` an older source row still holds is
-//! dropped, since Oko no longer computes them and the model must not learn
-//! from a field production never sends. The same seed always gives the same
-//! rows.
+//! copies a real envelope that has an active candidate (the member's last
+//! goal among the same-session candidates, else among all, else the first
+//! one Oko offered), writes one of the family's sentences into it with that
+//! candidate's title (and, for a switch, the title of a candidate the
+//! envelope does not hold), and records the family and its intended action,
+//! which the assembler later holds the review to. The turn index of a
+//! generated row follows every source turn, so no generated turn sits among
+//! real ones. The envelope carries only what Oko sends: any
+//! `lifecycle_features` or candidate `score` an older source row still holds
+//! is dropped, since Oko computes neither and the model must not learn from a
+//! field production never sends. The same seed always gives the same rows.
 
 use rand::{seq::SliceRandom, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -59,12 +59,9 @@ fn user_envelope(row: &Value) -> Result<Value> {
     Ok(serde_json::from_str(content)?)
 }
 
-fn score(candidate: &Value) -> f64 {
-    candidate["score"].as_f64().unwrap_or_default()
-}
-
-/// The candidate the turn is about: the best-scored same-session candidate,
-/// else the best-scored of all, never the new-goal placeholder.
+/// The candidate the turn is about, never the new-goal placeholder: among
+/// the same-session candidates when there are any, else among all, the one
+/// Oko marks as the member's last goal, else the first Oko offered.
 fn active_candidate(envelope: &Value) -> Option<&Value> {
     let candidates: Vec<&Value> = envelope["candidates"]
         .as_array()
@@ -78,12 +75,15 @@ fn active_candidate(envelope: &Value) -> Option<&Value> {
         .filter(|candidate| candidate["same_session"] == true)
         .collect();
     let pool = if same.is_empty() { candidates } else { same };
-    pool.into_iter()
-        .max_by(|left, right| score(left).total_cmp(&score(right)))
+    let last = pool
+        .iter()
+        .copied()
+        .find(|candidate| candidate["is_last_member_goal"] == true);
+    last.or_else(|| pool.first().copied())
 }
 
-fn title_of(candidate: &Value) -> String {
-    candidate["title"].as_str().unwrap_or_default().to_string()
+fn title_of(candidate: &Value) -> Option<&str> {
+    candidate["title"].as_str()
 }
 
 /// The title of an active candidate from another envelope that this one
@@ -93,11 +93,15 @@ fn unrelated_title(
     held: &HashSet<String>,
     rng: &mut ChaCha20Rng,
 ) -> Option<String> {
-    let mut order: Vec<usize> = (0..envelopes.len()).collect();
+    let mut order: Vec<usize> = envelopes
+        .iter()
+        .enumerate()
+        .map(|(index, _)| index)
+        .collect();
     order.shuffle(rng);
     order.into_iter().find_map(|index| {
-        let title = active_candidate(&envelopes[index]).map(title_of)?;
-        (!title.is_empty() && !held.contains(&title.to_lowercase())).then_some(title)
+        let title = active_candidate(&envelopes[index]).and_then(title_of)?;
+        (!title.is_empty() && !held.contains(&title.to_lowercase())).then(|| title.to_string())
     })
 }
 
@@ -135,33 +139,47 @@ pub fn generate_curriculum(run: &CurriculumGeneration) -> Result<Value> {
         .iter()
         .filter_map(|(_, envelope)| envelope["turn_index"].as_i64())
         .max()
-        .unwrap_or_default();
+        .ok_or_else(|| Error("no source row records a turn_index".to_string()))?;
     let envelopes: Vec<Value> = sources
         .iter()
         .map(|(_, envelope)| envelope.clone())
         .collect();
     let mut rng = ChaCha20Rng::seed_from_u64(run.seed);
-    let mut order: Vec<usize> = (0..sources.len()).collect();
+    let mut order: Vec<usize> = sources.iter().enumerate().map(|(index, _)| index).collect();
     order.shuffle(&mut rng);
+    // Generated turns follow every source turn, in generation order.
+    let mut turns = (last_turn..).filter(|turn| *turn > last_turn);
 
     let mut generated: Vec<Value> = Vec::new();
     let mut families = serde_json::Map::new();
     for (cursor, (family, index)) in declared
         .families
         .iter()
-        .flat_map(|family| (0..run.per_family).map(move |index| (family, index)))
+        .flat_map(|family| {
+            std::iter::repeat(family)
+                .take(run.per_family)
+                .enumerate()
+                .map(|(index, family)| (family, index))
+        })
         .enumerate()
     {
         let (source, envelope) = &sources[order[cursor % order.len()]];
         let mut envelope = envelope.clone();
         let title = active_candidate(&envelope)
-            .map(title_of)
-            .unwrap_or_default();
+            .and_then(title_of)
+            .ok_or_else(|| {
+                Error(format!(
+                    "{} has an active candidate without a title",
+                    source["id"]
+                ))
+            })?
+            .to_string();
         let held: HashSet<String> = envelope["candidates"]
             .as_array()
             .into_iter()
             .flatten()
-            .map(|candidate| title_of(candidate).to_lowercase())
+            .filter_map(title_of)
+            .map(str::to_lowercase)
             .collect();
         let template = &family.templates[index % family.templates.len()];
         let filled = if template.contains("{new_title") {
@@ -179,10 +197,8 @@ pub fn generate_curriculum(run: &CurriculumGeneration) -> Result<Value> {
         };
         let text = filled.replace("{title}", &title);
         let row_id = format!(
-            "lifecycle-curriculum-{}-{}-{:04}",
-            run.seed,
-            family.family,
-            index + 1
+            "lifecycle-curriculum-{}-{}-{index}",
+            run.seed, family.family
         );
         let object = envelope.as_object_mut().ok_or_else(|| {
             Error(format!(
@@ -191,16 +207,21 @@ pub fn generate_curriculum(run: &CurriculumGeneration) -> Result<Value> {
             ))
         })?;
         object.remove("lifecycle_features");
+        if let Some(candidates) = object.get_mut("candidates").and_then(Value::as_array_mut) {
+            for candidate in candidates.iter_mut().filter_map(Value::as_object_mut) {
+                candidate.remove("score");
+            }
+        }
         object.insert("prompt_id".to_string(), json!(row_id));
         object.insert(
             "local_day".to_string(),
             json!(format!("curriculum-{}", run.seed)),
         );
         object.insert("text".to_string(), json!(text));
-        object.insert(
-            "turn_index".to_string(),
-            json!(last_turn + 1 + cursor as i64),
-        );
+        let turn = turns
+            .next()
+            .ok_or_else(|| Error(format!("no turn index follows {last_turn}")))?;
+        object.insert("turn_index".to_string(), json!(turn));
         generated.push(json!({
             "id": row_id,
             "split_day": format!("curriculum-{}", run.seed),
@@ -213,27 +234,12 @@ pub fn generate_curriculum(run: &CurriculumGeneration) -> Result<Value> {
                 "seed": run.seed,
             },
         }));
-        families.insert(family.family.clone(), json!(index + 1));
+        families.insert(family.family.clone(), json!(run.per_family));
     }
 
-    if let Some(parent) = run
-        .output
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent)?;
-    }
-    let mut temporary = run.output.as_os_str().to_owned();
-    temporary.push(".tmp");
-    let temporary = std::path::PathBuf::from(temporary);
-    let mut out = BufWriter::new(File::create(&temporary)?);
-    for row in &generated {
-        writeln!(out, "{}", serde_json::to_string(row)?)?;
-    }
-    out.into_inner()
-        .map_err(|error| Error(error.to_string()))?
-        .sync_all()?;
-    fs::rename(&temporary, run.output)?;
+    // The one whole-file writer: a per-process sibling renamed into place,
+    // every failure naming the path and the step.
+    crate::util::write_jsonl(run.output, &generated)?;
     Ok(json!({
         "families": families,
         "output": run.output.display().to_string(),

@@ -138,12 +138,13 @@ fn unique_ids(rows: &[(Value, String)], split: &str) -> Result<HashSet<String>> 
         let id = row
             .get("id")
             .and_then(Value::as_str)
-            .map(str::to_string)
+            .filter(|id| !id.trim().is_empty())
             .ok_or_else(|| {
                 Error(format!(
-                    "assembled {split} split holds a row without a string id: {row}"
+                    "assembled {split} split holds a row without a nonblank string id: {row}"
                 ))
-            })?;
+            })?
+            .to_string();
         if !seen.insert(id.clone()) {
             return Err(Error(format!(
                 "assembled {split} split contains the id {id} more than once"
