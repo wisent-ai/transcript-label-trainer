@@ -6,9 +6,11 @@ set -euo pipefail
 : "${HUMANIZER_STER_OPTIONS:?humanizer-model passes --ster-options as HUMANIZER_STER_OPTIONS}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGETS="${1:?usage: run.sh TARGETS_JSONL}"
-JOB_ID="${WC_JOB_ID:?WC_JOB_ID is required}"
+: "${WC_JOB_ID:?WC_JOB_ID is required}"
 WORK="${HUMANIZER_WORK_DIR:?humanizer-model passes the work directory of its job as HUMANIZER_WORK_DIR}"
-OUT="/tmp/wc-$JOB_ID/output"
+# shellcheck source=training/job-output.sh
+source "$ROOT/training/job-output.sh"
+OUT="$(job_output_dir "$ROOT")"
 VENV="$WORK/venv"
 mkdir -p "$WORK" "$OUT"
 if [[ ! "$TARGETS" -ef "$WORK/targets.jsonl" ]]; then

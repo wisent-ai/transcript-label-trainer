@@ -7,7 +7,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DATASET="${1:?usage: run.sh REVIEWED_GOALS_JSONL}"
 WORK="$GOAL_MODEL_WORK_DIR"
-OUT="/tmp/wc-${WC_JOB_ID:?WC_JOB_ID is required}/output"
+: "${WC_JOB_ID:?WC_JOB_ID is required}"
+# shellcheck source=training/job-output.sh
+source "$ROOT/training/job-output.sh"
+OUT="$(job_output_dir "$ROOT")"
 VENV="$WORK/venv"
 mkdir -p "$WORK" "$OUT"
 cp "$DATASET" "$WORK/reviewed-goals.jsonl"

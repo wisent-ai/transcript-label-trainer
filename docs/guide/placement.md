@@ -73,6 +73,16 @@ exact trainer source revision. Repeating the same run selects the same work
 directory; another source revision selects a different one. This does not
 promise filesystem retention after a host is retired.
 
+The goal, lifecycle and humanizer scripts stage what Stado uploads to the
+job's output URI in `output/` beside their checkout: Stado starts every job in
+its own directory `wc-<job id>` under the host's work root, checks the trainer
+out into the `--repo-workdir` child of it and uploads that directory's
+`output/` when the job ends (`training/job-output.sh`). The lifecycle script,
+like the other two, requires the work directory its job command exports and
+has no `TMPDIR` or `/tmp` fallback. A script run outside such a directory is
+refused before it trains, naming the checkout, the directory it sits in and
+the `wc-<job id>` it expected.
+
 For `humanizer-model`, the declared publication destination also participates in
 that identity. Dataset digest, Ster settings, exact trainer revision and destination
 repository are serialized as separate values before hashing; changing any one
