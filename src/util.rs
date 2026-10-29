@@ -7,7 +7,7 @@ mod digest;
 mod read;
 mod whole;
 
-pub(crate) use digest::sha256_hex;
+pub(crate) use digest::{sha256_hex, sha256_hex_stream};
 pub(crate) use read::{read_bytes, read_text};
 pub(crate) use whole::{write_json_pretty, write_jsonl, write_whole};
 

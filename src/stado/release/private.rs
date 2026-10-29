@@ -19,10 +19,10 @@ pub(super) fn publish_private(
     use crate::hub::{Hub, Signature};
     let hub = Hub::new()?;
     let public = |info: &crate::hub::ModelInfo| -> Result<()> {
-        match info.private {
-            true => Ok(()),
-            false => crate::bail!("Hugging Face repository {repo} is public; a model is published only to a private one"),
+        if !info.private {
+            crate::bail!("Hugging Face repository {repo} is public; a model is published only to a private one");
         }
+        Ok(())
     };
     match hub.info(repo, None, false)? {
         Some(info) => public(&info)?,
@@ -33,8 +33,13 @@ pub(super) fn publish_private(
         let mut output = File::create(&assembled)
             .map_err(|error| Error(format!("cannot create {}: {error}", assembled.display())))?;
         for part in parts {
-            io::copy(&mut File::open(part)?, &mut output)?;
-            fs::remove_file(part)?;
+            File::open(part)
+                .and_then(|mut input| io::copy(&mut input, &mut output))
+                .map_err(|error| {
+                    Error(format!("cannot append {} to {}: {error}", part.display(), assembled.display()))
+                })?;
+            std::fs::remove_file(part)
+                .map_err(|error| Error(format!("cannot remove the joined part {}: {error}", part.display())))?;
         }
     }
     let mut signatures = std::collections::BTreeMap::from([(

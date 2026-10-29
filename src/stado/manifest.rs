@@ -100,8 +100,7 @@ pub(crate) fn write_manifest(
         }
     };
     let path = output.join(MANIFEST);
-    fs::write(&path, serde_json::to_string_pretty(&manifest)? + "\n")
-        .map_err(|error| Error(format!("cannot write {}: {error}", path.display())))?;
+    crate::util::write_json_pretty(&path, &manifest)?;
     // The GGUF jobs end on their judge's own exit status; the humanizer job
     // has no later step, so its gate is enforced here, after the manifest is
     // staged for the record.

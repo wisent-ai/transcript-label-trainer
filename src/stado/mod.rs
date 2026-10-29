@@ -10,8 +10,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use sha2::{Digest, Sha256};
-
 use crate::jobs::{Job, SKLEARN_MODEL};
 use crate::util::{Error, Result};
 use crate::{lake, model};

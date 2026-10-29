@@ -1,6 +1,6 @@
 use super::*;
 
-use std::fs::{self, File};
+use std::fs::File;
 
 use serde_json::{json, Value};
 
@@ -96,9 +96,10 @@ fn fetch(stado: &Path, uri: &str, destination: &Path) -> Result<()> {
         destination.as_os_str().to_owned(),
     ];
     let output = run(stado, &args)?;
-    match output.status.success() {
-        true => Ok(()),
-        false => Err(command_error(stado, &format!("downloading {uri}"), &output)),
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(command_error(stado, &format!("downloading {uri}"), &output))
     }
 }
 
@@ -123,29 +124,25 @@ fn present(stado: &Path, uri: &str) -> Result<bool> {
 
 /// Upload unless the immutable coordinate already holds the object.
 fn publish(stado: &Path, uri: &str, path: &Path) -> Result<()> {
-    match present(stado, uri)? {
-        true => Ok(()),
-        false => upload(stado, uri, path, CONTENT_TYPE),
+    if present(stado, uri)? {
+        Ok(())
+    } else {
+        upload(stado, uri, path, CONTENT_TYPE)
     }
 }
 
 /// Stream `paths` in order through one SHA-256; returns digest and byte count.
 fn hash_files(paths: &[PathBuf]) -> Result<(String, u64)> {
-    let mut hasher = Sha256::new();
-    let bytes = paths
+    let files = paths
         .iter()
-        .map(|path| -> Result<u64> {
-            let mut file = File::open(path)
-                .map_err(|error| Error(format!("cannot read {}: {error}", path.display())))?;
-            Ok(io::copy(&mut file, &mut hasher)?)
-        })
-        .sum::<Result<u64>>()?;
-    Ok((hex::encode(hasher.finalize()), bytes))
+        .map(|path| File::open(path).map_err(|error| Error(format!("cannot read {}: {error}", path.display()))))
+        .collect::<Result<Vec<File>>>()?;
+    crate::util::sha256_hex_stream(files)
+        .map_err(|(index, error)| Error(format!("cannot read {}: {error}", paths[index].display())))
 }
 
 pub(super) fn read_json(path: &Path) -> Result<Value> {
-    let text = fs::read_to_string(path)
-        .map_err(|error| Error(format!("cannot read {}: {error}", path.display())))?;
+    let text = crate::util::read_text(path)?;
     serde_json::from_str(&text).map_err(|error| Error(format!("{}: {error}", path.display())))
 }
 
@@ -266,10 +263,7 @@ pub(crate) fn publish_release(
         "parts": parts,
     });
     let chunk_path = root.join("large-output-manifest.json");
-    fs::write(
-        &chunk_path,
-        serde_json::to_string_pretty(&chunk_manifest)? + "\n",
-    )?;
+    crate::util::write_json_pretty(&chunk_path, &chunk_manifest)?;
     publish(
         &stado,
         &format!("{base}/large-output/manifest-v2.json"),
