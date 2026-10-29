@@ -4,7 +4,6 @@
 //! holds a setting out of range, each before any label is read. Every command,
 //! its exit status and output go to the case's report.json under `.build/`.
 use std::fs;
-use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -52,12 +51,12 @@ impl Run {
 
 /// One, the smallest positive whole number, as the text a flag carries.
 fn one() -> String {
-    NonZeroUsize::MIN.to_string()
+    1.to_string()
 }
 
-/// A share above all of a whole: one more than one.
+/// A share above all of a whole.
 fn above_all() -> String {
-    NonZeroUsize::MIN.saturating_add(NonZeroUsize::MIN.get()).to_string()
+    2.to_string()
 }
 
 #[test]

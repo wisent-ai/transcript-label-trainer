@@ -13,15 +13,11 @@ pub(crate) fn stated_count(args: &Parsed, flag: &str) -> Result<usize> {
             "{flag} N is required on the command line; this command has no default for it"
         )));
     };
-    let count = usize::try_from(value).map_err(|error| {
-        Error(format!(
+    match usize::try_from(value) {
+        Ok(count) if count > 0 => Ok(count),
+        Ok(_) => Err(Error(format!("{flag} must be a count of at least one, not {value}"))),
+        Err(error) => Err(Error(format!(
             "{flag} must be a count of at least one, not {value}: {error}"
-        ))
-    })?;
-    match std::num::NonZeroUsize::new(count) {
-        Some(count) => Ok(count.get()),
-        None => Err(Error(format!(
-            "{flag} must be a count of at least one, not {value}"
         ))),
     }
 }

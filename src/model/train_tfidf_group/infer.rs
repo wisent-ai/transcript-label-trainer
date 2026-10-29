@@ -17,7 +17,10 @@ pub fn infer(aspect: &str, session: Option<&str>, limit: Option<i64>) -> Result<
                 .map(|row| (row.session_id, row.runtime))
                 .collect();
             if let Some(limit) = limit {
-                unlabeled.truncate(limit.max(0) as usize);
+                let count = usize::try_from(limit).map_err(|error| {
+                    crate::util::Error(format!("--limit must be a count, not {limit}: {error}"))
+                })?;
+                unlabeled.truncate(count);
             }
             unlabeled
         }
@@ -65,7 +68,7 @@ pub fn infer(aspect: &str, session: Option<&str>, limit: Option<i64>) -> Result<
     // The first real result this product produces for an operator: a trained
     // classifier's labels over real session text. Recorded here, where the
     // suggestions exist, and nowhere else.
-    crate::onboarding::record_first_success(aspect, suggestions.len());
+    crate::onboarding::record_first_success(aspect, &suggestions);
     Ok(Value::Array(suggestions))
 }
 

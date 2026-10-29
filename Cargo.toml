@@ -90,7 +90,10 @@ hf-hub = { version = "0.4", optional = true }
 candle-core = { version = "0.9", optional = true, features = ["metal"] }
 candle-nn = { version = "0.9", optional = true, features = ["metal"] }
 
+[lints.clippy]
+# A condition is written as the condition it is: `if`, not a match on a bool.
+match_bool = "deny"
+
 [profile.release]
-opt-level = 3
 lto = "thin"
 strip = true

@@ -8,29 +8,29 @@ pub(crate) fn evaluate_slice(
     batch: &Batches,
     batch_size: usize,
 ) -> Result<(Option<f64>, Option<f64>)> {
-    if batch.rows == 0 {
+    if batch.labels.is_empty() {
         return Ok((None, None));
     }
-    let mut correct = 0usize;
-    let mut total_loss = 0f64;
-    let mut seen = 0usize;
+    let batch_size = NonZeroUsize::new(batch_size)
+        .ok_or_else(|| Error("evaluation needs a batch size of at least one session".to_string()))?;
     let index: Vec<usize> = (0..batch.rows).collect();
-    for chunk in index.chunks(batch_size.max(1)) {
+    let mut hits: Vec<bool> = Vec::with_capacity(index.len());
+    let mut chunk_losses: Vec<f64> = Vec::new();
+    for chunk in index.chunks(batch_size.get()) {
         let (ids, mask, targets) = batch.take(chunk)?;
         let logits = model.forward(&ids, &mask, false)?;
         let batch_loss = loss::cross_entropy(&logits, &targets)
             .map_err(|err| Error(format!("evaluation loss failed: {err}")))?;
-        total_loss += scalar(&batch_loss)? as f64 * chunk.len() as f64;
-        for (row, predicted) in argmax(&logits)?.into_iter().enumerate() {
-            if predicted as usize == batch.labels[chunk[row]] {
-                correct += 1;
-            }
+        chunk_losses.push(f64::from(scalar(&batch_loss)?) * chunk.len() as f64);
+        for (position, predicted) in chunk.iter().zip(argmax(&logits)?) {
+            hits.push(predicted as usize == batch.labels[*position]);
         }
-        seen += chunk.len();
     }
+    let seen = hits.len() as f64;
+    let correct = hits.iter().filter(|hit| **hit).count() as f64;
     Ok((
-        Some(correct as f64 / seen as f64),
-        Some(total_loss / seen as f64),
+        Some(correct / seen),
+        Some(chunk_losses.iter().sum::<f64>() / seen),
     ))
 }
 
@@ -44,30 +44,26 @@ pub(crate) fn infer(
     device: &Device,
     batch_size: usize,
 ) -> Result<Vec<(String, f64)>> {
-    let batch_size = std::num::NonZeroUsize::new(batch_size)
+    let batch_size = NonZeroUsize::new(batch_size)
         .ok_or_else(|| Error("prediction needs a positive batch size; the artifact records zero".to_string()))?;
     let mut out = Vec::with_capacity(texts.len());
     for chunk in texts.chunks(batch_size.get()) {
         let index: Vec<usize> = (0..chunk.len()).collect();
-        let labels = vec![0usize; chunk.len()];
-        let batch = Batches::encode(tokenizer, chunk, &labels, &index, device)?;
-        let (ids, mask, _) = batch.take(&index)?;
+        let batch = Batches::encode(tokenizer, chunk, None, &index, device)?;
+        let (ids, mask) = batch.inputs(&index)?;
         let logits = model.forward(&ids, &mask, false)?;
         let probabilities = ops::softmax(&logits, D::Minus1)
             .and_then(|p| p.to_vec2::<f32>())
             .map_err(|err| Error(format!("could not read the prediction: {err}")))?;
         for row in probabilities {
-            let (best, confidence) =
-                row.iter()
-                    .enumerate()
-                    .fold((0usize, f32::MIN), |best, (index, value)| {
-                        if *value > best.1 {
-                            (index, *value)
-                        } else {
-                            best
-                        }
-                    });
-            out.push((classes[best].clone(), confidence as f64));
+            // The most probable class; on a tie, the first of them.
+            let (best, confidence) = row
+                .iter()
+                .copied()
+                .enumerate()
+                .min_by(|(_, left), (_, right)| right.total_cmp(left))
+                .ok_or_else(|| Error("the model answered no class probability".to_string()))?;
+            out.push((classes[best].clone(), f64::from(confidence)));
         }
     }
     Ok(out)
@@ -207,8 +203,12 @@ pub(crate) fn default_gelu() -> String {
     "gelu".to_string()
 }
 
+// BertConfig's type_vocab_size=2, which a config.json that omits it was built with:
+// https://github.com/huggingface/transformers/blob/main/src/transformers/models/bert/configuration_bert.py
+const BERT_TYPE_VOCAB_SIZE: usize = 2;
+
 pub(crate) fn default_type_vocab_size() -> usize {
-    2
+    BERT_TYPE_VOCAB_SIZE
 }
 
 pub(crate) fn default_layer_norm_eps() -> f64 {

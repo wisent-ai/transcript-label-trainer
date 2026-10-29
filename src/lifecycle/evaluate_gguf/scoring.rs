@@ -5,7 +5,6 @@
 //! half of either.
 
 use std::collections::BTreeMap;
-use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
 use serde_json::json;
@@ -14,9 +13,10 @@ use super::*;
 
 /// `count` of `total` as a rate; null when there was nothing to measure.
 fn rate(count: usize, total: usize) -> Value {
-    match NonZeroUsize::new(total) {
-        Some(total) => json!(count as f64 / total.get() as f64),
-        None => Value::Null,
+    if total == 0 {
+        Value::Null
+    } else {
+        json!(count as f64 / total as f64)
     }
 }
 

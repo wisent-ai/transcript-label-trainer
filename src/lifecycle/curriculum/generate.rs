@@ -145,10 +145,10 @@ pub fn generate_curriculum(run: &CurriculumGeneration) -> Result<Value> {
         .map(|(_, envelope)| envelope.clone())
         .collect();
     let mut rng = ChaCha20Rng::seed_from_u64(run.seed);
-    let mut order: Vec<usize> = sources.iter().enumerate().map(|(index, _)| index).collect();
+    let mut order: Vec<usize> = (0..sources.len()).collect();
     order.shuffle(&mut rng);
     // Generated turns follow every source turn, in generation order.
-    let mut turns = (last_turn..).filter(|turn| *turn > last_turn);
+    let mut turns = last_turn + 1..;
 
     let mut generated: Vec<Value> = Vec::new();
     let mut families = serde_json::Map::new();

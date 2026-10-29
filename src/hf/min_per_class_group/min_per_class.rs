@@ -1,14 +1,12 @@
 use super::*;
 
-/// HF fine-tuning needs two sessions per class on the training side so the
-/// stratified in-training split keeps every class on both sides: a class with
-/// one session cannot sit on both sides of a split.
-pub(crate) const MIN_PER_CLASS: usize = 2;
-
 /// Training decays the learning rate linearly to zero with no warmup; the
 /// seed, weight decay, gradient clip and in-training slice are the caller's.
 
 /// Both architectures normalise at eps 1e-12; bert lets its config say so.
+// DistilBERT hard-codes nn.LayerNorm(..., eps=1e-12) and BertConfig defaults layer_norm_eps=1e-12:
+// https://github.com/huggingface/transformers/blob/main/src/transformers/models/distilbert/modeling_distilbert.py
+// https://github.com/huggingface/transformers/blob/main/src/transformers/models/bert/configuration_bert.py
 pub(crate) const DEFAULT_LAYER_NORM_EPS: f64 = 1e-12;
 
 /// The `in_training_eval` note, verbatim from the Python metrics.
@@ -47,22 +45,24 @@ pub fn train(
     values: &[String],
     config: &TrainConfig<'_>,
 ) -> Result<Trained, TrainFailure> {
+    // The stratified in-training split keeps every class on both of its
+    // sides, so a class only one session holds cannot be split.
     let counts = class_counts(values);
-    let too_small: Vec<(&String, usize)> = counts
+    let single: Vec<&String> = counts
         .iter()
-        .filter(|(_, n)| **n < MIN_PER_CLASS)
-        .map(|(value, n)| (value, *n))
+        .filter(|(_, n)| **n == 1)
+        .map(|(value, _)| value)
         .collect();
-    if !too_small.is_empty() {
-        let detail = too_small
+    if !single.is_empty() {
+        let detail = single
             .iter()
-            .map(|(value, n)| format!("'{value}' has {n}"))
+            .map(|value| format!("'{value}'"))
             .collect::<Vec<_>>()
             .join(", ");
         return Err(TrainFailure::NotEnoughData(format!(
-            "aspect '{}': HF fine-tuning requires at least {MIN_PER_CLASS} sessions per class \
-             on the training side ({detail}). Add labels with 'transcript-lake label add' \
-             and retry.",
+            "aspect '{}': HF fine-tuning needs more than one session of every class on the \
+             training side, one for each side of its in-training split; only one session \
+             holds {detail}. Add labels with 'transcript-lake label add' and retry.",
             config.aspect
         )));
     }
@@ -96,7 +96,7 @@ pub fn predict(
     }
     let config: Value = serde_json::from_slice(&std::fs::read(artifact_dir.join("config.json"))?)?;
     let classes = classes_from_config(&config)?;
-    let (device, _) = pick_device();
+    let (device, _) = pick_device()?;
 
     let weights = artifact_dir.join("model.safetensors");
     if !weights.is_file() {
@@ -131,7 +131,7 @@ pub(crate) fn fine_tune(
     classes: &[String],
     config: &TrainConfig<'_>,
 ) -> Result<Trained> {
-    let (device, device_name) = pick_device();
+    let (device, device_name) = pick_device()?;
 
     let files = HubFiles::fetch(config.model_id)?;
     let base_config: Value = serde_json::from_slice(&std::fs::read(&files.config)?)?;
@@ -155,8 +155,8 @@ pub(crate) fn fine_tune(
     let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
     let (train_index, eval_index) = stratified_split(label_ids, classes.len(), n_test, &mut rng);
 
-    let train_batch = Batches::encode(&tokenizer, texts, label_ids, &train_index, &device)?;
-    let eval_batch = Batches::encode(&tokenizer, texts, label_ids, &eval_index, &device)?;
+    let train_batch = Batches::encode(&tokenizer, texts, Some(label_ids), &train_index, &device)?;
+    let eval_batch = Batches::encode(&tokenizer, texts, Some(label_ids), &eval_index, &device)?;
 
     let raw = files.weights(&device)?;
     let (model, vars) = Classifier::load(
@@ -170,8 +170,17 @@ pub(crate) fn fine_tune(
     )?;
     let stepped: Vec<Var> = vars.iter().map(|(_, var)| var.clone()).collect();
 
-    let steps_per_epoch = train_batch.rows.div_ceil(config.batch_size.max(1)).max(1);
-    let total_steps = ((steps_per_epoch as f64 * config.epochs).ceil() as usize).max(1);
+    let batch_size = NonZeroUsize::new(config.batch_size)
+        .ok_or_else(|| Error("the batch size must hold at least one session".to_string()))?;
+    if train_index.is_empty() {
+        return Err(Error("the training side holds no session to fine-tune on".to_string()));
+    }
+    if !(config.epochs.is_normal() && config.epochs.is_sign_positive()) {
+        return Err(Error(format!("epochs must be a positive number, not {}", config.epochs)));
+    }
+    let steps_per_epoch = train_batch.rows.div_ceil(batch_size.get());
+    let total_steps = (steps_per_epoch as f64 * config.epochs).ceil() as usize;
+    let epochs = config.epochs.ceil() as usize;
     let mut optimizer = AdamW::new(
         stepped.clone(),
         ParamsAdamW {
@@ -182,16 +191,21 @@ pub(crate) fn fine_tune(
     )
     .map_err(|err| Error(format!("could not build the AdamW optimizer: {err}")))?;
 
-    let epochs = (config.epochs.ceil() as usize).max(1);
+    // One position per encoded training session, shuffled every epoch.
     let mut order: Vec<usize> = (0..train_batch.rows).collect();
-    let mut step = 0usize;
-    for epoch in 0..epochs {
+    // Every step's loss: its count is the step reached, and an epoch's mean
+    // is taken over the steps it added.
+    let mut losses: Vec<f64> = Vec::with_capacity(total_steps);
+    let mut epoch_means: Vec<f64> = Vec::with_capacity(epochs);
+    while losses.len() < total_steps {
         order.shuffle(&mut rng);
-        let mut epoch_loss = 0f64;
-        let mut epoch_steps = 0usize;
-        for chunk in order.chunks(config.batch_size.max(1)) {
+        let epoch_start = losses.len();
+        for chunk in order.chunks(batch_size.get()) {
+            let step = losses.len();
             // Linear decay to zero over the whole run, no warmup.
-            optimizer.set_learning_rate(config.lr * (1.0 - step as f64 / total_steps as f64));
+            optimizer.set_learning_rate(
+                config.lr * (total_steps - step) as f64 / total_steps as f64,
+            );
             let (ids, mask, targets) = train_batch.take(chunk)?;
             let logits = model.forward(&ids, &mask, true)?;
             let batch_loss = loss::cross_entropy(&logits, &targets)
@@ -203,24 +217,20 @@ pub(crate) fn fine_tune(
             optimizer
                 .step(&grads)
                 .map_err(|err| Error(format!("optimizer step {step} failed: {err}")))?;
-            epoch_loss += scalar(&batch_loss)? as f64;
-            epoch_steps += 1;
-            step += 1;
-            if step >= total_steps {
+            losses.push(f64::from(scalar(&batch_loss)?));
+            if losses.len() >= total_steps {
                 break;
             }
         }
-        if epoch_steps > 0 {
-            eprintln!(
-                "epoch {}/{epochs}: train_loss={:.4} ({epoch_steps} step(s) of {total_steps}, \
-                 device={device_name})",
-                epoch + 1,
-                epoch_loss / epoch_steps as f64,
-            );
-        }
-        if step >= total_steps {
-            break;
-        }
+        let epoch_losses = &losses[epoch_start..];
+        let mean = epoch_losses.iter().sum::<f64>() / epoch_losses.len() as f64;
+        epoch_means.push(mean);
+        eprintln!(
+            "epoch {}/{epochs}: train_loss={mean:.4} ({} step(s) of {total_steps}, \
+             device={device_name})",
+            epoch_means.len(),
+            epoch_losses.len(),
+        );
     }
 
     let (eval_accuracy, eval_loss) = evaluate_slice(&model, &eval_batch, config.batch_size)?;

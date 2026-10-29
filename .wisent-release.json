@@ -8,6 +8,11 @@
       "name": "fmt",
       "argv": ["cargo", "fmt", "--all", "--", "--check"],
       "kind": "format"
+    },
+    {
+      "name": "clippy",
+      "argv": ["cargo", "clippy", "--locked", "--all-targets"],
+      "kind": "lint"
     }
   ]
 }

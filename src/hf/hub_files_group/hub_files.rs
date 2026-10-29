@@ -14,14 +14,19 @@ impl HubFiles {
                  that ships a fast tokenizer, such as distilbert-base-multilingual-cased"
             ))
         })?;
-        let safetensors = repo.get("model.safetensors").ok();
-        let pytorch = match safetensors {
-            Some(_) => None,
-            None => Some(repo.get("pytorch_model.bin").map_err(|err| {
-                Error(format!(
-                    "{model_id} publishes neither model.safetensors nor pytorch_model.bin ({err})"
-                ))
-            })?),
+        // A model publishes its weights as model.safetensors or, failing
+        // that, pytorch_model.bin; both failures are named.
+        let (safetensors, pytorch) = match repo.get("model.safetensors") {
+            Ok(path) => (Some(path), None),
+            Err(safetensors_err) => match repo.get("pytorch_model.bin") {
+                Ok(path) => (None, Some(path)),
+                Err(pytorch_err) => {
+                    return Err(Error(format!(
+                        "{model_id} publishes neither model.safetensors ({safetensors_err}) \
+                         nor pytorch_model.bin ({pytorch_err})"
+                    )));
+                }
+            },
         };
         Ok(Self {
             config,
@@ -51,11 +56,13 @@ pub(crate) fn load_tokenizer(path: &Path) -> Result<Tokenizer> {
 /// Truncation and padding as the Python path asked for them: truncate at
 /// `max_length`, pad the whole encoded split to its longest member.
 pub(crate) fn prepare_tokenizer(tokenizer: &mut Tokenizer, max_length: usize) -> Result<()> {
-    let pad_token = ["[PAD]", "<pad>"]
+    // The pad token names BERT-style and SentencePiece tokenizers ship.
+    let (pad_token, pad_id) = ["[PAD]", "<pad>"]
         .into_iter()
-        .find(|token| tokenizer.token_to_id(token).is_some())
-        .unwrap_or("[PAD]");
-    let pad_id = tokenizer.token_to_id(pad_token).unwrap_or(0);
+        .find_map(|token| tokenizer.token_to_id(token).map(|id| (token, id)))
+        .ok_or_else(|| {
+            Error("the tokenizer has neither a [PAD] nor a <pad> token to pad a batch with".to_string())
+        })?;
     tokenizer
         .with_truncation(Some(TruncationParams {
             max_length,
@@ -69,78 +76,6 @@ pub(crate) fn prepare_tokenizer(tokenizer: &mut Tokenizer, max_length: usize) ->
             ..Default::default()
         }));
     Ok(())
-}
-
-/// One encoded split, padded to a single width so any subset of its rows can
-/// be stacked into a batch.
-pub(crate) struct Batches {
-    pub(crate) ids: Vec<u32>,
-    pub(crate) mask: Vec<u32>,
-    pub(crate) labels: Vec<usize>,
-    pub(crate) width: usize,
-    pub(crate) rows: usize,
-    pub(crate) device: Device,
-}
-
-impl Batches {
-    pub(crate) fn encode(
-        tokenizer: &Tokenizer,
-        texts: &[String],
-        label_ids: &[usize],
-        index: &[usize],
-        device: &Device,
-    ) -> Result<Self> {
-        if index.is_empty() {
-            return Ok(Self {
-                ids: Vec::new(),
-                mask: Vec::new(),
-                labels: Vec::new(),
-                width: 0,
-                rows: 0,
-                device: device.clone(),
-            });
-        }
-        let batch: Vec<&str> = index.iter().map(|row| texts[*row].as_str()).collect();
-        let encodings = tokenizer
-            .encode_batch(batch, true)
-            .map_err(|err| Error(format!("tokenization failed: {err}")))?;
-        let width = encodings[0].get_ids().len();
-        let mut ids = Vec::with_capacity(width * encodings.len());
-        let mut mask = Vec::with_capacity(width * encodings.len());
-        for encoding in &encodings {
-            ids.extend_from_slice(encoding.get_ids());
-            mask.extend_from_slice(encoding.get_attention_mask());
-        }
-        Ok(Self {
-            ids,
-            mask,
-            labels: index.iter().map(|row| label_ids[*row]).collect(),
-            width,
-            rows: encodings.len(),
-            device: device.clone(),
-        })
-    }
-
-    /// `(input_ids, attention_mask, targets)` for the rows named by `rows`.
-    pub(crate) fn take(&self, rows: &[usize]) -> Result<(Tensor, Tensor, Tensor)> {
-        let mut ids = Vec::with_capacity(rows.len() * self.width);
-        let mut mask = Vec::with_capacity(rows.len() * self.width);
-        let mut targets = Vec::with_capacity(rows.len());
-        for row in rows {
-            let start = row * self.width;
-            ids.extend_from_slice(&self.ids[start..start + self.width]);
-            mask.extend_from_slice(&self.mask[start..start + self.width]);
-            targets.push(self.labels[*row] as u32);
-        }
-        let shape = (rows.len(), self.width);
-        let ids = Tensor::from_vec(ids, shape, &self.device)
-            .map_err(|err| Error(format!("could not build the input batch: {err}")))?;
-        let mask = Tensor::from_vec(mask, shape, &self.device)
-            .map_err(|err| Error(format!("could not build the attention mask: {err}")))?;
-        let targets = Tensor::from_vec(targets, rows.len(), &self.device)
-            .map_err(|err| Error(format!("could not build the target batch: {err}")))?;
-        Ok((ids, mask, targets))
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -254,14 +189,21 @@ pub(crate) fn sanitize_model_id(model_id: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-/// CPU by default, Metal when candle reports it available: the shape of the
-/// Python `_hf_device`, which asked torch for MPS and fell back to CPU.
-/// `metal_if_available` is candle's own report, true only when candle-core was
-/// compiled with its `metal` feature on a machine that has a Metal device.
-pub(crate) fn pick_device() -> (Device, &'static str) {
-    let device = Device::metal_if_available(0).unwrap_or(Device::Cpu);
-    let name = if device.is_metal() { "metal" } else { "cpu" };
-    (device, name)
+/// The system's default Metal device, ordinal 0 of candle's Metal devices:
+/// https://docs.rs/candle-core/latest/candle_core/enum.Device.html#method.new_metal
+const DEFAULT_METAL_DEVICE: usize = 0;
+
+/// Metal when candle was compiled with its `metal` feature on a machine that
+/// has a Metal device, the CPU otherwise: the shape of the Python
+/// `_hf_device`, which asked torch for MPS and used the CPU without it. A
+/// Metal device candle reports but cannot open is refused with its error.
+pub(crate) fn pick_device() -> Result<(Device, &'static str)> {
+    if !candle_core::utils::metal_is_available() {
+        return Ok((Device::Cpu, "cpu"));
+    }
+    let device = Device::new_metal(DEFAULT_METAL_DEVICE)
+        .map_err(|err| Error(format!("candle reports Metal but could not open it: {err}")))?;
+    Ok((device, "metal"))
 }
 
 /// Per-class counts ordered by class, the `_class_counts` of the Python path.

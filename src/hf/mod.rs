@@ -28,6 +28,7 @@
 //! evaluation split, `holdout_evaluation`, the job block, and writing
 //! `metrics.json` into the directory `train` returns.
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use candle_core::{DType, Device, IndexOp, Tensor, Var, D};

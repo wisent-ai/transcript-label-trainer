@@ -147,10 +147,14 @@ pub(crate) fn adopt_raw(
         .sort_by(|left, right| left.id.cmp(&right.id));
     durable_replace(&registry_path, &serde_json::to_vec_pretty(&registry)?)?;
     // Every record of an adopted bundle is either new to the store or was
-    // already retained with it; an adoption conflicts and rejects nothing.
-    let (imported, unchanged): (Vec<&CorpusRow>, Vec<&CorpusRow>) =
-        bundle.labels.iter().partition(|_| !already_present);
-    let refused: Vec<&CorpusRow> = Vec::new();
+    // already retained with it; an adoption is all or nothing, so it
+    // conflicts and rejects nothing and only a refusal counts either.
+    let records = bundle.labels.len();
+    let (imported, unchanged) = if already_present {
+        (0, records)
+    } else {
+        (records, 0)
+    };
     Ok(json!({
         "status": if already_present { "unchanged" } else { "adopted" },
         "corpusId": adopted.id,
@@ -160,11 +164,11 @@ pub(crate) fn adopt_raw(
         "sourcePath": adopted.source_path,
         "bundlePath": adopted.bundle_path,
         "selected": true,
-        "records": bundle.labels.len(),
-        "imported": imported.len(),
-        "unchanged": unchanged.len(),
-        "conflicting": refused.len(),
-        "rejected": refused.len(),
+        "records": records,
+        "imported": imported,
+        "unchanged": unchanged,
+        "conflicting": 0,
+        "rejected": 0,
     }))
 }
 

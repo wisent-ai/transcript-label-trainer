@@ -61,7 +61,9 @@ transcript-label-trainer humanizer-publish JOB_OUTPUT/adapter \
 `HF_TOKEN` authenticates both metadata reads and transfers. The supported `hf`
 CLI is the release `training/humanizer-model/run.sh` installs; `HF_BIN` selects
 its executable and `HF_ENDPOINT` the Hub base URL, each taking the value
-huggingface_hub documents when unset; a set but empty `HF_BIN` is refused.
+huggingface_hub documents when unset; a set but empty `HF_BIN` is refused, and
+so is an `HF_ENDPOINT` that is not an `http` or `https` base URL without a
+query or fragment, naming the variable and the scheme it was given.
 The Stado worker installs that CLI and invokes the same native publisher.
 The output path must not already exist. An existing path is refused before
 provider access, so a receipt cannot overwrite training inputs or older evidence.

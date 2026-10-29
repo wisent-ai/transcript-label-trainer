@@ -192,11 +192,11 @@ pub fn onboarding(
 /// where the effect happens and not where a walkthrough asks about it. A run
 /// that emitted nothing is not a first success, and progress that cannot be
 /// written is a warning on stderr: onboarding state never fails an `infer`.
-pub fn record_first_success(aspect: &str, suggestions: usize) {
-    if std::num::NonZeroUsize::new(suggestions).is_none() {
+pub fn record_first_success(aspect: &str, suggestions: &[Value]) {
+    if suggestions.is_empty() {
         return;
     }
-    if let Err(error) = record(aspect, suggestions) {
+    if let Err(error) = record(aspect, suggestions.len()) {
         lake::warn(&format!("first-use progress was not recorded: {error}"));
     }
 }

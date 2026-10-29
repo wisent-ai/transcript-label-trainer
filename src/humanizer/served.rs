@@ -114,7 +114,7 @@ fn grams(chars: &[char], order: usize) -> Vec<(&[char], usize)> {
 fn chrf(reference: &str, candidate: &str) -> f64 {
     let strip = |text: &str| text.chars().filter(|c| !c.is_whitespace()).collect::<Vec<char>>();
     let (reference, candidate) = (strip(reference), strip(candidate));
-    let scores: Vec<(f64, f64)> = (std::num::NonZeroUsize::MIN.get()..=CHAR_ORDER)
+    let scores: Vec<(f64, f64)> = (1..=CHAR_ORDER)
         .filter_map(|order| {
             let (wanted, got) = (grams(&reference, order), grams(&candidate, order));
             if wanted.is_empty() || got.is_empty() {
@@ -128,7 +128,9 @@ fn chrf(reference: &str, candidate: &str) -> f64 {
             Some((overlap as f64 / total(&got), overlap as f64 / total(&wanted)))
         })
         .collect();
-    let orders = scores.len().max(std::num::NonZeroUsize::MIN.get()) as f64;
+    // No order both texts are long enough for leaves both sums empty, so
+    // dividing by one scores zero.
+    let orders = scores.len().max(1) as f64;
     let precision = scores.iter().map(|(precision, _)| precision).sum::<f64>() / orders;
     let recall = scores.iter().map(|(_, recall)| recall).sum::<f64>() / orders;
     let weight = BETA * BETA;

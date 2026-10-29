@@ -181,9 +181,10 @@ fn served_slots(client: &reqwest::blocking::Client, port: u16) -> Result<usize> 
     let slots = usize::try_from(stated).map_err(|error| {
         Error(format!("llama-server's {props} states {stated} slots, more than this host can address: {error}"))
     })?;
-    std::num::NonZeroUsize::new(slots)
-        .map(std::num::NonZeroUsize::get)
-        .ok_or_else(|| Error(format!("llama-server's {props} states no positive total_slots: {answer}")))
+    if slots == 0 {
+        return Err(Error(format!("llama-server's {props} states no positive total_slots: {answer}")));
+    }
+    Ok(slots)
 }
 
 /// The served alias every request names: the model file's name without its

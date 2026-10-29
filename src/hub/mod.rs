@@ -61,6 +61,14 @@ impl Hub {
         };
         let endpoint = Url::parse(&endpoint)
             .map_err(|error| Error(format!("invalid HF_ENDPOINT: {error}")))?;
+        // The Hub is reached over HTTP; a file:, data: or other URL parses
+        // but names nothing the client or the hf CLI can call.
+        let scheme = endpoint.scheme();
+        if !matches!(scheme, "http" | "https") {
+            return Err(Error(format!(
+                "HF_ENDPOINT must be an http or https URL, not a {scheme}: URL; set it to the Hub's base URL or unset it"
+            )));
+        }
         if endpoint.query().is_some() || endpoint.fragment().is_some() {
             return Err(Error("HF_ENDPOINT must be a base URL without a query or fragment".into()));
         }

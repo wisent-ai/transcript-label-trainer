@@ -86,10 +86,14 @@ pub enum Training {
     Hf(HfTraining),
 }
 
-/// A share strictly between none and all: its sign is positive (zero has
-/// none), and it lies below that sign, which is one.
+/// A share strictly between none and all: positive, and below the whole.
 pub(crate) fn strict_share(value: f64) -> bool {
-    value.is_normal() && value.is_sign_positive() && value < value.signum()
+    value.is_normal() && value.is_sign_positive() && value < 1.0
+}
+
+/// A share above none and at most all.
+fn share_of_all(value: f64) -> bool {
+    value.is_normal() && value.is_sign_positive() && value <= 1.0
 }
 
 /// The `train` flag that states `key`.
@@ -193,10 +197,7 @@ impl Section<'_> {
     fn whole(&self, key: &str) -> Result<usize> {
         let value = self.value(key)?;
         match value.as_u64().map(usize::try_from) {
-            Some(Ok(count)) => match std::num::NonZeroUsize::new(count) {
-                Some(count) => Ok(count.get()),
-                None => self.refuse(key, value, "a positive whole number"),
-            },
+            Some(Ok(count)) if count > 0 => Ok(count),
             _ => self.refuse(key, value, "a positive whole number"),
         }
     }
@@ -225,14 +226,13 @@ fn settings(mapping: &serde_yaml::Mapping, model: &str) -> Result<Training> {
     }
     let section = Section { mapping, model };
     if model == SKLEARN_MODEL {
-        let all = |value: f64| value.is_normal() && value.is_sign_positive() && value <= value.signum();
         return Ok(Training::Tfidf(TfidfTraining {
             ngram_max: section.whole("ngram_max")?,
             lowercase: section.flag("lowercase")?,
             sublinear_tf: section.flag("sublinear_tf")?,
             smooth_idf: section.flag("smooth_idf")?,
             min_df: section.positive("min_df")?,
-            max_df: section.number("max_df", all, "a share of documents above none, at most all")?,
+            max_df: section.number("max_df", share_of_all, "a share of documents above none, at most all")?,
             c: section.positive("c")?,
             max_iter: section.whole("max_iter")?,
             tol: section.positive("tol")?,
