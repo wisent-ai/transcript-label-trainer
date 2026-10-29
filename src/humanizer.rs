@@ -19,10 +19,10 @@ use crate::util::{sha256_hex, write_whole, Error, Result};
 mod anchors;
 mod audit;
 mod calls;
+mod manifest;
 mod prepare;
 mod prompts;
 mod publication;
-mod manifest;
 mod served;
 
 pub use audit::audit_outputs;
@@ -50,7 +50,11 @@ fn field(row: &Value, name: &str) -> Result<String> {
     row.get(name)
         .and_then(Value::as_str)
         .map(|text| text.trim().to_string())
-        .ok_or_else(|| Error(format!("Transcript Lake answered a humanizer target row without {name} as text: {row}")))
+        .ok_or_else(|| {
+            Error(format!(
+                "Transcript Lake answered a humanizer target row without {name} as text: {row}"
+            ))
+        })
 }
 
 fn normalized(value: &str) -> String {
@@ -78,7 +82,12 @@ ORDER BY hash(session_id || ':' || text)
         let session_id = field(&value, "session_id")?;
         let runtime = field(&value, "runtime")?;
         let target = field(&value, "target")?;
-        if session_id.is_empty() || runtime.is_empty() || !target.split_whitespace().any(|word| word.chars().any(char::is_alphabetic)) {
+        if session_id.is_empty()
+            || runtime.is_empty()
+            || !target
+                .split_whitespace()
+                .any(|word| word.chars().any(char::is_alphabetic))
+        {
             continue;
         }
         let identity = normalized(&target);

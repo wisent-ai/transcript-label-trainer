@@ -24,8 +24,8 @@ use crate::bail;
 use crate::placement::resolve_placement;
 use crate::util::{json_text, Error, Result};
 
-mod text_cap;
 mod session_texts;
+mod text_cap;
 
-pub use text_cap::*;
 pub use session_texts::*;
+pub use text_cap::*;

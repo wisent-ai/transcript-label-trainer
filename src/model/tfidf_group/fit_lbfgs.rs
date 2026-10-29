@@ -19,7 +19,10 @@ const QUADRATIC_DENOMINATOR: f64 = 2.0;
 /// when `s·y` exceeds machine precision times the descent along the step,
 /// `-g·s`, the test L-BFGS-B's mainlb applies, which keeps the implicit
 /// inverse Hessian positive definite without needing a full Wolfe search.
-pub(crate) fn fit_lbfgs(problem: &Problem<'_>, settings: &jobs::TfidfTraining) -> (Vec<f64>, usize, bool) {
+pub(crate) fn fit_lbfgs(
+    problem: &Problem<'_>,
+    settings: &jobs::TfidfTraining,
+) -> (Vec<f64>, usize, bool) {
     let mut x = vec![ORIGIN; problem.dim()];
     let (mut fx, mut g) = problem.loss_grad(&x);
     // Each kept pair: s, y and rho = 1 / (s·y), oldest first.
@@ -75,7 +78,11 @@ pub(crate) fn fit_lbfgs(problem: &Problem<'_>, settings: &jobs::TfidfTraining) -
         let mut step = FULL_STEP;
         let mut accepted = None;
         for _ in 0..settings.max_backtracks {
-            let candidate: Vec<f64> = x.iter().zip(&direction).map(|(xi, di)| xi + step * di).collect();
+            let candidate: Vec<f64> = x
+                .iter()
+                .zip(&direction)
+                .map(|(xi, di)| xi + step * di)
+                .collect();
             let (candidate_f, candidate_g) = problem.loss_grad(&candidate);
             if candidate_f.is_finite() && candidate_f <= fx + settings.armijo_c1 * step * slope {
                 accepted = Some((candidate, candidate_f, candidate_g));
@@ -146,7 +153,11 @@ pub(crate) fn predict_row(coef: &[Vec<f64>], intercept: &[f64], row: &SparseRow)
     let z: Vec<f64> = coef
         .iter()
         .zip(intercept)
-        .map(|(weights, &bias)| row.iter().fold(bias, |score, &(column, value)| score + weights[column as usize] * value))
+        .map(|(weights, &bias)| {
+            row.iter().fold(bias, |score, &(column, value)| {
+                score + weights[column as usize] * value
+            })
+        })
         .collect();
     let max = z.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let sum_exp: f64 = z.iter().map(|s| (s - max).exp()).sum();
@@ -154,7 +165,13 @@ pub(crate) fn predict_row(coef: &[Vec<f64>], intercept: &[f64], row: &SparseRow)
         .iter()
         .copied()
         .enumerate()
-        .reduce(|best, candidate| if candidate.1 > best.1 { candidate } else { best })
+        .reduce(|best, candidate| {
+            if candidate.1 > best.1 {
+                candidate
+            } else {
+                best
+            }
+        })
         .expect("a fitted model holds at least one class");
     (best, (best_score - max).exp() / sum_exp)
 }

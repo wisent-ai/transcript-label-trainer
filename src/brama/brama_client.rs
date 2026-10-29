@@ -95,7 +95,11 @@ impl BramaClient {
         let content = first_message(&payload)
             .and_then(|message| message.get("content"))
             .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| Error(format!("Brama response was not an OpenAI chat completion: {payload}")))?;
+            .ok_or_else(|| {
+                Error(format!(
+                    "Brama response was not an OpenAI chat completion: {payload}"
+                ))
+            })?;
         Ok(ChatAnswer::Content(content.trim().to_string()))
     }
 
@@ -149,17 +153,29 @@ impl BramaClient {
         let [call] = calls.as_slice() else {
             bail!("{model} did not answer by exactly one call of {name}: {payload}");
         };
-        if call.pointer("/function/name").and_then(serde_json::Value::as_str) != Some(name) {
+        if call
+            .pointer("/function/name")
+            .and_then(serde_json::Value::as_str)
+            != Some(name)
+        {
             bail!("{model} called a function other than {name}: {payload}");
         }
         let arguments = call
             .pointer("/function/arguments")
             .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| Error(format!("{model}'s call of {name} carries no arguments: {payload}")))?;
+            .ok_or_else(|| {
+                Error(format!(
+                    "{model}'s call of {name} carries no arguments: {payload}"
+                ))
+            })?;
         match serde_json::from_str::<serde_json::Value>(arguments) {
             Ok(serde_json::Value::Object(object)) => Ok(Called::Arguments(object)),
-            Ok(other) => bail!("{model}'s call of {name} has arguments that are not an object: {other}"),
-            Err(error) => bail!("{model}'s call of {name} has arguments that are not JSON ({error}): {arguments}"),
+            Ok(other) => {
+                bail!("{model}'s call of {name} has arguments that are not an object: {other}")
+            }
+            Err(error) => bail!(
+                "{model}'s call of {name} has arguments that are not JSON ({error}): {arguments}"
+            ),
         }
     }
 

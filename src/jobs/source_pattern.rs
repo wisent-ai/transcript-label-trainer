@@ -29,7 +29,8 @@ pub(crate) const TOP_LEVEL_KEYS: &[&str] = &[
     "training",
 ];
 
-pub(crate) const SCOPE_KEYS: [&str; 5] = ["aspect", "runtimes", "since", "values", "min_text_chars"];
+pub(crate) const SCOPE_KEYS: [&str; 5] =
+    ["aspect", "runtimes", "since", "values", "min_text_chars"];
 
 pub(crate) const EVAL_SPLIT_KEYS: [&str; 2] = ["fraction", "seed"];
 

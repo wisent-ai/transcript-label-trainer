@@ -6,14 +6,25 @@ use super::*;
 
 fn registry_or_refuse() -> Result<(PathBuf, CorpusRegistry)> {
     let path = corpora_root().join(REGISTRY_FILE);
-    let registry = read_registry(&path)?
-        .ok_or_else(|| Error(format!("no corpus has been adopted; {} does not exist", path.display())))?;
+    let registry = read_registry(&path)?.ok_or_else(|| {
+        Error(format!(
+            "no corpus has been adopted; {} does not exist",
+            path.display()
+        ))
+    })?;
     Ok((path, registry))
 }
 
 fn refuse_unknown(registry: &CorpusRegistry, id: &str) -> Error {
-    let held: Vec<&str> = registry.corpora.iter().map(|entry| entry.id.as_str()).collect();
-    Error(format!("no adopted corpus {id}; the store holds {}", held.join(", ")))
+    let held: Vec<&str> = registry
+        .corpora
+        .iter()
+        .map(|entry| entry.id.as_str())
+        .collect();
+    Error(format!(
+        "no adopted corpus {id}; the store holds {}",
+        held.join(", ")
+    ))
 }
 
 /// Make `id` the corpus train, infer and evaluate read.

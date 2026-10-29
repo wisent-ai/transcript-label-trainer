@@ -79,7 +79,9 @@ pub(crate) fn scope_from_json(scope: &Value) -> Result<jobs::Scope> {
             None | Some(Value::Null) => return Ok(None),
             Some(Value::Array(items)) => items,
             Some(other) => {
-                return Err(Error(format!("the artifact's scope {key} is not a list: {other}")))
+                return Err(Error(format!(
+                    "the artifact's scope {key} is not a list: {other}"
+                )))
             }
         };
         let texts = items
@@ -96,7 +98,9 @@ pub(crate) fn scope_from_json(scope: &Value) -> Result<jobs::Scope> {
         match scope.get(key) {
             None | Some(Value::Null) => Ok(None),
             Some(Value::String(value)) => Ok(Some(value.clone())),
-            Some(other) => Err(Error(format!("the artifact's scope {key} is not text: {other}"))),
+            Some(other) => Err(Error(format!(
+                "the artifact's scope {key} is not text: {other}"
+            ))),
         }
     };
     let aspect = text("aspect")?
@@ -104,7 +108,9 @@ pub(crate) fn scope_from_json(scope: &Value) -> Result<jobs::Scope> {
     let min_text_chars = match scope.get("min_text_chars") {
         None | Some(Value::Null) => None,
         Some(value) => Some(value.as_u64().ok_or_else(|| {
-            Error(format!("the artifact's scope min_text_chars is not a count: {value}"))
+            Error(format!(
+                "the artifact's scope min_text_chars is not a count: {value}"
+            ))
         })?),
     };
     Ok(jobs::Scope {

@@ -4,14 +4,21 @@ use super::*;
 // tfidf-logreg backend
 // ---------------------------------------------------------------------------
 
-pub(crate) fn train_tfidf(plan: &Plan, settings: &jobs::TfidfTraining) -> Result<Value, TrainFailure> {
+pub(crate) fn train_tfidf(
+    plan: &Plan,
+    settings: &jobs::TfidfTraining,
+) -> Result<Value, TrainFailure> {
     let (texts, values) = side(plan, &plan.split.train_index);
     let counts = class_counts(values.iter().map(String::as_str));
 
     // Stratified folds need every class in every fold, so the smallest class
     // decides how many folds there can be; a class of one member cannot be
     // both trained on and tested, and then no cross-validated accuracy exists.
-    let folds = counts.values().copied().min().filter(|members| *members >= 2); // stratified k-fold needs at least two splits: https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.StratifiedKFold.html
+    let folds = counts
+        .values()
+        .copied()
+        .min()
+        .filter(|members| *members >= 2); // stratified k-fold needs at least two splits: https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.StratifiedKFold.html
     let cv_accuracy = folds
         .and_then(|folds| cross_val_accuracy(&texts, &values, folds, settings))
         .map(evaluate::round4);
@@ -97,7 +104,8 @@ pub(crate) fn train_tfidf(plan: &Plan, settings: &jobs::TfidfTraining) -> Result
 /// installed. The condition survives the rewrite; the remedy changes, because
 /// it is a compile-time feature now rather than a pip extra.
 #[cfg(not(feature = "hf"))]
-pub(crate) const HF_FEATURE_MISSING: &str = "fine-tuning with --model requires the optional 'hf' feature; \
+pub(crate) const HF_FEATURE_MISSING: &str =
+    "fine-tuning with --model requires the optional 'hf' feature; \
      rebuild with: cargo build --release --features hf";
 
 #[cfg(feature = "hf")]
@@ -149,8 +157,13 @@ pub(crate) fn train_hf(
 
     let (holdout_texts, holdout_values) = side(plan, &plan.split.holdout_index);
     if !holdout_texts.is_empty() {
-        let predictions =
-            crate::hf::predict(&trained.dir, &holdout_texts, max_length, training.batch_size, training.seed)?;
+        let predictions = crate::hf::predict(
+            &trained.dir,
+            &holdout_texts,
+            max_length,
+            training.batch_size,
+            training.seed,
+        )?;
         metrics.insert(
             "holdout_evaluation".to_string(),
             evaluate::holdout_report(&holdout_values, &predictions),
@@ -203,8 +216,9 @@ pub fn train(
         (None, jobs::Training::Tfidf(settings)) => train_tfidf(&plan, settings),
         (Some(model_id), jobs::Training::Hf(settings)) => train_hf(&plan, model_id, settings),
         (None, jobs::Training::Hf(_)) => Err("fine-tuning settings need --model".into()),
-        (Some(model_id), jobs::Training::Tfidf(_)) => {
-            Err(format!("{model_id} is fine-tuned with HuggingFace settings, not tfidf-logreg settings").into())
-        }
+        (Some(model_id), jobs::Training::Tfidf(_)) => Err(format!(
+            "{model_id} is fine-tuned with HuggingFace settings, not tfidf-logreg settings"
+        )
+        .into()),
     }
 }

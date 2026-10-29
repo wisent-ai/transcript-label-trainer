@@ -70,11 +70,15 @@ impl Hub {
             )));
         }
         if endpoint.query().is_some() || endpoint.fragment().is_some() {
-            return Err(Error("HF_ENDPOINT must be a base URL without a query or fragment".into()));
+            return Err(Error(
+                "HF_ENDPOINT must be a base URL without a query or fragment".into(),
+            ));
         }
         let executable = match std::env::var_os("HF_BIN") {
             Some(value) if value.is_empty() => {
-                return Err(Error("HF_BIN is set but empty; name the hf executable or unset it".into()));
+                return Err(Error(
+                    "HF_BIN is set but empty; name the hf executable or unset it".into(),
+                ));
             }
             Some(value) => value,
             None => OsString::from("hf"), // https://huggingface.co/docs/huggingface_hub/guides/cli
@@ -90,7 +94,12 @@ impl Hub {
         })
     }
 
-    pub fn info(&self, repo: &str, revision: Option<&str>, files: bool) -> Result<Option<ModelInfo>> {
+    pub fn info(
+        &self,
+        repo: &str,
+        revision: Option<&str>,
+        files: bool,
+    ) -> Result<Option<ModelInfo>> {
         let (owner, name) = repo.split_once('/').ok_or_else(|| {
             Error("Hugging Face repository must explicitly name OWNER/REPOSITORY".into())
         })?;
@@ -98,16 +107,21 @@ impl Hub {
             if component.is_empty()
                 || component == "."
                 || component == ".."
-                || !component.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+                || !component
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
             {
                 return Err(Error(format!("invalid Hugging Face repository: {repo:?}")));
             }
         }
         let mut url = self.endpoint.clone();
         {
-            let mut segments = url.path_segments_mut()
+            let mut segments = url
+                .path_segments_mut()
                 .map_err(|_| Error("HF_ENDPOINT cannot hold API paths".into()))?;
-            segments.pop_if_empty().extend(["api", "models", owner, name]);
+            segments
+                .pop_if_empty()
+                .extend(["api", "models", owner, name]);
             if let Some(revision) = revision {
                 segments.extend(["revision", revision]);
             }
@@ -115,8 +129,11 @@ impl Hub {
         if files {
             url.query_pairs_mut().append_pair("blobs", "true");
         }
-        let response = stado_wait::request_blocking(self.client.get(url).bearer_auth(self.token.trim()))
-            .map_err(|error| Error(format!("Hugging Face model_info {repo} failed: {error}")))?;
+        let response =
+            stado_wait::request_blocking(self.client.get(url).bearer_auth(self.token.trim()))
+                .map_err(|error| {
+                    Error(format!("Hugging Face model_info {repo} failed: {error}"))
+                })?;
         let status = response.status();
         let repository_missing = match response.headers().get("x-error-code") {
             None => false,
@@ -124,20 +141,36 @@ impl Hub {
                 "Hugging Face model_info {repo}: HTTP {status} carries an x-error-code that is not text: {error}"
             )))? == "RepoNotFound",
         };
-        if status == StatusCode::NOT_FOUND || (status == StatusCode::UNAUTHORIZED && repository_missing) {
+        if status == StatusCode::NOT_FOUND
+            || (status == StatusCode::UNAUTHORIZED && repository_missing)
+        {
             return Ok(None);
         }
         if !status.is_success() {
-            let detail = response.text().map_err(|error| Error(format!(
-                "Hugging Face model_info {repo}: HTTP {status}; cannot read response: {error}"
-            )))?;
-            return Err(Error(format!("Hugging Face model_info {repo}: HTTP {status}: {}", detail.trim())));
+            let detail = response.text().map_err(|error| {
+                Error(format!(
+                    "Hugging Face model_info {repo}: HTTP {status}; cannot read response: {error}"
+                ))
+            })?;
+            return Err(Error(format!(
+                "Hugging Face model_info {repo}: HTTP {status}: {}",
+                detail.trim()
+            )));
         }
-        response.json().map(Some)
-            .map_err(|error| Error(format!("Hugging Face model_info {repo} returned invalid metadata: {error}")))
+        response.json().map(Some).map_err(|error| {
+            Error(format!(
+                "Hugging Face model_info {repo} returned invalid metadata: {error}"
+            ))
+        })
     }
 
-    pub fn verify(&self, repo: &str, revision: &str, expected: &Signature, file: &RemoteFile) -> Result<()> {
+    pub fn verify(
+        &self,
+        repo: &str,
+        revision: &str,
+        expected: &Signature,
+        file: &RemoteFile,
+    ) -> Result<()> {
         if file.size != Some(expected.size) {
             return Err(Error(format!(
                 "published file {repo}@{revision}/{}: expected {} bytes, observed {:?}",
@@ -152,41 +185,67 @@ impl Hub {
             let mut url = self.endpoint.clone();
             url.path_segments_mut()
                 .map_err(|_| Error("HF_ENDPOINT cannot hold file paths".into()))?
-                .pop_if_empty().extend(repo.split('/'))
-                .extend(["resolve", revision]).extend(file.rfilename.split('/'));
-            let mut response = stado_wait::request_blocking(self.client.get(url).bearer_auth(self.token.trim()))
-                .map_err(|error| Error(format!("cannot read published file {}: {error}", file.rfilename)))?;
+                .pop_if_empty()
+                .extend(repo.split('/'))
+                .extend(["resolve", revision])
+                .extend(file.rfilename.split('/'));
+            let mut response =
+                stado_wait::request_blocking(self.client.get(url).bearer_auth(self.token.trim()))
+                    .map_err(|error| {
+                    Error(format!(
+                        "cannot read published file {}: {error}",
+                        file.rfilename
+                    ))
+                })?;
             let status = response.status();
             if !status.is_success() {
-                let detail = response.text().map_err(|error| Error(format!(
+                let detail = response.text().map_err(|error| {
+                    Error(format!(
                     "cannot read published file {}: HTTP {status}; cannot read response: {error}",
                     file.rfilename
-                )))?;
-                return Err(Error(format!("cannot read published file {}: HTTP {status}: {detail}", file.rfilename)));
+                ))
+                })?;
+                return Err(Error(format!(
+                    "cannot read published file {}: HTTP {status}: {detail}",
+                    file.rfilename
+                )));
             }
             let signature = stado_wait::blocking(
                 stado_wait::Kind::Network,
-                format!("hashing published file {repo}@{revision}/{}", file.rfilename),
+                format!(
+                    "hashing published file {repo}@{revision}/{}",
+                    file.rfilename
+                ),
                 self.endpoint.as_str(),
                 || Signature::stream(&mut response),
             )
-            .map_err(|error| Error(format!("cannot hash published file {}: {error}", file.rfilename)))?;
+            .map_err(|error| {
+                Error(format!(
+                    "cannot hash published file {}: {error}",
+                    file.rfilename
+                ))
+            })?;
             if signature.size != expected.size {
-                return Err(Error(format!("published file {} returned {} bytes, expected {}",
-                    file.rfilename, signature.size, expected.size)));
+                return Err(Error(format!(
+                    "published file {} returned {} bytes, expected {}",
+                    file.rfilename, signature.size, expected.size
+                )));
             }
             std::borrow::Cow::Owned(signature.sha256)
         };
         if observed != expected.sha256 {
-            return Err(Error(format!("published file {} checksum mismatch: expected {}, observed {observed}",
-                file.rfilename, expected.sha256)));
+            return Err(Error(format!(
+                "published file {} checksum mismatch: expected {}, observed {observed}",
+                file.rfilename, expected.sha256
+            )));
         }
         Ok(())
     }
 
     fn command(&self) -> Command {
         let mut command = Command::new(&self.executable);
-        command.env("HF_TOKEN", self.token.trim())
+        command
+            .env("HF_TOKEN", self.token.trim())
             .env("HF_ENDPOINT", self.endpoint.as_str().trim_end_matches('/'))
             .env("HF_HUB_DISABLE_PROGRESS_BARS", "1")
             .stdout(Stdio::null());
@@ -199,7 +258,8 @@ impl Hub {
         if !output.status.success() {
             return Err(Error(format!(
                 "hf {operation} for {repo} failed ({}): {}",
-                output.status, String::from_utf8_lossy(&output.stderr).trim()
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
             )));
         }
         std::io::stderr().write_all(&output.stderr)?;
@@ -208,7 +268,15 @@ impl Hub {
 
     pub fn create_private(&self, repo: &str) -> Result<()> {
         let mut command = self.command();
-        command.args(["repo", "create", repo, "--repo-type", "model", "--private", "--exist-ok"]);
+        command.args([
+            "repo",
+            "create",
+            repo,
+            "--repo-type",
+            "model",
+            "--private",
+            "--exist-ok",
+        ]);
         Self::execute("repo create", repo, command)
     }
 
@@ -221,10 +289,20 @@ impl Hub {
         message: &str,
     ) -> Result<()> {
         let mut command = self.command();
-        command.args(["upload", repo]).arg(source).arg(destination).args([
-            "--repo-type", "model", "--revision", branch, "--private", "--quiet",
-            "--commit-message", message,
-        ]);
+        command
+            .args(["upload", repo])
+            .arg(source)
+            .arg(destination)
+            .args([
+                "--repo-type",
+                "model",
+                "--revision",
+                branch,
+                "--private",
+                "--quiet",
+                "--commit-message",
+                message,
+            ]);
         Self::execute("upload", repo, command)
     }
 }

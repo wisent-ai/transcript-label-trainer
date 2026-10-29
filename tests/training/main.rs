@@ -22,14 +22,22 @@ impl Run {
             .join(".build")
             .join(format!("training-{case}-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        Self { root, report: json!({"case": case, "commands": [], "outcome": "failed"}) }
+        Self {
+            root,
+            report: json!({"case": case, "commands": [], "outcome": "failed"}),
+        }
     }
 
     /// Runs the executable with both roots inside the case directory, so no
     /// operator data is read or written.
     fn run(&mut self, args: &[&str]) -> Output {
         let root = self.root.to_str().unwrap().to_string();
-        let mut full = vec!["--training-root", root.as_str(), "--storage-root", root.as_str()];
+        let mut full = vec![
+            "--training-root",
+            root.as_str(),
+            "--storage-root",
+            root.as_str(),
+        ];
         full.extend_from_slice(args);
         let output = Command::new(BINARY).args(&full).output().unwrap();
         self.report["commands"].as_array_mut().unwrap().push(json!({
@@ -38,13 +46,21 @@ impl Run {
             "stdout": String::from_utf8_lossy(&output.stdout),
             "stderr": String::from_utf8_lossy(&output.stderr),
         }));
-        fs::write(self.root.join("report.json"), serde_json::to_vec_pretty(&self.report).unwrap()).unwrap();
+        fs::write(
+            self.root.join("report.json"),
+            serde_json::to_vec_pretty(&self.report).unwrap(),
+        )
+        .unwrap();
         output
     }
 
     fn passed(mut self) {
         self.report["outcome"] = json!("passed");
-        fs::write(self.root.join("report.json"), serde_json::to_vec_pretty(&self.report).unwrap()).unwrap();
+        fs::write(
+            self.root.join("report.json"),
+            serde_json::to_vec_pretty(&self.report).unwrap(),
+        )
+        .unwrap();
         eprintln!("training evidence: {}", self.root.display());
     }
 }
@@ -66,10 +82,15 @@ fn train_without_a_tfidf_setting_is_refused_by_its_key_and_flag() {
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
     assert!(
-        stderr.contains("training.ngram_max (--ngram-max) is required: tfidf-logreg assumes no value for it"),
+        stderr.contains(
+            "training.ngram_max (--ngram-max) is required: tfidf-logreg assumes no value for it"
+        ),
         "{stderr}"
     );
-    assert!(!run.root.join("models").exists(), "no artifact directory is written");
+    assert!(
+        !run.root.join("models").exists(),
+        "no artifact directory is written"
+    );
     run.passed();
 }
 
@@ -87,7 +108,10 @@ fn a_fine_tune_flag_on_a_tfidf_run_is_refused_by_name() {
     ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
-    assert!(stderr.contains("--epochs does not apply to model 'tfidf-logreg'"), "{stderr}");
+    assert!(
+        stderr.contains("--epochs does not apply to model 'tfidf-logreg'"),
+        "{stderr}"
+    );
     run.passed();
 }
 
@@ -139,7 +163,10 @@ fn a_setting_flag_beside_the_preset_is_refused_by_name() {
         stderr.contains("--max-iter cannot be stated beside --training scikit-learn"),
         "{stderr}"
     );
-    assert!(!run.root.join("models").exists(), "no artifact directory is written");
+    assert!(
+        !run.root.join("models").exists(),
+        "no artifact directory is written"
+    );
     run.passed();
 }
 

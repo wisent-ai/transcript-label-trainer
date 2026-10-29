@@ -166,7 +166,10 @@ pub fn load_labels(aspect: &str) -> Result<Vec<SessionLabel>> {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => {
-            bail!("cannot list the label store {}: {error}", labels_dir.display())
+            bail!(
+                "cannot list the label store {}: {error}",
+                labels_dir.display()
+            )
         }
     };
 
@@ -201,7 +204,10 @@ pub fn load_labels(aspect: &str) -> Result<Vec<SessionLabel>> {
             let assigned = match record.get("value") {
                 Some(Value::Null) => None,
                 Some(value) => Some(json_text(value)),
-                None => bail!("label store {} holds a record without value: {line}", file.display()),
+                None => bail!(
+                    "label store {} holds a record without value: {line}",
+                    file.display()
+                ),
             };
             let label = SessionLabel {
                 session_id: session_id.clone(),
@@ -214,7 +220,10 @@ pub fn load_labels(aspect: &str) -> Result<Vec<SessionLabel>> {
                     .map(json_text),
                 text: String::new(),
             };
-            match latest.iter_mut().find(|(seen, _)| seen.session_id == session_id) {
+            match latest
+                .iter_mut()
+                .find(|(seen, _)| seen.session_id == session_id)
+            {
                 // Newest ts wins, ties to the later record: the store is
                 // append-only, so a second record with the same second is a
                 // correction of the first.

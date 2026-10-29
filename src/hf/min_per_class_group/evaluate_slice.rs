@@ -11,8 +11,9 @@ pub(crate) fn evaluate_slice(
     if batch.labels.is_empty() {
         return Ok((None, None));
     }
-    let batch_size = NonZeroUsize::new(batch_size)
-        .ok_or_else(|| Error("evaluation needs a batch size of at least one session".to_string()))?;
+    let batch_size = NonZeroUsize::new(batch_size).ok_or_else(|| {
+        Error("evaluation needs a batch size of at least one session".to_string())
+    })?;
     let index: Vec<usize> = (0..batch.rows).collect();
     let mut hits: Vec<bool> = Vec::with_capacity(index.len());
     let mut chunk_losses: Vec<f64> = Vec::new();
@@ -44,8 +45,9 @@ pub(crate) fn infer(
     device: &Device,
     batch_size: usize,
 ) -> Result<Vec<(String, f64)>> {
-    let batch_size = NonZeroUsize::new(batch_size)
-        .ok_or_else(|| Error("prediction needs a positive batch size; the artifact records zero".to_string()))?;
+    let batch_size = NonZeroUsize::new(batch_size).ok_or_else(|| {
+        Error("prediction needs a positive batch size; the artifact records zero".to_string())
+    })?;
     let mut out = Vec::with_capacity(texts.len());
     for chunk in texts.chunks(batch_size.get()) {
         let index: Vec<usize> = (0..chunk.len()).collect();
@@ -165,9 +167,9 @@ impl Architecture {
                 .and_then(Value::as_f64)
                 .or_else(|| config.get("hidden_dropout_prob").and_then(Value::as_f64)),
         };
-        configured.map(|value| value as f32).ok_or_else(|| {
-            Error("the model's config.json states no classifier dropout".into())
-        })
+        configured
+            .map(|value| value as f32)
+            .ok_or_else(|| Error("the model's config.json states no classifier dropout".into()))
     }
 }
 

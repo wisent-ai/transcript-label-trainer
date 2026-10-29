@@ -42,7 +42,9 @@ impl Batches {
             mask.extend_from_slice(encoding.get_attention_mask());
         }
         // Padding gives every row the width of the first.
-        let width = encodings.first().map_or(0, |encoding| encoding.get_ids().len());
+        let width = encodings
+            .first()
+            .map_or(0, |encoding| encoding.get_ids().len());
         let labels = match label_ids {
             Some(label_ids) => index.iter().map(|row| label_ids[*row]).collect(),
             None => Vec::new(),

@@ -57,7 +57,10 @@ impl Server {
     pub(crate) fn start(serving: &Serving) -> Result<Self> {
         for (what, path) in [("model", &serving.model), ("server", &serving.server)] {
             if !path.is_file() {
-                return Err(Error(format!("the served {what} {} does not exist", path.display())));
+                return Err(Error(format!(
+                    "the served {what} {} does not exist",
+                    path.display()
+                )));
             }
         }
         let alias = alias(&serving.model)?;
@@ -90,7 +93,13 @@ impl Server {
     /// when one is given (the request field llama-server reads it from, and
     /// its value), and return the answer's text. `id` names the request in a
     /// failure.
-    pub(crate) fn answer(&self, id: &str, system: &str, user: &str, constraint: Option<(&str, Value)>) -> Result<String> {
+    pub(crate) fn answer(
+        &self,
+        id: &str,
+        system: &str,
+        user: &str,
+        constraint: Option<(&str, Value)>,
+    ) -> Result<String> {
         let mut body = json!({
             "model": self.alias,
             "messages": [{ "role": "system", "content": system }, { "role": "user", "content": user }],
@@ -106,11 +115,22 @@ impl Server {
         let response = stado_wait::request_blocking(self.client.post(&self.endpoint).json(&body))
             .map_err(|error| Error(format!("{id} inference failed: {error}")))?;
         let status = response.status();
-        let text = response.text().map_err(|error| Error(format!("{id} answered {status} but its body could not be read: {error}")))?;
+        let text = response.text().map_err(|error| {
+            Error(format!(
+                "{id} answered {status} but its body could not be read: {error}"
+            ))
+        })?;
         if !status.is_success() {
-            return Err(Error(format!("{id} inference failed at {} with {status}: {text}", self.endpoint)));
+            return Err(Error(format!(
+                "{id} inference failed at {} with {status}: {text}",
+                self.endpoint
+            )));
         }
-        let answer: Value = serde_json::from_str(&text).map_err(|error| Error(format!("{id} answered {status} without JSON: {error}; body: {text}")))?;
+        let answer: Value = serde_json::from_str(&text).map_err(|error| {
+            Error(format!(
+                "{id} answered {status} without JSON: {error}; body: {text}"
+            ))
+        })?;
         let choice = answer
             .get("choices")
             .and_then(Value::as_array)
@@ -120,15 +140,23 @@ impl Server {
             choice.get("finish_reason").and_then(Value::as_str),
             Some("length" | "max_tokens")
         ) {
-            return Err(Error(format!("{id} answered {status} with a truncated completion: {answer}")));
+            return Err(Error(format!(
+                "{id} answered {status} with a truncated completion: {answer}"
+            )));
         }
         let content = choice
             .pointer("/message/content")
             .and_then(Value::as_str)
-            .ok_or_else(|| Error(format!("{id} answered {status} without a message: {answer}")))?
+            .ok_or_else(|| {
+                Error(format!(
+                    "{id} answered {status} without a message: {answer}"
+                ))
+            })?
             .trim();
         if content.is_empty() {
-            return Err(Error(format!("{id} answered {status} with an empty message: {answer}")));
+            return Err(Error(format!(
+                "{id} answered {status} with an empty message: {answer}"
+            )));
         }
         Ok(content.to_owned())
     }
@@ -166,23 +194,35 @@ fn served_slots(client: &reqwest::blocking::Client, port: u16) -> Result<usize> 
         .map_err(|error| Error(format!("llama-server request to {props} failed: {error}")))?;
     let status = response.status();
     let text = response.text().map_err(|error| {
-        Error(format!("llama-server {props} answered {status}, but its body could not be read: {error}"))
+        Error(format!(
+            "llama-server {props} answered {status}, but its body could not be read: {error}"
+        ))
     })?;
     if !status.is_success() {
-        return Err(Error(format!("llama-server {props} refused with {status}: {text}")));
+        return Err(Error(format!(
+            "llama-server {props} refused with {status}: {text}"
+        )));
     }
     let answer: Value = serde_json::from_str(&text).map_err(|error| {
-        Error(format!("llama-server {props} answered {status} without valid JSON: {error}; body: {text}"))
+        Error(format!(
+            "llama-server {props} answered {status} without valid JSON: {error}; body: {text}"
+        ))
     })?;
     let stated = answer
         .get("total_slots")
         .and_then(Value::as_u64)
-        .ok_or_else(|| Error(format!("llama-server's {props} states no total_slots: {answer}")))?;
+        .ok_or_else(|| {
+            Error(format!(
+                "llama-server's {props} states no total_slots: {answer}"
+            ))
+        })?;
     let slots = usize::try_from(stated).map_err(|error| {
         Error(format!("llama-server's {props} states {stated} slots, more than this host can address: {error}"))
     })?;
     if slots == 0 {
-        return Err(Error(format!("llama-server's {props} states no positive total_slots: {answer}")));
+        return Err(Error(format!(
+            "llama-server's {props} states no positive total_slots: {answer}"
+        )));
     }
     Ok(slots)
 }
@@ -193,18 +233,30 @@ fn alias(model: &Path) -> Result<String> {
     model
         .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
-        .ok_or_else(|| Error(format!("the served model {} names no file", model.display())))
+        .ok_or_else(|| {
+            Error(format!(
+                "the served model {} names no file",
+                model.display()
+            ))
+        })
 }
 
 /// An HTTP client that waits for the server's answer: reqwest's blocking
 /// client otherwise gives up on its own after a cut-off it chose.
 fn waiting_client() -> Result<reqwest::blocking::Client> {
-    reqwest::blocking::Client::builder().timeout(None).build().map_err(|error| Error(format!("the HTTP client could not be built: {error}")))
+    reqwest::blocking::Client::builder()
+        .timeout(None)
+        .build()
+        .map_err(|error| Error(format!("the HTTP client could not be built: {error}")))
 }
 
 /// A loopback port the operating system has free right now.
 fn free_port() -> Result<u16> {
-    Ok(TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?.local_addr()?.port()) // port 0 asks the system for a free port: https://doc.rust-lang.org/std/net/struct.TcpListener.html#method.bind
+    Ok(
+        TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?
+            .local_addr()?
+            .port(),
+    ) // port 0 asks the system for a free port: https://doc.rust-lang.org/std/net/struct.TcpListener.html#method.bind
 }
 
 /// Whether the server answers its health route as ready. Before it listens,
@@ -214,24 +266,39 @@ fn healthy(client: &reqwest::blocking::Client, health: &str) -> Result<bool> {
     match stado_wait::request_blocking(client.get(health)) {
         Ok(response) => Ok(response.status().is_success()),
         Err(error) if error.is_connect() => Ok(false),
-        Err(error) => Err(Error(format!("llama-server health {health} could not be asked: {error}"))),
+        Err(error) => Err(Error(format!(
+            "llama-server health {health} could not be asked: {error}"
+        ))),
     }
 }
 
 /// Start the server and return once its health answer is ready.
 fn start_server(run: &Serving, port: u16, alias: &str) -> Result<Child> {
     let mut log = fs::File::create(&run.server_log).map_err(|error| {
-        Error(format!("cannot create server stderr log {}: {error}", run.server_log.display()))
+        Error(format!(
+            "cannot create server stderr log {}: {error}",
+            run.server_log.display()
+        ))
     })?;
     let stdout_log = run.server_log.with_extension("stdout.log");
     let mut copy_out = fs::File::create(&stdout_log).map_err(|error| {
-        Error(format!("cannot create server stdout log {}: {error}", stdout_log.display()))
+        Error(format!(
+            "cannot create server stdout log {}: {error}",
+            stdout_log.display()
+        ))
     })?;
     let client = waiting_client()?;
     let mut child = Command::new(&run.server)
         .arg("--model")
         .arg(&run.model)
-        .args(["--host", &Ipv4Addr::LOCALHOST.to_string(), "--port", &port.to_string(), "--alias", alias])
+        .args([
+            "--host",
+            &Ipv4Addr::LOCALHOST.to_string(),
+            "--port",
+            &port.to_string(),
+            "--alias",
+            alias,
+        ])
         .args(["--no-webui"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -242,7 +309,10 @@ fn start_server(run: &Serving, port: u16, alias: &str) -> Result<Child> {
     let stdout = child.stdout.take().ok_or("llama-server has no stdout")?;
     thread::spawn(move || {
         if let Err(error) = std::io::copy(&mut BufReader::new(stdout), &mut copy_out) {
-            eprintln!("llama-server's stdout log {} stops here: {error}", stdout_log.display());
+            eprintln!(
+                "llama-server's stdout log {} stops here: {error}",
+                stdout_log.display()
+            );
         }
     });
     let health = format!("http://{}:{port}/health", Ipv4Addr::LOCALHOST);
@@ -272,12 +342,18 @@ fn start_server(run: &Serving, port: u16, alias: &str) -> Result<Child> {
             let line = match line {
                 Ok(line) => line,
                 Err(error) => {
-                    eprintln!("llama-server's stderr can no longer be read; {} stops here: {error}", server_log.display());
+                    eprintln!(
+                        "llama-server's stderr can no longer be read; {} stops here: {error}",
+                        server_log.display()
+                    );
                     return;
                 }
             };
             if let Err(error) = writeln!(log, "{line}") {
-                eprintln!("llama-server's log {} can no longer be written: {error}", server_log.display());
+                eprintln!(
+                    "llama-server's log {} can no longer be written: {error}",
+                    server_log.display()
+                );
                 return;
             }
         }

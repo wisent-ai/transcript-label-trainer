@@ -129,5 +129,9 @@ pub(crate) fn eval_split_preset(name: &str) -> EvalSplit {
     use sha2::{Digest, Sha256};
     let digest = Sha256::digest(name.as_bytes());
     let leading = digest.first_chunk().map(|bytes| i64::from_be_bytes(*bytes));
-    EvalSplit { enabled: true, fraction: Some(TEST_SIZE), seed: leading.map(i64::saturating_abs) }
+    EvalSplit {
+        enabled: true,
+        fraction: Some(TEST_SIZE),
+        seed: leading.map(i64::saturating_abs),
+    }
 }

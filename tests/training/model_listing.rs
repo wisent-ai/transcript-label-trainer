@@ -27,7 +27,11 @@ impl Run {
             "stdout": String::from_utf8_lossy(&output.stdout),
             "stderr": String::from_utf8_lossy(&output.stderr),
         }));
-        fs::write(self.root.join("report.json"), serde_json::to_vec_pretty(&self.report).unwrap()).unwrap();
+        fs::write(
+            self.root.join("report.json"),
+            serde_json::to_vec_pretty(&self.report).unwrap(),
+        )
+        .unwrap();
         output
     }
 
@@ -59,25 +63,50 @@ fn an_aspect_directory_that_cannot_be_listed_is_refused_with_its_path() {
     let aspect = root.join("training").join("models").join("listing-probe");
     fs::create_dir_all(&aspect).unwrap();
     fs::create_dir_all(root.join("storage")).unwrap();
-    let mut run = Run { root: root.clone(), report: json!({"case": "model-listing", "commands": [], "outcome": "failed"}) };
+    let mut run = Run {
+        root: root.clone(),
+        report: json!({"case": "model-listing", "commands": [], "outcome": "failed"}),
+    };
 
     let readable = run.info();
-    assert!(readable.status.success(), "a readable training root is listed: {}", String::from_utf8_lossy(&readable.stderr));
-    assert!(String::from_utf8_lossy(&readable.stdout).contains("listing-probe"), "the aspect is listed");
+    assert!(
+        readable.status.success(),
+        "a readable training root is listed: {}",
+        String::from_utf8_lossy(&readable.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&readable.stdout).contains("listing-probe"),
+        "the aspect is listed"
+    );
 
     let locked = run.command("chmod", &["a-r", path(&aspect)]);
-    assert!(locked.status.success(), "{}", String::from_utf8_lossy(&locked.stderr));
+    assert!(
+        locked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&locked.stderr)
+    );
     let refused = run.info();
     let restored = run.command("chmod", &["u+r", path(&aspect)]);
-    assert!(restored.status.success(), "{}", String::from_utf8_lossy(&restored.stderr));
+    assert!(
+        restored.status.success(),
+        "{}",
+        String::from_utf8_lossy(&restored.stderr)
+    );
 
-    assert!(!refused.status.success(), "an unlistable aspect directory must refuse info");
+    assert!(
+        !refused.status.success(),
+        "an unlistable aspect directory must refuse info"
+    );
     let stderr = String::from_utf8_lossy(&refused.stderr);
     assert!(
         stderr.contains(&format!("{} cannot be listed", aspect.display())),
         "the refusal must name the directory and its cause: {stderr}"
     );
     run.report["outcome"] = json!("passed");
-    fs::write(root.join("report.json"), serde_json::to_vec_pretty(&run.report).unwrap()).unwrap();
+    fs::write(
+        root.join("report.json"),
+        serde_json::to_vec_pretty(&run.report).unwrap(),
+    )
+    .unwrap();
     eprintln!("model listing evidence: {}", root.display());
 }

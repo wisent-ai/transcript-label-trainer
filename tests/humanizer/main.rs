@@ -23,11 +23,18 @@ impl Run {
             .join(".build")
             .join(format!("humanizer-{case}-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        Self { root, report: json!({"case": case, "commands": [], "outcome": "failed"}) }
+        Self {
+            root,
+            report: json!({"case": case, "commands": [], "outcome": "failed"}),
+        }
     }
 
     fn run(&mut self, args: &[&str], env: &[(&str, &str)]) -> Output {
-        let output = Command::new(BINARY).args(args).envs(env.iter().copied()).output().unwrap();
+        let output = Command::new(BINARY)
+            .args(args)
+            .envs(env.iter().copied())
+            .output()
+            .unwrap();
         self.report["commands"].as_array_mut().unwrap().push(json!({
             "args": args,
             "env": env.iter().map(|(key, value)| format!("{key}={value}")).collect::<Vec<_>>(),
@@ -40,7 +47,11 @@ impl Run {
     }
 
     fn write(&self) {
-        fs::write(self.root.join("report.json"), serde_json::to_vec_pretty(&self.report).unwrap()).unwrap();
+        fs::write(
+            self.root.join("report.json"),
+            serde_json::to_vec_pretty(&self.report).unwrap(),
+        )
+        .unwrap();
     }
 
     fn passed(mut self) {
@@ -51,7 +62,10 @@ impl Run {
 }
 
 fn prepared(id: &str, turns: &[(&str, &str)]) -> Value {
-    let messages: Vec<Value> = turns.iter().map(|(role, content)| json!({"role": role, "content": content})).collect();
+    let messages: Vec<Value> = turns
+        .iter()
+        .map(|(role, content)| json!({"role": role, "content": content}))
+        .collect();
     json!({"id": id, "messages": messages, "metadata": {"session_id": "session-under-test"}})
 }
 
@@ -75,14 +89,30 @@ fn a_prepared_split_becomes_ster_examples() {
             "row-voice",
             &[
                 ("system", "Rewrite the text in the author's own voice."),
-                ("user", "Please be advised that the deployment has been completed successfully."),
+                (
+                    "user",
+                    "Please be advised that the deployment has been completed successfully.",
+                ),
                 ("assistant", "deploy's done, all green"),
             ],
         )],
     );
 
-    let answer = run.run(&["humanizer-examples", "--rows", path(&rows), "--output", path(&output)], &[]);
-    assert!(answer.status.success(), "{}", String::from_utf8_lossy(&answer.stderr));
+    let answer = run.run(
+        &[
+            "humanizer-examples",
+            "--rows",
+            path(&rows),
+            "--output",
+            path(&output),
+        ],
+        &[],
+    );
+    assert!(
+        answer.status.success(),
+        "{}",
+        String::from_utf8_lossy(&answer.stderr)
+    );
     let written: Value = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
     assert_eq!(
         written,
@@ -101,12 +131,30 @@ fn a_row_without_its_target_is_refused_by_id_and_nothing_is_written() {
     let mut run = Run::start("examples-no-target");
     let rows = run.root.join("train.jsonl");
     let output = run.root.join("examples.json");
-    write_rows(&rows, &[prepared("row-untargeted", &[("system", "Rewrite."), ("user", "Some generic text.")])]);
+    write_rows(
+        &rows,
+        &[prepared(
+            "row-untargeted",
+            &[("system", "Rewrite."), ("user", "Some generic text.")],
+        )],
+    );
 
-    let answer = run.run(&["humanizer-examples", "--rows", path(&rows), "--output", path(&output)], &[]);
+    let answer = run.run(
+        &[
+            "humanizer-examples",
+            "--rows",
+            path(&rows),
+            "--output",
+            path(&output),
+        ],
+        &[],
+    );
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
-    assert!(stderr.contains("row \"row-untargeted\" must hold exactly one assistant turn"), "{stderr}");
+    assert!(
+        stderr.contains("row \"row-untargeted\" must hold exactly one assistant turn"),
+        "{stderr}"
+    );
     assert!(!output.exists(), "no example set is written");
     run.passed();
 }
@@ -115,12 +163,28 @@ fn a_row_without_its_target_is_refused_by_id_and_nothing_is_written() {
 fn an_evaluation_of_a_missing_student_is_refused_before_a_server_starts() {
     let mut run = Run::start("evaluate-no-student");
     let rows = run.root.join("test.jsonl");
-    write_rows(&rows, &[prepared("row-voice", &[("system", "Rewrite."), ("user", "Generic text."), ("assistant", "my text")])]);
+    write_rows(
+        &rows,
+        &[prepared(
+            "row-voice",
+            &[
+                ("system", "Rewrite."),
+                ("user", "Generic text."),
+                ("assistant", "my text"),
+            ],
+        )],
+    );
     let base = run.root.join("base-f16.gguf");
     fs::write(&base, "a file standing where the base model is expected").unwrap();
     let student = run.root.join("absent-student.gguf");
-    let (predictions, log) = (run.root.join("predictions.jsonl"), run.root.join("server.log"));
-    let (metrics, server) = (run.root.join("metrics.json"), run.root.join("absent-llama-server"));
+    let (predictions, log) = (
+        run.root.join("predictions.jsonl"),
+        run.root.join("server.log"),
+    );
+    let (metrics, server) = (
+        run.root.join("metrics.json"),
+        run.root.join("absent-llama-server"),
+    );
 
     let answer = run.run(
         &[
@@ -148,7 +212,16 @@ fn an_evaluation_of_a_missing_student_is_refused_before_a_server_starts() {
     );
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
-    assert!(stderr.contains(&format!("the student model {} does not exist", student.display())), "{stderr}");
-    assert!(!predictions.exists() && !log.exists(), "no prediction is written and no server started");
+    assert!(
+        stderr.contains(&format!(
+            "the student model {} does not exist",
+            student.display()
+        )),
+        "{stderr}"
+    );
+    assert!(
+        !predictions.exists() && !log.exists(),
+        "no prediction is written and no server started"
+    );
     run.passed();
 }

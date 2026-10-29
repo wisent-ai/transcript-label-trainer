@@ -28,7 +28,11 @@ pub fn blocked<T>(message: impl Into<String>) -> Result<T> {
 }
 
 pub fn require(condition: bool, message: impl Into<String>) -> Result<()> {
-    if condition { Ok(()) } else { Err(message.into().into()) }
+    if condition {
+        Ok(())
+    } else {
+        Err(message.into().into())
+    }
 }
 
 pub fn digest(path: &Path) -> Result<String> {
@@ -64,16 +68,33 @@ impl Context {
             None => "hf".into(),
         };
         Ok(Self {
-            work, owner: String::new(), commands: Vec::new(), requests: Vec::new(),
-            client: Client::builder().build()?, token, cache, hf_bin,
+            work,
+            owner: String::new(),
+            commands: Vec::new(),
+            requests: Vec::new(),
+            client: Client::builder().build()?,
+            token,
+            cache,
+            hf_bin,
         })
     }
 
-    fn request(&mut self, method: Method, path: &str, body: Option<&Value>) -> Result<(StatusCode, String, bool)> {
-        let mut request = self.client.request(method.clone(), format!("{ENDPOINT}{path}"))
+    fn request(
+        &mut self,
+        method: Method,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<(StatusCode, String, bool)> {
+        let mut request = self
+            .client
+            .request(method.clone(), format!("{ENDPOINT}{path}"))
             .bearer_auth(&self.token);
-        if let Some(body) = body { request = request.json(body); }
-        let response = request.send().map_err(|error| format!("{method} {path}: {error}"))?;
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        let response = request
+            .send()
+            .map_err(|error| format!("{method} {path}: {error}"))?;
         let status = response.status();
         let code = match response.headers().get("x-error-code") {
             None => None,
@@ -82,18 +103,26 @@ impl Context {
             })?),
         };
         let repository_missing = code == Some("RepoNotFound");
-        self.requests.push(json!({"method": method.as_str(), "path": path,
+        self.requests
+            .push(json!({"method": method.as_str(), "path": path,
             "status": status.as_u16(), "error_code": code}));
-        let text = response.text().map_err(|error| format!("{method} {path}: HTTP {status}; {error}"))?;
+        let text = response
+            .text()
+            .map_err(|error| format!("{method} {path}: HTTP {status}; {error}"))?;
         Ok((status, text, repository_missing))
     }
 
     pub fn get(&mut self, path: &str) -> Result<Option<Value>> {
         let (status, body, repository_missing) = self.request(Method::GET, path, None)?;
-        if status == StatusCode::NOT_FOUND || (status == StatusCode::UNAUTHORIZED && repository_missing) {
+        if status == StatusCode::NOT_FOUND
+            || (status == StatusCode::UNAUTHORIZED && repository_missing)
+        {
             return Ok(None);
         }
-        require(status.is_success(), format!("GET {path}: HTTP {status}: {body}"))?;
+        require(
+            status.is_success(),
+            format!("GET {path}: HTTP {status}: {body}"),
+        )?;
         Ok(Some(serde_json::from_str(&body)?))
     }
 
@@ -107,7 +136,10 @@ impl Context {
 
     fn mutate(&mut self, method: Method, path: &str, body: &Value) -> Result<()> {
         let (status, text, _) = self.request(method.clone(), path, Some(body))?;
-        require(status.is_success(), format!("{method} {path}: HTTP {status}: {text}"))
+        require(
+            status.is_success(),
+            format!("{method} {path}: HTTP {status}: {text}"),
+        )
     }
 
     pub fn with_repository(
@@ -117,7 +149,10 @@ impl Context {
     ) -> Result<Value> {
         let name = format!("tlt-publication-{:x}", rand::random::<u128>());
         let repo = format!("{}/{name}", self.owner);
-        require(self.info(&repo, None)?.is_none(), format!("refusing an existing fixture repository: {repo}"))?;
+        require(
+            self.info(&repo, None)?.is_none(),
+            format!("refusing an existing fixture repository: {repo}"),
+        )?;
         let body = json!({"organization": self.owner, "name": name, "type": "model"});
         let result = (|| {
             if let Some(private) = private {
@@ -131,20 +166,29 @@ impl Context {
             if self.info(&repo, None)?.is_some() {
                 self.mutate(Method::DELETE, "/api/repos/delete", &body)?;
             }
-            require(self.info(&repo, None)?.is_none(), format!("fixture remains after cleanup: {repo}"))
+            require(
+                self.info(&repo, None)?.is_none(),
+                format!("fixture remains after cleanup: {repo}"),
+            )
         })();
         match (result, cleanup) {
             (Ok(report), Ok(())) => Ok(report),
             (Err(error), Ok(())) => Err(error),
-            (Ok(_), Err(error)) => Err(format!("fixture cleanup failed for {repo}: {error}").into()),
-            (Err(error), Err(cleanup)) => Err(format!("{error}; fixture cleanup failed for {repo}: {cleanup}").into()),
+            (Ok(_), Err(error)) => {
+                Err(format!("fixture cleanup failed for {repo}: {error}").into())
+            }
+            (Err(error), Err(cleanup)) => {
+                Err(format!("{error}; fixture cleanup failed for {repo}: {cleanup}").into())
+            }
         }
     }
 
     fn command(&self, executable: impl AsRef<OsStr>) -> Command {
         let mut command = Command::new(executable);
-        command.current_dir(&self.work)
-            .env("HF_TOKEN", &self.token).env("HF_ENDPOINT", ENDPOINT)
+        command
+            .current_dir(&self.work)
+            .env("HF_TOKEN", &self.token)
+            .env("HF_ENDPOINT", ENDPOINT)
             .env("HF_HOME", &self.cache)
             .env("HF_HUB_CACHE", self.cache.join("hub"))
             .env("HF_XET_CACHE", self.cache.join("xet"))
@@ -153,14 +197,22 @@ impl Context {
         command
     }
 
-    pub fn product(&self) -> Command { self.command(BINARY) }
+    pub fn product(&self) -> Command {
+        self.command(BINARY)
+    }
 
-    pub fn hf(&self) -> Command { self.command(&self.hf_bin) }
+    pub fn hf(&self) -> Command {
+        self.command(&self.hf_bin)
+    }
 
     pub fn run(&mut self, label: &str, mut command: Command) -> Result<Output> {
-        let argv: Vec<String> = std::iter::once(command.get_program()).chain(command.get_args())
-            .map(|part| part.to_string_lossy().into_owned()).collect();
-        let output = command.output().map_err(|error| format!("cannot execute {label}: {error}"))?;
+        let argv: Vec<String> = std::iter::once(command.get_program())
+            .chain(command.get_args())
+            .map(|part| part.to_string_lossy().into_owned())
+            .collect();
+        let output = command
+            .output()
+            .map_err(|error| format!("cannot execute {label}: {error}"))?;
         let prefix = self.work.join(format!("{}-{label}", self.commands.len()));
         let stdout = prefix.with_extension("stdout");
         let stderr = prefix.with_extension("stderr");

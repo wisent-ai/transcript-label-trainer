@@ -24,8 +24,15 @@ pub(crate) const TFIDF_BACKEND: &str = "sklearn";
 
 /// How `info` names a tfidf-logreg model trained with `settings`.
 pub(crate) fn tfidf_model_desc(settings: &jobs::TfidfTraining) -> String {
-    let tf = if settings.sublinear_tf { "sublinear" } else { "raw" };
-    format!("tfidf(word n-grams up to {}, {tf} tf) + logistic-regression", settings.ngram_max)
+    let tf = if settings.sublinear_tf {
+        "sublinear"
+    } else {
+        "raw"
+    };
+    format!(
+        "tfidf(word n-grams up to {}, {tf} tf) + logistic-regression",
+        settings.ngram_max
+    )
 }
 
 pub fn models_dir() -> PathBuf {

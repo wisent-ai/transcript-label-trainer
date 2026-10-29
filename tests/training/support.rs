@@ -16,7 +16,11 @@ pub fn required(name: &str) -> Result<String> {
 }
 
 pub fn require(condition: bool, message: impl Into<String>) -> Result<()> {
-    if condition { Ok(()) } else { Err(message.into().into()) }
+    if condition {
+        Ok(())
+    } else {
+        Err(message.into().into())
+    }
 }
 
 pub fn digest(path: &Path) -> Result<String> {
@@ -33,31 +37,59 @@ pub struct Evidence {
 
 impl Evidence {
     pub fn save(&self) -> Result<()> {
-        fs::write(self.root.join("report.json"), serde_json::to_vec_pretty(&self.report)?)?;
+        fs::write(
+            self.root.join("report.json"),
+            serde_json::to_vec_pretty(&self.report)?,
+        )?;
         Ok(())
     }
 
-    pub fn run(&mut self, program: &str, args: &[&str], source: Option<&str>) -> Result<(bool, String, String)> {
-        let ordinal = self.report["commands"].as_array().ok_or("commands are not an array")?.len();
+    pub fn run(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        source: Option<&str>,
+    ) -> Result<(bool, String, String)> {
+        let ordinal = self.report["commands"]
+            .as_array()
+            .ok_or("commands are not an array")?
+            .len();
         let stdout = self.root.join(format!("{ordinal}.stdout"));
         let stderr = self.root.join(format!("{ordinal}.stderr"));
         let mut command = Command::new(program);
-        command.args(args).current_dir(env!("CARGO_MANIFEST_DIR"))
-            .stdout(File::create(&stdout)?).stderr(File::create(&stderr)?);
-        if let Some(source) = source { command.env("TLT_REPO_REF", source); }
-        self.report["commands"].as_array_mut().ok_or("commands are not an array")?.push(json!({
-            "program": program, "args": args, "source": source,
-            "stdout": stdout, "stderr": stderr, "started_at": chrono::Utc::now().to_rfc3339(),
-        }));
+        command
+            .args(args)
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .stdout(File::create(&stdout)?)
+            .stderr(File::create(&stderr)?);
+        if let Some(source) = source {
+            command.env("TLT_REPO_REF", source);
+        }
+        self.report["commands"]
+            .as_array_mut()
+            .ok_or("commands are not an array")?
+            .push(json!({
+                "program": program, "args": args, "source": source,
+                "stdout": stdout, "stderr": stderr, "started_at": chrono::Utc::now().to_rfc3339(),
+            }));
         self.save()?;
         let status = command.status()?;
         self.report["commands"][ordinal]["exit_status"] = json!(status.code());
         self.report["commands"][ordinal]["status"] = json!(status.to_string());
         self.save()?;
-        Ok((status.success(), fs::read_to_string(stdout)?, fs::read_to_string(stderr)?))
+        Ok((
+            status.success(),
+            fs::read_to_string(stdout)?,
+            fs::read_to_string(stderr)?,
+        ))
     }
 
-    pub fn succeeds(&mut self, program: &str, args: &[&str], source: Option<&str>) -> Result<String> {
+    pub fn succeeds(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        source: Option<&str>,
+    ) -> Result<String> {
         let (success, stdout, stderr) = self.run(program, args, source)?;
         require(success, format!("{program} {args:?}: {stderr}"))?;
         Ok(stdout)
@@ -65,6 +97,9 @@ impl Evidence {
 }
 
 pub fn field<'a>(stdout: &'a str, prefix: &str) -> Result<&'a str> {
-    stdout.lines().find_map(|line| line.strip_prefix(prefix)).map(str::trim)
+    stdout
+        .lines()
+        .find_map(|line| line.strip_prefix(prefix))
+        .map(str::trim)
         .ok_or_else(|| format!("missing {prefix:?} in actual product output: {stdout}").into())
 }

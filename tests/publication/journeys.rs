@@ -7,25 +7,48 @@ use super::support::{blocked, digest, require, Context, Result};
 
 pub fn public_refusal(context: &mut Context) -> Result<Value> {
     context.with_repository(Some(false), |context, repo| {
-        let before = context.info(repo, None)?.ok_or("public fixture was not created")?;
+        let before = context
+            .info(repo, None)?
+            .ok_or("public fixture was not created")?;
         require(before["private"] == false, "fixture is not public")?;
         let receipt = context.work.join("public-refusal.json");
         let missing = context.work.join("absent-training-input");
         let mut command = context.product();
-        command.arg("humanizer-publish").arg(&missing)
-            .args(["--repo", repo]).arg("--metrics").arg(&missing)
-            .arg("--audit").arg(&missing).arg("--preparation").arg(&missing)
-            .arg("--output").arg(&receipt);
+        command
+            .arg("humanizer-publish")
+            .arg(&missing)
+            .args(["--repo", repo])
+            .arg("--metrics")
+            .arg(&missing)
+            .arg("--audit")
+            .arg(&missing)
+            .arg("--preparation")
+            .arg(&missing)
+            .arg("--output")
+            .arg(&receipt);
         let output = context.run("public-refusal", command)?;
-        require(output.status.code() == Some(1), format!("public destination returned {}", output.status))?;
+        require(
+            output.status.code() == Some(1),
+            format!("public destination returned {}", output.status),
+        )?;
         let report: Value = serde_json::from_slice(&fs::read(&receipt)?)?;
-        require(report["qualified"] == false && report["error"] == "repository_not_private",
-            format!("public destination did not report its actual refusal: {report}"))?;
-        require(report["repo_id"] == repo && report["observed_private"] == false,
-            "refusal does not identify the observed public destination")?;
-        let after = context.info(repo, None)?.ok_or("public destination disappeared")?;
-        require(after["private"] == false && after["sha"] == before["sha"]
-            && after["siblings"] == before["siblings"], "refusal changed the public destination")?;
+        require(
+            report["qualified"] == false && report["error"] == "repository_not_private",
+            format!("public destination did not report its actual refusal: {report}"),
+        )?;
+        require(
+            report["repo_id"] == repo && report["observed_private"] == false,
+            "refusal does not identify the observed public destination",
+        )?;
+        let after = context
+            .info(repo, None)?
+            .ok_or("public destination disappeared")?;
+        require(
+            after["private"] == false
+                && after["sha"] == before["sha"]
+                && after["siblings"] == before["siblings"],
+            "refusal changed the public destination",
+        )?;
         Ok(json!({"repository": repo, "before": before, "after": after, "receipt": report}))
     })
 }
@@ -42,7 +65,10 @@ pub fn private_publication(context: &mut Context) -> Result<Value> {
     let mut expected = Vec::new();
     for (name, source) in [
         ("adapter_config.json", model.join("adapter_config.json")),
-        ("adapter_model.safetensors", model.join("adapter_model.safetensors")),
+        (
+            "adapter_model.safetensors",
+            model.join("adapter_model.safetensors"),
+        ),
         ("tokenizer.json", model.join("tokenizer.json")),
         ("evaluation/metrics.json", metrics.clone()),
         ("evaluation/audit.json", audit.clone()),
@@ -55,7 +81,10 @@ pub fn private_publication(context: &mut Context) -> Result<Value> {
     }
     let verdict: Value = serde_json::from_slice(&fs::read(&audit)?)?;
     if verdict["passed"] != true {
-        return blocked(format!("fixture {} has no passed real audit", audit.display()));
+        return blocked(format!(
+            "fixture {} has no passed real audit",
+            audit.display()
+        ));
     }
     context.with_repository(None, |context, repo| {
         let receipt = context.work.join("private-publication.json");

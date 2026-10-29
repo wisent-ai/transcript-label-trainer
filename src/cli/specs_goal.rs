@@ -5,7 +5,8 @@
 use super::*;
 
 pub(crate) fn goal_served_specs() -> Vec<Spec> {
-    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
+    let path =
+        |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
     let examples = Spec {
         name: "goal-examples",
         help: "write reviewed goal rows as the Ster examples the served goal model trains on".to_string(),

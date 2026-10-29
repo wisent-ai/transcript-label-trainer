@@ -1,7 +1,11 @@
 use super::*;
 
 impl TfidfModel {
-    pub(crate) fn fit(texts: &[String], values: &[String], settings: &jobs::TfidfTraining) -> TfidfModel {
+    pub(crate) fn fit(
+        texts: &[String],
+        values: &[String],
+        settings: &jobs::TfidfTraining,
+    ) -> TfidfModel {
         let classes: Vec<String> = {
             let mut distinct: Vec<String> = values.to_vec();
             distinct.sort_unstable();

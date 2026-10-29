@@ -56,7 +56,10 @@ impl BramaClient {
             Error(format!("Brama answered HTTP {status} to a decision but its body could not be read: {error}"))
         })?;
         if status != reqwest::StatusCode::OK {
-            bail!("Brama refused the decision with HTTP {status}: {}", text.trim())
+            bail!(
+                "Brama refused the decision with HTTP {status}: {}",
+                text.trim()
+            )
         }
         let mut document: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
             Error(format!(
@@ -122,7 +125,9 @@ pub fn chosen(
         .get(CHOICE)
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| {
-            Error(format!("Brama's answer to `{instructions}` carries no choice: {answer}"))
+            Error(format!(
+                "Brama's answer to `{instructions}` carries no choice: {answer}"
+            ))
         })?;
     if !labels.iter().any(|(known, _)| *known == label) {
         bail!("Brama chose `{label}` for `{instructions}`, which is not one of the labels asked");

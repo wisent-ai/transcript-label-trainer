@@ -25,12 +25,14 @@ use crate::bail;
 use crate::brama;
 use crate::util::{float_repr, Result};
 
-mod source_pattern;
 mod eval_split;
-mod training;
 mod presets;
+mod source_pattern;
+mod training;
 
-pub use source_pattern::*;
 pub use eval_split::*;
+pub(crate) use presets::{
+    eval_split_preset, presets_json, ster_preset, EVAL_SPLIT_PRESET, PRESETS, TEST_SIZE, TRL,
+};
+pub use source_pattern::*;
 pub use training::*;
-pub(crate) use presets::{eval_split_preset, presets_json, ster_preset, EVAL_SPLIT_PRESET, PRESETS, TEST_SIZE, TRL};

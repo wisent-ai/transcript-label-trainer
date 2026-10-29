@@ -29,7 +29,12 @@ fn user_turn(message: &str) -> String {
 
 /// The reviewed answer of `row`.
 fn answer(row: &GoalRow) -> String {
-    match row.goal.as_deref().map(str::trim).filter(|goal| !goal.is_empty()) {
+    match row
+        .goal
+        .as_deref()
+        .map(str::trim)
+        .filter(|goal| !goal.is_empty())
+    {
         Some(goal) => format!("<goal>{goal}</goal>"),
         None => "<goal/>".to_string(),
     }
@@ -41,7 +46,10 @@ fn reviewed_rows(path: &Path) -> Result<Vec<GoalRow>> {
     let rows = text
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str::<GoalRow>(line).map_err(|error| Error(format!("{}: {error}", path.display()))))
+        .map(|line| {
+            serde_json::from_str::<GoalRow>(line)
+                .map_err(|error| Error(format!("{}: {error}", path.display())))
+        })
         .collect::<Result<Vec<_>>>()?;
     if rows.is_empty() {
         return Err(Error(format!("{} holds no reviewed row", path.display())));
@@ -60,10 +68,15 @@ pub fn export_examples(rows: &Path, output: &Path) -> Result<Value> {
         .map(|row| json!({ "system": SYSTEM_PROMPT.trim(), "prompt": user_turn(&row.message), "completion": answer(row) }))
         .collect();
     if examples.is_empty() {
-        return Err(Error(format!("every one of the {held_out} reviewed rows is held-out gold; none is left to train on")));
+        return Err(Error(format!(
+            "every one of the {held_out} reviewed rows is held-out gold; none is left to train on"
+        )));
     }
     let count = examples.len();
-    write_whole(output, &serde_json::to_vec_pretty(&json!({ "examples": examples }))?)?;
+    write_whole(
+        output,
+        &serde_json::to_vec_pretty(&json!({ "examples": examples }))?,
+    )?;
     Ok(json!({ "examples": count, "held_out": held_out, "output": output.display().to_string() }))
 }
 
@@ -80,9 +93,18 @@ pub(crate) struct GoalEvaluation {
 fn predictions(server: &Server, gold: &[GoalRow]) -> Result<Vec<(String, bool)>> {
     gold.iter()
         .map(|row| {
-            let student = server.answer(&row.session_id, SYSTEM_PROMPT.trim(), &user_turn(&row.message), Some(("grammar", json!(ANSWER_GRAMMAR))))?;
+            let student = server.answer(
+                &row.session_id,
+                SYSTEM_PROMPT.trim(),
+                &user_turn(&row.message),
+                Some(("grammar", json!(ANSWER_GRAMMAR))),
+            )?;
             let exact = student == answer(row);
-            println!("quantized goal prediction for {}: {}", row.session_id, if exact { "exact" } else { "differs" });
+            println!(
+                "quantized goal prediction for {}: {}",
+                row.session_id,
+                if exact { "exact" } else { "differs" }
+            );
             Ok((student, exact))
         })
         .collect()
@@ -92,9 +114,15 @@ fn predictions(server: &Server, gold: &[GoalRow]) -> Result<Vec<(String, bool)>>
 /// the predictions `goal-audit` reads and the exact-match share, and answer
 /// the metrics. A failed request fails the run naming its session.
 pub(crate) fn evaluate_gguf(run: &GoalEvaluation) -> Result<Value> {
-    let gold: Vec<GoalRow> = reviewed_rows(&run.dataset)?.into_iter().filter(|row| row.gold).collect();
+    let gold: Vec<GoalRow> = reviewed_rows(&run.dataset)?
+        .into_iter()
+        .filter(|row| row.gold)
+        .collect();
     if gold.is_empty() {
-        return Err(Error(format!("{} holds no held-out gold row", run.dataset.display())));
+        return Err(Error(format!(
+            "{} holds no held-out gold row",
+            run.dataset.display()
+        )));
     }
     let server = Server::start(&run.serving)?;
     let answered = predictions(&server, &gold);

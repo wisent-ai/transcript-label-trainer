@@ -43,8 +43,8 @@ use tokenizers::{PaddingParams, PaddingStrategy, Tokenizer, TruncationParams};
 
 use crate::util::{Error, Result, TrainFailure};
 
-mod min_per_class_group;
 mod hub_files_group;
+mod min_per_class_group;
 
-pub use min_per_class_group::*;
 pub use hub_files_group::*;
+pub use min_per_class_group::*;

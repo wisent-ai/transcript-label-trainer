@@ -21,9 +21,15 @@ impl Run {
     fn start(case: &str) -> Self {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join(".build")
-            .join(format!("release-{case}-{}", hex::encode(rand::random::<[u8; 8]>())));
+            .join(format!(
+                "release-{case}-{}",
+                hex::encode(rand::random::<[u8; 8]>())
+            ));
         fs::create_dir_all(&root).unwrap();
-        Self { root, report: json!({"case": case, "commands": [], "outcome": "failed"}) }
+        Self {
+            root,
+            report: json!({"case": case, "commands": [], "outcome": "failed"}),
+        }
     }
 
     fn publish(&mut self, args: &[&str]) -> Output {
@@ -40,15 +46,21 @@ impl Run {
             "stdout": String::from_utf8_lossy(&output.stdout),
             "stderr": String::from_utf8_lossy(&output.stderr),
         }));
-        fs::write(self.root.join("report.json"), serde_json::to_vec_pretty(&self.report).unwrap())
-            .unwrap();
+        fs::write(
+            self.root.join("report.json"),
+            serde_json::to_vec_pretty(&self.report).unwrap(),
+        )
+        .unwrap();
         output
     }
 
     fn passed(mut self) {
         self.report["outcome"] = json!("passed");
-        fs::write(self.root.join("report.json"), serde_json::to_vec_pretty(&self.report).unwrap())
-            .unwrap();
+        fs::write(
+            self.root.join("report.json"),
+            serde_json::to_vec_pretty(&self.report).unwrap(),
+        )
+        .unwrap();
         eprintln!("release evidence: {}", self.root.display());
     }
 }
@@ -65,7 +77,10 @@ fn a_served_model_without_a_private_repository_is_refused_before_any_download() 
             && stderr.contains("the fleet's release store is not a model store"),
         "the refusal names where the weights go: {stderr}"
     );
-    assert!(!stderr.contains("downloading"), "nothing was downloaded: {stderr}");
+    assert!(
+        !stderr.contains("downloading"),
+        "nothing was downloaded: {stderr}"
+    );
     run.passed();
 }
 
@@ -80,6 +95,9 @@ fn a_desktop_model_given_a_private_repository_is_refused() {
             && stderr.contains("--repo owner/private-goal"),
         "the refusal names the destination the model does take: {stderr}"
     );
-    assert!(!stderr.contains("downloading"), "nothing was downloaded: {stderr}");
+    assert!(
+        !stderr.contains("downloading"),
+        "nothing was downloaded: {stderr}"
+    );
     run.passed();
 }

@@ -61,7 +61,10 @@ pub(crate) fn prepare_tokenizer(tokenizer: &mut Tokenizer, max_length: usize) ->
         .into_iter()
         .find_map(|token| tokenizer.token_to_id(token).map(|id| (token, id)))
         .ok_or_else(|| {
-            Error("the tokenizer has neither a [PAD] nor a <pad> token to pad a batch with".to_string())
+            Error(
+                "the tokenizer has neither a [PAD] nor a <pad> token to pad a batch with"
+                    .to_string(),
+            )
         })?;
     tokenizer
         .with_truncation(Some(TruncationParams {

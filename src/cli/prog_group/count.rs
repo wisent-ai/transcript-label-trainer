@@ -52,7 +52,10 @@ pub(crate) fn print_info(entries: &[Value]) {
             let hyperparameters = field(metrics, "hyperparameters");
             let quality = match backend.as_str() {
                 "sklearn" if metrics.get("cv_accuracy").is_some_and(Value::is_null) => {
-                    format!("cv_accuracy=unavailable ({})", text(field(metrics, "cv_unavailable")))
+                    format!(
+                        "cv_accuracy=unavailable ({})",
+                        text(field(metrics, "cv_unavailable"))
+                    )
                 }
                 "sklearn" => format!(
                     "cv_accuracy={} ({}-fold)",

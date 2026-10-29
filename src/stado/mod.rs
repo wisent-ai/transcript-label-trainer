@@ -14,15 +14,15 @@ use crate::jobs::{Job, SKLEARN_MODEL};
 use crate::util::{Error, Result};
 use crate::{lake, model};
 
-mod repository;
 mod execute_goal_model;
-mod release;
 mod manifest;
+mod release;
+mod repository;
 
-pub use repository::*;
 pub use execute_goal_model::*;
-pub use release::*;
 pub(crate) use manifest::{write_manifest, ManifestModel};
+pub use release::*;
+pub use repository::*;
 
 /// The work directory, shell-quoted, that a job named `name` keeps its inputs,
 /// scratch and outputs in on `compute_target`: `<root>/jobs/<name>`, where

@@ -69,7 +69,10 @@ fn review_function() -> (&'static str, &'static str, Value) {
 
 fn parse_review(arguments: serde_json::Map<String, Value>) -> Result<Review> {
     serde_json::from_value(Value::Object(arguments.clone())).map_err(|error| {
-        Error(format!("review is not the record_review object ({error}): {}", Value::Object(arguments)))
+        Error(format!(
+            "review is not the record_review object ({error}): {}",
+            Value::Object(arguments)
+        ))
     })
 }
 
@@ -96,16 +99,27 @@ fn pair(
 ) -> Result<Value, String> {
     let target = row.target.trim();
     let excerpt = |error: Error| format!("error:{}", error.0);
-    let source = ask(client, teacher, TEACHER_PROMPT, target.to_string(), |answer| {
-        Ok(answer.to_string())
-    })
+    let source = ask(
+        client,
+        teacher,
+        TEACHER_PROMPT,
+        target.to_string(),
+        |answer| Ok(answer.to_string()),
+    )
     .map_err(excerpt)?;
     if !valid_source(target, &source) {
         return Err("source_contract".to_string());
     }
     let question = json!({"source": source, "target": target}).to_string();
-    let review = ask_call(client, reviewer, REVIEW_PROMPT, question, review_function(), parse_review)
-        .map_err(excerpt)?;
+    let review = ask_call(
+        client,
+        reviewer,
+        REVIEW_PROMPT,
+        question,
+        review_function(),
+        parse_review,
+    )
+    .map_err(excerpt)?;
     if !review.usable {
         return Err("review_rejected".to_string());
     }

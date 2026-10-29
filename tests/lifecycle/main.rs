@@ -11,7 +11,8 @@ use std::process::{Command, Output};
 use serde_json::{json, Value};
 
 const BINARY: &str = env!("CARGO_BIN_EXE_transcript-label-trainer");
-const SYSTEM_PROMPT: &str = include_str!("../../training/lifecycle-model/lifecycle-system-prompt.txt");
+const SYSTEM_PROMPT: &str =
+    include_str!("../../training/lifecycle-model/lifecycle-system-prompt.txt");
 
 struct Run {
     root: PathBuf,
@@ -24,7 +25,10 @@ impl Run {
             .join(".build")
             .join(format!("lifecycle-{case}-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        Self { root, report: json!({"case": case, "commands": [], "outcome": "failed"}) }
+        Self {
+            root,
+            report: json!({"case": case, "commands": [], "outcome": "failed"}),
+        }
     }
 
     fn run(&mut self, args: &[&str]) -> Output {
@@ -40,7 +44,11 @@ impl Run {
     }
 
     fn write(&self) {
-        fs::write(self.root.join("report.json"), serde_json::to_vec_pretty(&self.report).unwrap()).unwrap();
+        fs::write(
+            self.root.join("report.json"),
+            serde_json::to_vec_pretty(&self.report).unwrap(),
+        )
+        .unwrap();
     }
 
     fn passed(mut self) {
@@ -68,7 +76,8 @@ fn reviewed_row(id: &str, answer: Option<&Value>) -> Value {
         json!({"role": "system", "content": "the reviewer's copy of the prompt"}),
         json!({"role": "user", "content": envelope()}),
     ];
-    messages.extend(answer.map(|answer| json!({"role": "assistant", "content": answer.to_string()})));
+    messages
+        .extend(answer.map(|answer| json!({"role": "assistant", "content": answer.to_string()})));
     json!({"id": id, "messages": messages})
 }
 
@@ -89,14 +98,25 @@ fn reviewed_rows_become_the_served_chat_answered_by_the_reviewed_decision() {
     let decision = json!({"action": "continueCurrent", "goal_ref": "goal-login", "title": "kept out", "lifecycle_evidence": "none"});
     write_rows(&rows, &[reviewed_row("row-continue", Some(&decision))]);
 
-    let answer = run.run(&["lifecycle-examples", "--rows", path(&rows), "--output", path(&output)]);
-    assert!(answer.status.success(), "{}", String::from_utf8_lossy(&answer.stderr));
+    let answer = run.run(&[
+        "lifecycle-examples",
+        "--rows",
+        path(&rows),
+        "--output",
+        path(&output),
+    ]);
+    assert!(
+        answer.status.success(),
+        "{}",
+        String::from_utf8_lossy(&answer.stderr)
+    );
 
     let mut written: Value = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
     // The completion is the decision as JSON text; read it back as JSON so
     // the comparison is of the decision, not of its spacing.
     for example in written["examples"].as_array_mut().unwrap() {
-        example["completion"] = serde_json::from_str(example["completion"].as_str().unwrap()).unwrap();
+        example["completion"] =
+            serde_json::from_str(example["completion"].as_str().unwrap()).unwrap();
     }
     assert_eq!(
         written,
@@ -117,10 +137,19 @@ fn a_row_without_a_reviewed_decision_is_refused_by_id_and_nothing_is_written() {
     let output = run.root.join("examples.json");
     write_rows(&rows, &[reviewed_row("row-unreviewed", None)]);
 
-    let answer = run.run(&["lifecycle-examples", "--rows", path(&rows), "--output", path(&output)]);
+    let answer = run.run(&[
+        "lifecycle-examples",
+        "--rows",
+        path(&rows),
+        "--output",
+        path(&output),
+    ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
-    assert!(stderr.contains("row-unreviewed must contain one reviewed assistant decision"), "{stderr}");
+    assert!(
+        stderr.contains("row-unreviewed must contain one reviewed assistant decision"),
+        "{stderr}"
+    );
     assert!(!output.exists(), "no example set is written");
     run.passed();
 }
@@ -133,10 +162,19 @@ fn a_decision_outside_the_contract_is_refused_by_id() {
     let decision = json!({"action": "finishGoal", "goal_ref": "goal-login", "title": "", "lifecycle_evidence": "none"});
     write_rows(&rows, &[reviewed_row("row-finish", Some(&decision))]);
 
-    let answer = run.run(&["lifecycle-examples", "--rows", path(&rows), "--output", path(&output)]);
+    let answer = run.run(&[
+        "lifecycle-examples",
+        "--rows",
+        path(&rows),
+        "--output",
+        path(&output),
+    ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
-    assert!(stderr.contains("row-finish finishGoal lacks explicit completion evidence"), "{stderr}");
+    assert!(
+        stderr.contains("row-finish finishGoal lacks explicit completion evidence"),
+        "{stderr}"
+    );
     assert!(!output.exists(), "no example set is written");
     run.passed();
 }
@@ -153,17 +191,28 @@ fn a_blank_reviewed_identity_is_refused_before_writing_either_split() {
 
     let answer = run.run(&[
         "lifecycle-split-by-day",
-        "--train", path(&train),
-        "--eval", path(&eval),
-        "--eval-day", "day-under-test",
-        "--output-train", path(&output_train),
-        "--output-eval", path(&output_eval),
+        "--train",
+        path(&train),
+        "--eval",
+        path(&eval),
+        "--eval-day",
+        "day-under-test",
+        "--output-train",
+        path(&output_train),
+        "--output-eval",
+        path(&output_eval),
     ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
-    assert!(stderr.contains("a reviewed row has no nonblank string id"), "{stderr}");
+    assert!(
+        stderr.contains("a reviewed row has no nonblank string id"),
+        "{stderr}"
+    );
     assert!(stderr.contains(&train.display().to_string()), "{stderr}");
-    assert!(!output_train.exists() && !output_eval.exists(), "neither output was written");
+    assert!(
+        !output_train.exists() && !output_eval.exists(),
+        "neither output was written"
+    );
     run.passed();
 }
 
@@ -176,16 +225,15 @@ fn reviewed_rows_are_resplit_by_day_and_persisted_in_disjoint_outputs() {
     let output_eval = run.root.join("eval.jsonl");
     let schema: Value = serde_json::from_str(include_str!(
         "../../training/lifecycle-model/lifecycle-output-schema.json"
-    )).unwrap();
+    ))
+    .unwrap();
     let actions = schema["oneOf"].as_array().unwrap();
     let mut rows = Vec::new();
     for branch in actions {
         let action = branch["properties"]["action"]["const"].as_str().unwrap();
         for day in ["earlier", "held-out"] {
-            let mut row = reviewed_row(
-                &format!("{day}-{action}"),
-                Some(&json!({"action": action})),
-            );
+            let mut row =
+                reviewed_row(&format!("{day}-{action}"), Some(&json!({"action": action})));
             row["split_day"] = json!(day);
             rows.push(row);
         }
@@ -195,24 +243,39 @@ fn reviewed_rows_are_resplit_by_day_and_persisted_in_disjoint_outputs() {
 
     let answer = run.run(&[
         "lifecycle-split-by-day",
-        "--train", path(&train),
-        "--eval", path(&eval),
-        "--eval-day", "held-out",
-        "--output-train", path(&output_train),
-        "--output-eval", path(&output_eval),
+        "--train",
+        path(&train),
+        "--eval",
+        path(&eval),
+        "--eval-day",
+        "held-out",
+        "--output-train",
+        path(&output_train),
+        "--output-eval",
+        path(&output_eval),
     ]);
-    assert!(answer.status.success(), "{}", String::from_utf8_lossy(&answer.stderr));
+    assert!(
+        answer.status.success(),
+        "{}",
+        String::from_utf8_lossy(&answer.stderr)
+    );
     for (output, day, split) in [
         (&output_train, "earlier", "train"),
         (&output_eval, "held-out", "eval"),
     ] {
         let written = fs::read_to_string(output).unwrap();
-        let persisted: Vec<Value> = written.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        let persisted: Vec<Value> = written
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
         assert_eq!(persisted.len(), actions.len(), "{}", output.display());
-        assert!(persisted.iter().all(|row|
-            row["split_day"] == day && row["split"] == split
-                && row["id"].as_str().unwrap().starts_with(day)
-        ), "{}", output.display());
+        assert!(
+            persisted.iter().all(|row| row["split_day"] == day
+                && row["split"] == split
+                && row["id"].as_str().unwrap().starts_with(day)),
+            "{}",
+            output.display()
+        );
     }
     run.passed();
 }
@@ -234,7 +297,13 @@ fn a_lifecycle_job_without_ster_settings_is_refused_before_anything_is_read() {
     ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
-    assert!(stderr.contains("--ster-options cannot be empty"), "the refusal names the missing settings: {stderr}");
-    assert!(!stderr.contains("absent.jsonl"), "the datasets were never read: {stderr}");
+    assert!(
+        stderr.contains("--ster-options cannot be empty"),
+        "the refusal names the missing settings: {stderr}"
+    );
+    assert!(
+        !stderr.contains("absent.jsonl"),
+        "the datasets were never read: {stderr}"
+    );
     run.passed();
 }

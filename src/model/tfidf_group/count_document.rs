@@ -25,7 +25,11 @@ const L2_HALF: f64 = 0.5;
 
 /// Term counts for one document: unigrams plus, when `ngram_max` is 2, the
 /// space-joined adjacent pairs sklearn's `_word_ngrams` produces.
-pub(crate) fn count_document(doc: &str, lowercase: bool, ngram_max: usize) -> HashMap<String, usize> {
+pub(crate) fn count_document(
+    doc: &str,
+    lowercase: bool,
+    ngram_max: usize,
+) -> HashMap<String, usize> {
     let prepared = if lowercase {
         doc.to_lowercase()
     } else {
@@ -58,7 +62,10 @@ pub(crate) struct Vectorizer {
 impl Vectorizer {
     /// Fit on a corpus and return the fitted rows in the same pass, the way
     /// `Pipeline.fit` does — the documents are counted exactly once.
-    pub(crate) fn fit_transform(docs: &[String], settings: &jobs::TfidfTraining) -> (Self, Vec<SparseRow>) {
+    pub(crate) fn fit_transform(
+        docs: &[String],
+        settings: &jobs::TfidfTraining,
+    ) -> (Self, Vec<SparseRow>) {
         let counts: Vec<HashMap<String, usize>> = docs
             .iter()
             .map(|doc| count_document(doc, settings.lowercase, settings.ngram_max))
@@ -198,7 +205,9 @@ impl Problem<'_> {
                 // earlier fit did, so the same input gives the same bits.
                 *score = row
                     .iter()
-                    .fold(x[coefficients + c], |score, &(column, value)| score + x[base + column as usize] * value);
+                    .fold(x[coefficients + c], |score, &(column, value)| {
+                        score + x[base + column as usize] * value
+                    });
             }
             let max = z.iter().copied().fold(f64::NEG_INFINITY, f64::max);
             let sum_exp: f64 = z.iter().map(|&score| (score - max).exp()).sum();

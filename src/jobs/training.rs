@@ -129,13 +129,24 @@ pub(crate) fn training(raw: &serde_yaml::Mapping, model: &str) -> Result<Trainin
 /// then validated exactly as a job's `training` section is. A flag of the
 /// other backend is refused, and so is a key flag beside a preset: each value
 /// has one source.
-pub fn training_from_flags<'a>(model: &str, text: impl Fn(&str) -> Option<&'a str>) -> Result<Training> {
+pub fn training_from_flags<'a>(
+    model: &str,
+    text: impl Fn(&str) -> Option<&'a str>,
+) -> Result<Training> {
     let (keys, other) = backend_keys(model);
-    if let Some(stray) = other.iter().map(|key| flag_name(key)).find(|flag| text(flag.as_str()).is_some()) {
+    if let Some(stray) = other
+        .iter()
+        .map(|key| flag_name(key))
+        .find(|flag| text(flag.as_str()).is_some())
+    {
         bail!("{stray} does not apply to model {}", py_repr_str(model))
     }
     if let Some(name) = text("--training") {
-        if let Some(beside) = keys.iter().map(|key| flag_name(key)).find(|flag| text(flag.as_str()).is_some()) {
+        if let Some(beside) = keys
+            .iter()
+            .map(|key| flag_name(key))
+            .find(|flag| text(flag.as_str()).is_some())
+        {
             bail!("{beside} cannot be stated beside --training {name}: the preset states every setting")
         }
         return super::presets::preset(name, model);
@@ -144,8 +155,9 @@ pub fn training_from_flags<'a>(model: &str, text: impl Fn(&str) -> Option<&'a st
     for key in keys {
         let flag = flag_name(key);
         if let Some(value) = text(flag.as_str()) {
-            let parsed: Yaml = serde_yaml::from_str(value)
-                .map_err(|error| crate::util::Error(format!("{flag} {value:?} is not a value: {error}")))?;
+            let parsed: Yaml = serde_yaml::from_str(value).map_err(|error| {
+                crate::util::Error(format!("{flag} {value:?} is not a value: {error}"))
+            })?;
             mapping.insert(Yaml::String((*key).to_string()), parsed);
         }
     }
@@ -211,7 +223,11 @@ impl Section<'_> {
     }
 
     fn positive(&self, key: &str) -> Result<f64> {
-        self.number(key, |value| value.is_normal() && value.is_sign_positive(), "a positive number")
+        self.number(
+            key,
+            |value| value.is_normal() && value.is_sign_positive(),
+            "a positive number",
+        )
     }
 
     fn share(&self, key: &str) -> Result<f64> {
@@ -222,7 +238,11 @@ impl Section<'_> {
 fn settings(mapping: &serde_yaml::Mapping, model: &str) -> Result<Training> {
     let unknown = unknown_keys(mapping, backend_keys(model).0);
     if !unknown.is_empty() {
-        bail!("unknown training field(s) for model {}: {}", py_repr_str(model), unknown.join(", "))
+        bail!(
+            "unknown training field(s) for model {}: {}",
+            py_repr_str(model),
+            unknown.join(", ")
+        )
     }
     let section = Section { mapping, model };
     if model == SKLEARN_MODEL {
@@ -232,7 +252,11 @@ fn settings(mapping: &serde_yaml::Mapping, model: &str) -> Result<Training> {
             sublinear_tf: section.flag("sublinear_tf")?,
             smooth_idf: section.flag("smooth_idf")?,
             min_df: section.positive("min_df")?,
-            max_df: section.number("max_df", share_of_all, "a share of documents above none, at most all")?,
+            max_df: section.number(
+                "max_df",
+                share_of_all,
+                "a share of documents above none, at most all",
+            )?,
             c: section.positive("c")?,
             max_iter: section.whole("max_iter")?,
             tol: section.positive("tol")?,

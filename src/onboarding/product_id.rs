@@ -83,12 +83,9 @@ pub fn onboarding(
                         report.note("The previously adopted corpus remains selected.");
                     }
                     let evidence = fact(CORPUS_FACT);
-                    advance(&definition, &screen, &mut state, &evidence, &revision)?
-                        .ok_or_else(|| {
-                            Error(
-                                "an adopted corpus does not satisfy the published journey".into(),
-                            )
-                        })?;
+                    advance(&definition, &screen, &mut state, &evidence, &revision)?.ok_or_else(
+                        || Error("an adopted corpus does not satisfy the published journey".into()),
+                    )?;
                 }
                 TRAINED_FACT => {
                     let Some(aspect) = trained_aspect()? else {
@@ -107,13 +104,14 @@ pub fn onboarding(
                         "Aspect '{aspect}' has a trained classifier under the training root."
                     ));
                     let evidence = fact(TRAINED_FACT);
-                    advance(&definition, &screen, &mut state, &evidence, &revision)?
-                        .ok_or_else(|| {
+                    advance(&definition, &screen, &mut state, &evidence, &revision)?.ok_or_else(
+                        || {
                             Error(
                                 "a trained classifier does not satisfy the published journey"
                                     .into(),
                             )
-                        })?;
+                        },
+                    )?;
                 }
                 other => {
                     return Err(Error(format!(
@@ -124,7 +122,9 @@ pub fn onboarding(
             Some("first_success") => {
                 let aspect = trained_aspect()?
                     .ok_or_else(|| Error("no trained aspect to suggest labels for".into()))?;
-                report.note(&format!("Running: transcript-label-trainer infer --aspect {aspect}"));
+                report.note(&format!(
+                    "Running: transcript-label-trainer infer --aspect {aspect}"
+                ));
                 // The product's own inference path, which is what records the
                 // first-success fact when it emits suggestions.
                 let suggestions = match model::infer(&aspect, None, None) {
@@ -176,9 +176,8 @@ pub fn onboarding(
             }
             Some(_) => {
                 wait_for_enter(unattended, "Press Enter to continue. ")?;
-                advance(&definition, &screen, &mut state, &Map::new(), &revision)?.ok_or_else(
-                    || Error("published journey has no eligible next screen".into()),
-                )?;
+                advance(&definition, &screen, &mut state, &Map::new(), &revision)?
+                    .ok_or_else(|| Error("published journey has no eligible next screen".into()))?;
             }
             None => return Err(Error("published onboarding screen has no kind".into())),
         }

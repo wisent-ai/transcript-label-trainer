@@ -257,11 +257,8 @@ pub(crate) fn audit_one(
     client
         .decide(alias, &state, &questions)
         .and_then(|answers| {
-            let verdict = crate::brama::chosen(
-                &answer(&answers, VERDICT_KEY)?,
-                &verdict_question,
-                VERDICTS,
-            )?;
+            let verdict =
+                crate::brama::chosen(&answer(&answers, VERDICT_KEY)?, &verdict_question, VERDICTS)?;
             let danger =
                 crate::brama::chosen(&answer(&answers, DANGER_KEY)?, &danger_question, DANGER)?;
             Ok(AuditDecision {

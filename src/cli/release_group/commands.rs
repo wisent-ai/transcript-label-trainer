@@ -15,7 +15,9 @@ pub(crate) fn stated_count(args: &Parsed, flag: &str) -> Result<usize> {
     };
     match usize::try_from(value) {
         Ok(count) if count > 0 => Ok(count),
-        Ok(_) => Err(Error(format!("{flag} must be a count of at least one, not {value}"))),
+        Ok(_) => Err(Error(format!(
+            "{flag} must be a count of at least one, not {value}"
+        ))),
         Err(error) => Err(Error(format!(
             "{flag} must be a count of at least one, not {value}: {error}"
         ))),

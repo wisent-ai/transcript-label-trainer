@@ -18,17 +18,17 @@ use serde_json::Value;
 use crate::brama::{BramaClient, Message};
 use crate::util::{now_iso, Error, Result};
 
-mod system_prompt;
-mod review_dataset;
 mod audit_predictions;
-mod evaluate_gguf;
 mod curriculum;
+mod evaluate_gguf;
+mod review_dataset;
+mod system_prompt;
 
-pub use system_prompt::*;
-pub use review_dataset::*;
 pub use audit_predictions::*;
-pub use evaluate_gguf::{evaluate_gguf, GgufEvaluation};
 pub use curriculum::{
-    assemble_curriculum, export_decisions, export_examples, generate_curriculum, split_by_day, CurriculumAssembly,
-    CurriculumGeneration, DaySplit, DecisionExport,
+    assemble_curriculum, export_decisions, export_examples, generate_curriculum, split_by_day,
+    CurriculumAssembly, CurriculumGeneration, DaySplit, DecisionExport,
 };
+pub use evaluate_gguf::{evaluate_gguf, GgufEvaluation};
+pub use review_dataset::*;
+pub use system_prompt::*;

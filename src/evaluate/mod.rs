@@ -57,12 +57,12 @@ use sha2::{Digest, Sha256};
 use crate::util::{float_repr, json_truthy, now_iso, Error, Result, TrainFailure};
 use crate::{brama, jobs, lake, model};
 
-mod split_file;
-mod resolve_split;
-mod judge_sessions;
 mod evaluate_items;
+mod judge_sessions;
+mod resolve_split;
+mod split_file;
 
-pub use split_file::*;
-pub use resolve_split::*;
-pub use judge_sessions::*;
 pub use evaluate_items::*;
+pub use judge_sessions::*;
+pub use resolve_split::*;
+pub use split_file::*;

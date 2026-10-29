@@ -23,7 +23,10 @@ fn sibling(output: &Path) -> PathBuf {
 /// holds the new file and not the old one or nothing. Every writer of a whole
 /// file in this program writes through here.
 pub(crate) fn write_whole(output: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = match output.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+    let parent = match output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         Some(parent) => parent,
         None => Path::new("."),
     };
@@ -46,8 +49,10 @@ pub(crate) fn write_whole(output: &Path, bytes: &[u8]) -> Result<()> {
         .map_err(|error| step("create", error))
         .and_then(|mut file| {
             use std::io::Write;
-            file.write_all(bytes).map_err(|error| step("write", error))?;
-            file.sync_all().map_err(|error| step("flush to disk", error))
+            file.write_all(bytes)
+                .map_err(|error| step("write", error))?;
+            file.sync_all()
+                .map_err(|error| step("flush to disk", error))
         })
         .and_then(|()| {
             fs::rename(&temporary, output).map_err(|error| {
@@ -59,13 +64,15 @@ pub(crate) fn write_whole(output: &Path, bytes: &[u8]) -> Result<()> {
             })
         });
     match written {
-        Ok(()) => fs::File::open(parent).and_then(|directory| directory.sync_all()).map_err(|error| {
-            Error(format!(
-                "{} was written, but its directory {} could not be flushed to disk: {error}",
-                output.display(),
-                parent.display()
-            ))
-        }),
+        Ok(()) => fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| {
+                Error(format!(
+                    "{} was written, but its directory {} could not be flushed to disk: {error}",
+                    output.display(),
+                    parent.display()
+                ))
+            }),
         Err(error) => Err(match fs::remove_file(&temporary) {
             Ok(()) => error,
             Err(cleanup) if cleanup.kind() == std::io::ErrorKind::NotFound => error,

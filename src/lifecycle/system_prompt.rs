@@ -53,7 +53,9 @@ pub(crate) fn read_rows(path: &Path) -> Result<Vec<TrainingRow>> {
 /// so neither is searched for an object inside other text.
 pub(crate) fn parse_json_object(answer: &str) -> Result<Value> {
     serde_json::from_str(answer.trim()).map_err(|error| {
-        Error(format!("lifecycle answer is not one JSON object ({error}): {answer}"))
+        Error(format!(
+            "lifecycle answer is not one JSON object ({error}): {answer}"
+        ))
     })
 }
 
@@ -175,10 +177,18 @@ pub(crate) fn classify(client: &BramaClient, model: &str, row: &TrainingRow) -> 
     ];
     let description = "The lifecycle decision for the envelope, under the output schema.";
     client
-        .call(model, &request, DECISION_FUNCTION, description, decision_parameters()?)
+        .call(
+            model,
+            &request,
+            DECISION_FUNCTION,
+            description,
+            decision_parameters()?,
+        )
         .and_then(|mut arguments| {
             arguments.remove("decision").ok_or_else(|| {
-                Error(format!("the call of {DECISION_FUNCTION} carries no decision"))
+                Error(format!(
+                    "the call of {DECISION_FUNCTION} carries no decision"
+                ))
             })
         })
         .and_then(|value| validate_decision(row, value))

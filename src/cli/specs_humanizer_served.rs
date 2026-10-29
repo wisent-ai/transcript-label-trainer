@@ -23,10 +23,12 @@ pub(crate) fn training_options() -> Vec<Opt> {
 }
 
 pub(crate) fn humanizer_served_specs() -> Vec<Spec> {
-    let path = |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
+    let path =
+        |flag: &'static str, help: &str| required(flag, "PATH", Kind::Text, help.to_string());
     let examples = Spec {
         name: "humanizer-examples",
-        help: "write a prepared humanizer split as the Ster examples the adapter trains on".to_string(),
+        help: "write a prepared humanizer split as the Ster examples the adapter trains on"
+            .to_string(),
         description: Some(
             "Write every row of a split humanizer-prepare wrote as one ster tune sft example: the \
              row's system prompt as its system turn, the generic source as its prompt and the \
@@ -71,7 +73,8 @@ pub(crate) fn humanizer_served_specs() -> Vec<Spec> {
 
 /// A text option the command cannot run without, refused by name when absent.
 fn required_text<'a>(args: &'a Parsed, flag: &str) -> Result<&'a str> {
-    args.text(flag).ok_or_else(|| Error(format!("{flag} is required")))
+    args.text(flag)
+        .ok_or_else(|| Error(format!("{flag} is required")))
 }
 
 pub(crate) fn cmd_humanizer_examples(args: &Parsed) -> Result<i32> {
@@ -85,13 +88,14 @@ pub(crate) fn cmd_humanizer_evaluate_gguf(args: &Parsed) -> Result<i32> {
     let path = |flag: &str| required_text(args, flag).map(std::path::PathBuf::from);
     let server = path("--server")?;
     let log = path("--server-log")?;
-    let serving = |model: std::path::PathBuf, server_log: std::path::PathBuf| crate::serving::Serving {
-        server: server.clone(),
-        model,
-        server_log,
-        // Echo asks the humanizer without a sampling setting of its own.
-        decoding: crate::serving::Decoding::ServerDefault,
-    };
+    let serving =
+        |model: std::path::PathBuf, server_log: std::path::PathBuf| crate::serving::Serving {
+            server: server.clone(),
+            model,
+            server_log,
+            // Echo asks the humanizer without a sampling setting of its own.
+            decoding: crate::serving::Decoding::ServerDefault,
+        };
     let run = crate::humanizer::HumanizerEvaluation {
         base: serving(path("--base")?, log.clone()),
         student: serving(path("--student")?, log.with_extension("student.log")),

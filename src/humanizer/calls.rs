@@ -27,8 +27,12 @@ pub(crate) fn read_jsonl<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>> {
         if line.trim().is_empty() {
             continue;
         }
-        let row = serde_json::from_str(&line)
-            .map_err(|error| Error(format!("{} holds a row that is not one ({error}): {line}", path.display())))?;
+        let row = serde_json::from_str(&line).map_err(|error| {
+            Error(format!(
+                "{} holds a row that is not one ({error}): {line}",
+                path.display()
+            ))
+        })?;
         rows.push(row);
     }
     if rows.is_empty() {

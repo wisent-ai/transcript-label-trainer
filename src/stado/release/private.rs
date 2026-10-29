@@ -36,10 +36,18 @@ pub(super) fn publish_private(
             File::open(part)
                 .and_then(|mut input| io::copy(&mut input, &mut output))
                 .map_err(|error| {
-                    Error(format!("cannot append {} to {}: {error}", part.display(), assembled.display()))
+                    Error(format!(
+                        "cannot append {} to {}: {error}",
+                        part.display(),
+                        assembled.display()
+                    ))
                 })?;
-            std::fs::remove_file(part)
-                .map_err(|error| Error(format!("cannot remove the joined part {}: {error}", part.display())))?;
+            std::fs::remove_file(part).map_err(|error| {
+                Error(format!(
+                    "cannot remove the joined part {}: {error}",
+                    part.display()
+                ))
+            })?;
         }
     }
     let mut signatures = std::collections::BTreeMap::from([(

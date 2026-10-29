@@ -90,9 +90,7 @@ fn read_reviewed(path: &Path) -> Result<Vec<(Value, String)>> {
         }
         let value: Value = serde_json::from_str(&line)
             .map_err(|error| Error(format!("{}: unreadable row: {error}", path.display())))?;
-        rows.push(
-            reviewed(value).map_err(|error| Error(format!("{}: {error}", path.display())))?,
-        );
+        rows.push(reviewed(value).map_err(|error| Error(format!("{}: {error}", path.display())))?);
     }
     Ok(rows)
 }
@@ -119,7 +117,12 @@ fn accepted(rows: Vec<(Value, String)>) -> (Vec<(Value, String)>, BTreeMap<Strin
 /// How many times each key occurs.
 fn tally(keys: &[String]) -> BTreeMap<String, usize> {
     keys.iter()
-        .map(|key| (key.clone(), keys.iter().filter(|other| *other == key).count()))
+        .map(|key| {
+            (
+                key.clone(),
+                keys.iter().filter(|other| *other == key).count(),
+            )
+        })
         .collect()
 }
 

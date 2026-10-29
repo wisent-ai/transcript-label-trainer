@@ -71,9 +71,13 @@ fn verdict_function() -> (&'static str, &'static str, Value) {
 }
 
 fn parse_verdict(arguments: serde_json::Map<String, Value>) -> Result<Verdict> {
-    let verdict: Verdict = serde_json::from_value(Value::Object(arguments.clone())).map_err(|error| {
-        Error(format!("judge output is not the record_verdict object ({error}): {}", Value::Object(arguments)))
-    })?;
+    let verdict: Verdict =
+        serde_json::from_value(Value::Object(arguments.clone())).map_err(|error| {
+            Error(format!(
+                "judge output is not the record_verdict object ({error}): {}",
+                Value::Object(arguments)
+            ))
+        })?;
     for (name, judged) in [("base", &verdict.base), ("student", &verdict.student)] {
         for (score, value) in [
             ("semantic_fidelity", judged.semantic_fidelity),
@@ -101,8 +105,15 @@ fn judge(row: &Prediction, client: &BramaClient, model: &str) -> Result<Record> 
         "student": row.student,
     })
     .to_string();
-    let verdict = ask_call(client, model, JUDGE_PROMPT, question, verdict_function(), parse_verdict)
-        .map_err(|error| Error(format!("{}: {error}", row.id)))?;
+    let verdict = ask_call(
+        client,
+        model,
+        JUDGE_PROMPT,
+        question,
+        verdict_function(),
+        parse_verdict,
+    )
+    .map_err(|error| Error(format!("{}: {error}", row.id)))?;
     Ok(Record {
         id: row.id.clone(),
         verdict,
@@ -123,8 +134,11 @@ impl Measures {
     /// `judged` holds at least one rating.
     fn of(judged: &[&Judged]) -> Self {
         let cases = judged.len() as f64;
-        let mean = |score: fn(&Judged) -> f64| judged.iter().map(|one| score(one)).sum::<f64>() / cases;
-        let rate = |held: fn(&Judged) -> bool| judged.iter().filter(|one| held(one)).count() as f64 / cases;
+        let mean =
+            |score: fn(&Judged) -> f64| judged.iter().map(|one| score(one)).sum::<f64>() / cases;
+        let rate = |held: fn(&Judged) -> bool| {
+            judged.iter().filter(|one| held(one)).count() as f64 / cases
+        };
         Self {
             semantic_fidelity: mean(|one| one.semantic_fidelity),
             voice_match: mean(|one| one.voice_match),
@@ -142,20 +156,14 @@ impl Measures {
 /// on the same held-out cases: closer to the author's voice, no less faithful
 /// to the meaning, passed no less often and called AI boilerplate no more
 /// often. The base's own scores are the bound; nobody states one.
-pub fn audit_outputs(
-    predictions: &Path,
-    output: &Path,
-    model: &str,
-) -> Result<Value> {
+pub fn audit_outputs(predictions: &Path, output: &Path, model: &str) -> Result<Value> {
     let rows: Vec<Prediction> = read_jsonl(predictions)?;
     if rows.is_empty() {
         crate::bail!("{} holds no predictions to audit", predictions.display());
     }
     let client = BramaClient::from_env()?;
     let workers = client.allowance(model)?;
-    let outcomes = fan_out(&rows, workers, "audited", |row| {
-        judge(row, &client, model)
-    });
+    let outcomes = fan_out(&rows, workers, "audited", |row| judge(row, &client, model));
     let mut records = Vec::new();
     let mut failures = Vec::new();
     for outcome in outcomes {
@@ -169,9 +177,18 @@ pub fn audit_outputs(
         crate::bail!("audit incomplete: {}", json!(counted));
     }
     records.sort_by(|left, right| left.id.cmp(&right.id));
-    let base = Measures::of(&records.iter().map(|record| &record.verdict.base).collect::<Vec<_>>());
-    let student =
-        Measures::of(&records.iter().map(|record| &record.verdict.student).collect::<Vec<_>>());
+    let base = Measures::of(
+        &records
+            .iter()
+            .map(|record| &record.verdict.base)
+            .collect::<Vec<_>>(),
+    );
+    let student = Measures::of(
+        &records
+            .iter()
+            .map(|record| &record.verdict.student)
+            .collect::<Vec<_>>(),
+    );
     let passed = student.voice_match > base.voice_match
         && student.semantic_fidelity >= base.semantic_fidelity
         && student.pass_rate >= base.pass_rate

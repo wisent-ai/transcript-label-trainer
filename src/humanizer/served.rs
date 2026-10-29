@@ -48,7 +48,9 @@ fn turns(row: &Value) -> Result<Turns> {
                 .map(|text| text.trim().to_string())
                 .filter(|text| !text.is_empty())
                 .ok_or_else(|| Error(format!("row {id:?} has an empty {role} turn"))),
-            _ => Err(Error(format!("row {id:?} must hold exactly one {role} turn"))),
+            _ => Err(Error(format!(
+                "row {id:?} must hold exactly one {role} turn"
+            ))),
         }
     };
     Ok(Turns {
@@ -67,7 +69,8 @@ fn split_rows(path: &Path) -> Result<Vec<Turns>> {
         .lines()
         .filter(|line| !line.trim().is_empty())
         .map(|line| {
-            let row: Value = serde_json::from_str(line).map_err(|error| Error(format!("{}: {error}", path.display())))?;
+            let row: Value = serde_json::from_str(line)
+                .map_err(|error| Error(format!("{}: {error}", path.display())))?;
             turns(&row)
         })
         .collect::<Result<Vec<_>>>()?;
@@ -84,7 +87,10 @@ pub fn export_examples(rows: &Path, output: &Path) -> Result<Value> {
         .map(|row| json!({ "system": row.system, "prompt": row.source, "completion": row.target }))
         .collect();
     let count = examples.len();
-    write_whole(output, &serde_json::to_vec_pretty(&json!({ "examples": examples }))?)?;
+    write_whole(
+        output,
+        &serde_json::to_vec_pretty(&json!({ "examples": examples }))?,
+    )?;
     Ok(json!({ "examples": count, "output": output.display().to_string() }))
 }
 
@@ -96,14 +102,17 @@ const CHAR_ORDER: usize = 6;
 // https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/chrf.py (beta=2)
 const BETA: f64 = 2.0;
 /// Where those settings are documented, recorded with the metrics.
-const CHRF_SOURCE: &str = "https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/chrf.py";
+const CHRF_SOURCE: &str =
+    "https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/chrf.py";
 
 /// Each distinct character n-gram of `chars` of length `order` with how
 /// often it occurs; empty when the text is shorter than one n-gram.
 fn grams(chars: &[char], order: usize) -> Vec<(&[char], usize)> {
     let mut all: Vec<&[char]> = chars.windows(order).collect();
     all.sort();
-    all.chunk_by(|left, right| left == right).filter_map(|run| run.first().map(|gram| (*gram, run.len()))).collect()
+    all.chunk_by(|left, right| left == right)
+        .filter_map(|run| run.first().map(|gram| (*gram, run.len())))
+        .collect()
 }
 
 /// chrF of `candidate` against `reference` (Popović 2015, as sacrebleu
@@ -112,7 +121,11 @@ fn grams(chars: &[char], order: usize) -> Vec<(&[char], usize)> {
 /// their F-score with recall weighted `BETA` times. Nothing in common, or a
 /// text with no n-gram at all, scores zero.
 fn chrf(reference: &str, candidate: &str) -> f64 {
-    let strip = |text: &str| text.chars().filter(|c| !c.is_whitespace()).collect::<Vec<char>>();
+    let strip = |text: &str| {
+        text.chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<Vec<char>>()
+    };
     let (reference, candidate) = (strip(reference), strip(candidate));
     let scores: Vec<(f64, f64)> = (1..=CHAR_ORDER)
         .filter_map(|order| {
@@ -120,12 +133,22 @@ fn chrf(reference: &str, candidate: &str) -> f64 {
             if wanted.is_empty() || got.is_empty() {
                 return None;
             }
-            let total = |counts: &[(&[char], usize)]| counts.iter().map(|(_, count)| *count).sum::<usize>() as f64;
+            let total = |counts: &[(&[char], usize)]| {
+                counts.iter().map(|(_, count)| *count).sum::<usize>() as f64
+            };
             let overlap: usize = wanted
                 .iter()
-                .map(|(gram, have)| got.iter().filter(|(other, _)| other == gram).map(|(_, count)| (*have).min(*count)).sum::<usize>())
+                .map(|(gram, have)| {
+                    got.iter()
+                        .filter(|(other, _)| other == gram)
+                        .map(|(_, count)| (*have).min(*count))
+                        .sum::<usize>()
+                })
                 .sum();
-            Some((overlap as f64 / total(&got), overlap as f64 / total(&wanted)))
+            Some((
+                overlap as f64 / total(&got),
+                overlap as f64 / total(&wanted),
+            ))
         })
         .collect();
     // No order both texts are long enough for leaves both sums empty, so
@@ -190,7 +213,9 @@ fn score(row: &Turns, which: &str, candidate: &str) -> Result<Score> {
 /// refused.
 fn means(scores: &[Score], which: &str) -> Result<Score> {
     if scores.is_empty() {
-        return Err(Error(format!("the {which} model has no scored answer to average")));
+        return Err(Error(format!(
+            "the {which} model has no scored answer to average"
+        )));
     }
     let count = scores.len() as f64;
     let mean = |metric: fn(&Score) -> f64| scores.iter().map(metric).sum::<f64>() / count;
@@ -220,7 +245,11 @@ fn answers(serving: &Serving, rows: &[Turns], which: &str) -> Result<Vec<String>
         .iter()
         .map(|row| {
             let answer = server.answer(&row.id, &row.system, &row.source, None);
-            println!("{which} humanizer answer for {}: {}", row.id, if answer.is_ok() { "received" } else { "failed" });
+            println!(
+                "{which} humanizer answer for {}: {}",
+                row.id,
+                if answer.is_ok() { "received" } else { "failed" }
+            );
             answer
         })
         .collect();
@@ -234,7 +263,10 @@ pub(crate) fn evaluate_gguf(run: &HumanizerEvaluation) -> Result<Value> {
     let rows = split_rows(&run.dataset)?;
     for (which, serving) in [("base", &run.base), ("student", &run.student)] {
         if !serving.model.is_file() {
-            return Err(Error(format!("the {which} model {} does not exist", serving.model.display())));
+            return Err(Error(format!(
+                "the {which} model {} does not exist",
+                serving.model.display()
+            )));
         }
     }
     let base = answers(&run.base, &rows, "base")?;
@@ -242,7 +274,8 @@ pub(crate) fn evaluate_gguf(run: &HumanizerEvaluation) -> Result<Value> {
     let mut lines = String::new();
     let (mut base_scores, mut student_scores) = (Vec::new(), Vec::new());
     for ((row, base), student) in rows.iter().zip(&base).zip(&student) {
-        let (base_score, student_score) = (score(row, "base", base)?, score(row, "student", student)?);
+        let (base_score, student_score) =
+            (score(row, "base", base)?, score(row, "student", student)?);
         let prediction = json!({
             "id": row.id,
             "source": row.source,
@@ -258,7 +291,10 @@ pub(crate) fn evaluate_gguf(run: &HumanizerEvaluation) -> Result<Value> {
         student_scores.push(student_score);
     }
     write_whole(&run.predictions, lines.as_bytes())?;
-    let (base_means, student_means) = (means(&base_scores, "base")?, means(&student_scores, "student")?);
+    let (base_means, student_means) = (
+        means(&base_scores, "base")?,
+        means(&student_scores, "student")?,
+    );
     let gain = student_means.target_chrf - base_means.target_chrf;
     let metrics = json!({
         "schema_version": REPORT_SCHEMA_VERSION,

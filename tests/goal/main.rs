@@ -25,7 +25,10 @@ impl Run {
             .join(".build")
             .join(format!("goal-{case}-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        Self { root, report: json!({"case": case, "commands": [], "outcome": "failed"}) }
+        Self {
+            root,
+            report: json!({"case": case, "commands": [], "outcome": "failed"}),
+        }
     }
 
     fn run(&mut self, args: &[&str]) -> Output {
@@ -41,7 +44,11 @@ impl Run {
     }
 
     fn write(&self) {
-        fs::write(self.root.join("report.json"), serde_json::to_vec_pretty(&self.report).unwrap()).unwrap();
+        fs::write(
+            self.root.join("report.json"),
+            serde_json::to_vec_pretty(&self.report).unwrap(),
+        )
+        .unwrap();
     }
 
     fn passed(mut self) {
@@ -70,19 +77,50 @@ fn teacher_rows_become_the_served_chat_and_gold_rows_stay_out() {
     let rows = run.root.join("reviewed-goals.jsonl");
     let output = run.root.join("examples.json");
     let reviewed = [
-        row("session-task", "please fix the login redirect loop", Some("Fix login redirect loop"), false),
+        row(
+            "session-task",
+            "please fix the login redirect loop",
+            Some("Fix login redirect loop"),
+            false,
+        ),
         row("session-chat", "thanks, that works", None, false),
-        row("session-gold", "add dark mode to settings", Some("Add settings dark mode"), true),
+        row(
+            "session-gold",
+            "add dark mode to settings",
+            Some("Add settings dark mode"),
+            true,
+        ),
     ];
     write_rows(&rows, &reviewed);
 
-    let answer = run.run(&["goal-examples", "--rows", path(&rows), "--output", path(&output)]);
+    let answer = run.run(&[
+        "goal-examples",
+        "--rows",
+        path(&rows),
+        "--output",
+        path(&output),
+    ]);
     let stdout = String::from_utf8_lossy(&answer.stdout);
-    assert!(answer.status.success(), "{}", String::from_utf8_lossy(&answer.stderr));
+    assert!(
+        answer.status.success(),
+        "{}",
+        String::from_utf8_lossy(&answer.stderr)
+    );
     let counts: Value = serde_json::from_str(&stdout).unwrap();
-    let gold = reviewed.iter().filter(|row| row["gold"] == json!(true)).count();
-    assert_eq!(counts["held_out"], json!(gold), "every gold row is counted as held out: {stdout}");
-    assert_eq!(counts["examples"], json!(reviewed.len() - gold), "every other row is an example: {stdout}");
+    let gold = reviewed
+        .iter()
+        .filter(|row| row["gold"] == json!(true))
+        .count();
+    assert_eq!(
+        counts["held_out"],
+        json!(gold),
+        "every gold row is counted as held out: {stdout}"
+    );
+    assert_eq!(
+        counts["examples"],
+        json!(reviewed.len() - gold),
+        "every other row is an example: {stdout}"
+    );
 
     let written: Value = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
     assert_eq!(
@@ -101,12 +139,29 @@ fn a_file_of_only_gold_rows_is_refused_and_nothing_is_written() {
     let mut run = Run::start("examples-only-gold");
     let rows = run.root.join("reviewed-goals.jsonl");
     let output = run.root.join("examples.json");
-    write_rows(&rows, &[row("session-gold", "add dark mode to settings", Some("Add settings dark mode"), true)]);
+    write_rows(
+        &rows,
+        &[row(
+            "session-gold",
+            "add dark mode to settings",
+            Some("Add settings dark mode"),
+            true,
+        )],
+    );
 
-    let answer = run.run(&["goal-examples", "--rows", path(&rows), "--output", path(&output)]);
+    let answer = run.run(&[
+        "goal-examples",
+        "--rows",
+        path(&rows),
+        "--output",
+        path(&output),
+    ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
-    assert!(stderr.contains("reviewed rows is held-out gold; none is left to train on"), "{stderr}");
+    assert!(
+        stderr.contains("reviewed rows is held-out gold; none is left to train on"),
+        "{stderr}"
+    );
     assert!(!output.exists(), "no example set is written");
     run.passed();
 }
@@ -118,10 +173,19 @@ fn an_empty_file_is_refused_by_name() {
     fs::write(&rows, "").unwrap();
     let output = run.root.join("examples.json");
 
-    let answer = run.run(&["goal-examples", "--rows", path(&rows), "--output", path(&output)]);
+    let answer = run.run(&[
+        "goal-examples",
+        "--rows",
+        path(&rows),
+        "--output",
+        path(&output),
+    ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
-    assert!(stderr.contains(&format!("{} holds no reviewed row", rows.display())), "{stderr}");
+    assert!(
+        stderr.contains(&format!("{} holds no reviewed row", rows.display())),
+        "{stderr}"
+    );
     run.passed();
 }
 
@@ -129,10 +193,22 @@ fn an_empty_file_is_refused_by_name() {
 fn an_evaluation_of_a_model_that_does_not_exist_is_refused_before_a_server_starts() {
     let mut run = Run::start("evaluate-no-model");
     let rows = run.root.join("reviewed-goals.jsonl");
-    write_rows(&rows, &[row("session-gold", "add dark mode to settings", Some("Add settings dark mode"), true)]);
+    write_rows(
+        &rows,
+        &[row(
+            "session-gold",
+            "add dark mode to settings",
+            Some("Add settings dark mode"),
+            true,
+        )],
+    );
     let model = run.root.join("absent.gguf");
     let predictions = run.root.join("predictions.jsonl");
-    let (metrics, server, log) = (run.root.join("metrics-gguf.json"), run.root.join("absent-llama-server"), run.root.join("server.log"));
+    let (metrics, server, log) = (
+        run.root.join("metrics-gguf.json"),
+        run.root.join("absent-llama-server"),
+        run.root.join("server.log"),
+    );
 
     let answer = run.run(&[
         "goal-evaluate-gguf",
@@ -151,8 +227,17 @@ fn an_evaluation_of_a_model_that_does_not_exist_is_refused_before_a_server_start
     ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
-    assert!(stderr.contains(&format!("the served model {} does not exist", model.display())), "{stderr}");
-    assert!(!predictions.exists() && !log.exists(), "no prediction is written and no server started");
+    assert!(
+        stderr.contains(&format!(
+            "the served model {} does not exist",
+            model.display()
+        )),
+        "{stderr}"
+    );
+    assert!(
+        !predictions.exists() && !log.exists(),
+        "no prediction is written and no server started"
+    );
     run.passed();
 }
 
@@ -168,7 +253,14 @@ fn a_goal_job_without_ster_settings_is_refused_before_a_row_is_curated() {
     ]);
     let stderr = String::from_utf8_lossy(&answer.stderr);
     assert!(!answer.status.success(), "{stderr}");
-    assert!(stderr.contains("--ster-options cannot be empty"), "the refusal names the missing settings: {stderr}");
-    assert!(answer.stdout.is_empty(), "no curation summary was printed: {}", String::from_utf8_lossy(&answer.stdout));
+    assert!(
+        stderr.contains("--ster-options cannot be empty"),
+        "the refusal names the missing settings: {stderr}"
+    );
+    assert!(
+        answer.stdout.is_empty(),
+        "no curation summary was printed: {}",
+        String::from_utf8_lossy(&answer.stdout)
+    );
     run.passed();
 }

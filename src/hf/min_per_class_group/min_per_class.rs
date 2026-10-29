@@ -10,7 +10,8 @@ use super::*;
 pub(crate) const DEFAULT_LAYER_NORM_EPS: f64 = 1e-12;
 
 /// The `in_training_eval` note, verbatim from the Python metrics.
-pub(crate) const IN_TRAINING_NOTE: &str = "stratified slice of the training side, resplit every run";
+pub(crate) const IN_TRAINING_NOTE: &str =
+    "stratified slice of the training side, resplit every run";
 
 /// The hyperparameters `train` was invoked with, plus the aspect, which only
 /// appears in the too-few-sessions-per-class message.
@@ -173,10 +174,15 @@ pub(crate) fn fine_tune(
     let batch_size = NonZeroUsize::new(config.batch_size)
         .ok_or_else(|| Error("the batch size must hold at least one session".to_string()))?;
     if train_index.is_empty() {
-        return Err(Error("the training side holds no session to fine-tune on".to_string()));
+        return Err(Error(
+            "the training side holds no session to fine-tune on".to_string(),
+        ));
     }
     if !(config.epochs.is_normal() && config.epochs.is_sign_positive()) {
-        return Err(Error(format!("epochs must be a positive number, not {}", config.epochs)));
+        return Err(Error(format!(
+            "epochs must be a positive number, not {}",
+            config.epochs
+        )));
     }
     let steps_per_epoch = train_batch.rows.div_ceil(batch_size.get());
     let total_steps = (steps_per_epoch as f64 * config.epochs).ceil() as usize;
@@ -203,9 +209,8 @@ pub(crate) fn fine_tune(
         for chunk in order.chunks(batch_size.get()) {
             let step = losses.len();
             // Linear decay to zero over the whole run, no warmup.
-            optimizer.set_learning_rate(
-                config.lr * (total_steps - step) as f64 / total_steps as f64,
-            );
+            optimizer
+                .set_learning_rate(config.lr * (total_steps - step) as f64 / total_steps as f64);
             let (ids, mask, targets) = train_batch.take(chunk)?;
             let logits = model.forward(&ids, &mask, true)?;
             let batch_loss = loss::cross_entropy(&logits, &targets)

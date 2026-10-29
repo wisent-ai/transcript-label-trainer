@@ -135,7 +135,10 @@ fn publish(stado: &Path, uri: &str, path: &Path) -> Result<()> {
 fn hash_files(paths: &[PathBuf]) -> Result<(String, u64)> {
     let files = paths
         .iter()
-        .map(|path| File::open(path).map_err(|error| Error(format!("cannot read {}: {error}", path.display()))))
+        .map(|path| {
+            File::open(path)
+                .map_err(|error| Error(format!("cannot read {}: {error}", path.display())))
+        })
         .collect::<Result<Vec<File>>>()?;
     crate::util::sha256_hex_stream(files)
         .map_err(|(index, error)| Error(format!("cannot read {}: {error}", paths[index].display())))
