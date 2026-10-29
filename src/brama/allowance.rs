@@ -45,8 +45,14 @@ fn granted(measured: Option<&Measured>) -> NonZeroUsize {
 }
 
 impl BramaClient {
-    /// The calls at once this command may send to `model`.
+    /// The calls at once this command may send to `model`. An endpoint
+    /// answering in Brama's place keeps no measurement (`/v1/aliases` is
+    /// Brama's), so it is asked as a route measured nothing for: one call at
+    /// a time.
     pub fn allowance(&self, model: &str) -> Result<NonZeroUsize> {
+        if self.model.is_some() {
+            return Ok(granted(None));
+        }
         let mut request = self.http.get(format!("{}/v1/aliases", self.url));
         for (name, value) in self.auth_headers("")? {
             request = request.header(name, value);

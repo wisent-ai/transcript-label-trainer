@@ -6,7 +6,8 @@
 //! but empty is named instead of being read as unset, a stado that cannot run
 //! names the program, and the real Stado's refusal of every alternative or
 //! of a credential role is carried in the answer, not replaced by a generic
-//! "no Brama endpoint".
+//! "no Brama endpoint". When Brama does not answer and an endpoint is
+//! declared in its place, that endpoint is the one asked, for its own model.
 //!
 //! A command that asks a typed question (a label, a verdict, an audit) asks
 //! it on Brama's decision endpoint, which answers only its two decision
@@ -16,8 +17,11 @@
 //!
 //! TLT_TEST_STADO names the real stado executable; it is required.
 use std::fs;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Command, Output};
+use std::sync::mpsc;
 
 use serde_json::{json, Value};
 
@@ -278,5 +282,94 @@ fn a_goal_audit_by_a_chat_alias_is_refused_before_reading_predictions() {
         "the alias is refused before the input is read: {stderr}"
     );
     assert!(!output.exists(), "a refused audit writes no record");
+    run.passed();
+}
+
+/// An OpenAI-compatible service on loopback answering every request with one
+/// chat completion, reporting each request line and body it received.
+fn endpoint() -> (String, mpsc::Receiver<(String, String)>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let (sender, received) = mpsc::channel();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let mut stream = stream.unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request = String::new();
+            reader.read_line(&mut request).unwrap();
+            let mut length = 0;
+            let mut header = String::new();
+            while reader.read_line(&mut header).unwrap() > 2 {
+                if let Some((name, value)) = header.split_once(':') {
+                    if name.eq_ignore_ascii_case("content-length") {
+                        length = value.trim().parse().unwrap();
+                    }
+                }
+                header.clear();
+            }
+            let mut body = vec![0; length];
+            reader.read_exact(&mut body).unwrap();
+            let answer = json!({"choices": [{"index": 0, "message": {"role": "assistant", "content": "{}"}, "finish_reason": "stop"}]})
+                .to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}",
+                answer.len()
+            )
+            .unwrap();
+            let _ = sender.send((
+                request.trim().to_owned(),
+                String::from_utf8_lossy(&body).into_owned(),
+            ));
+        }
+    });
+    (origin, received)
+}
+
+#[test]
+fn an_endpoint_declared_in_bramas_place_is_asked_when_brama_does_not_answer() {
+    let mut run = Run::start("stado-alternative");
+    let (origin, received) = endpoint();
+    // The isolated home places Brama nowhere; the endpoint declared in its
+    // place answers, and the audit asks it for its own model, unsigned.
+    let env = vec![
+        ("TLT_STADO_BIN", stado()),
+        ("STADO_INFERENCE_ENDPOINT_URL", origin.clone()),
+        (
+            "STADO_INFERENCE_ENDPOINT_MODEL",
+            "endpoint-model".to_string(),
+        ),
+    ];
+    run.audit(
+        &env,
+        &[
+            "WISENT_APP_AGENT_AUTH_SECRET",
+            "BRAMA_TOKEN",
+            "WISENT_APP_AGENT_ID",
+        ],
+    );
+    let asked: Vec<(String, String)> = received.try_iter().collect();
+    assert!(
+        !asked.iter().any(|(line, _)| line.contains("/v1/aliases")),
+        "Brama's own measurement is not asked of the endpoint: {asked:?}"
+    );
+    let chats: Vec<&String> = asked
+        .iter()
+        .filter(|(line, _)| line.starts_with("POST /v1/chat/completions "))
+        .map(|(_, body)| body)
+        .collect();
+    assert!(
+        !chats.is_empty(),
+        "the endpoint itself was asked: {asked:?}"
+    );
+    for body in chats {
+        let request: Value = serde_json::from_str(body).unwrap();
+        assert_eq!(request["model"], "endpoint-model", "{request}");
+    }
+    let record = fs::read_to_string(run.home.join(".stado/capabilities.json")).unwrap();
+    assert!(
+        record.contains("model-endpoint"),
+        "Stado records the endpoint as the one that served: {record}"
+    );
     run.passed();
 }
