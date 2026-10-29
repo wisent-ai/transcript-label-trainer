@@ -80,23 +80,65 @@ pub(crate) fn stado_bin() -> Result<String> {
     })
 }
 
-/// Where Stado says Brama is actually placed.
-///
-/// `stado service directory connect brama` derives the address from the
-/// placement rather than from a name someone wrote down, and verifies that
-/// something answers there before reporting it. Every way the answer fails
-/// is an error with its cause: stado not run, Stado's refusal with its
-/// reason, a reply that is not JSON, a reply without a url.
-pub(crate) fn stado_url() -> Result<String> {
+/// The consumer the trainer is to Stado's capability resolution.
+const CONSUMER: &str = "transcript-label-trainer";
+
+/// The model service that answers the trainer: Brama's route, or an
+/// OpenAI-compatible endpoint answering in its place with the model it is
+/// asked for and the key read by the role it names.
+pub(crate) struct Served {
+    pub(crate) url: String,
+    /// The model an endpoint answering in Brama's place is asked for;
+    /// `None` for Brama, which is asked for the caller's alias.
+    pub(crate) model: Option<String>,
+    /// The key of that endpoint, read by the role the resolution names.
+    pub(crate) key: Option<String>,
+}
+
+/// What `stado capabilities resolve inference --consumer
+/// transcript-label-trainer` hands out: Brama's route when it answers the
+/// trainer, else the endpoint the operator declared in its place. Every way
+/// the answer fails is an error with its cause: stado not run, the refusal
+/// naming each alternative's product, route and cause, a reply that is not
+/// JSON, a reply without a route or an endpoint without a model.
+pub(crate) fn stado_served() -> Result<Served> {
     let stado = stado_bin()?;
-    let command = format!("{stado} service directory connect --json brama");
+    let command = format!("{stado} capabilities resolve inference --consumer {CONSUMER} --json");
     let captured = run_capture(
         &stado,
-        &["service", "directory", "connect", "--json", "brama"],
+        &[
+            "capabilities",
+            "resolve",
+            "inference",
+            "--consumer",
+            CONSUMER,
+            "--json",
+        ],
         &[],
     )?;
     if !captured.success {
-        bail!("`{command}` was refused: {}", captured.stderr.trim())
+        let unreachable = [captured.stdout.trim(), captured.stderr.trim()]
+            .into_iter()
+            .filter_map(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+            .find_map(|envelope| envelope["details"]["unreachable"].as_array().cloned())
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| {
+                        format!(
+                            "{} at {}: {}",
+                            item["product"].as_str().unwrap_or("an alternative"),
+                            item["route"].as_str().unwrap_or("its route"),
+                            item["cause"].as_str().unwrap_or("no cause given")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            });
+        match unreachable {
+            Some(named) if !named.is_empty() => bail!("no inference alternative answers: {named}"),
+            _ => bail!("`{command}` was refused: {}", captured.stderr.trim()),
+        }
     }
     let reply = captured.stdout.trim();
     let parsed: serde_json::Value = serde_json::from_str(reply).map_err(|cause| {
@@ -104,26 +146,55 @@ pub(crate) fn stado_url() -> Result<String> {
             "`{command}` answered a reply that is not JSON: {cause}; reply: {reply}"
         ))
     })?;
-    match parsed
-        .get("url")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-    {
-        Some(url) if !url.is_empty() => Ok(url.to_string()),
-        _ => bail!("`{command}` answered no url: {reply}"),
+    let url = match parsed["route"].as_str().map(str::trim) {
+        Some(url) if !url.is_empty() => url.to_string(),
+        _ => bail!("`{command}` answered no route: {reply}"),
+    };
+    let provider = parsed["provider"].as_str().unwrap_or_default();
+    if provider == "brama" {
+        return Ok(Served {
+            url,
+            model: None,
+            key: None,
+        });
     }
+    let Some(model) = parsed["model"].as_str().map(str::to_string) else {
+        bail!("{provider} at {url} answers in Brama's place but declares no model: set capabilities.inference.endpoint.model")
+    };
+    let key = match parsed["key_role"].as_str() {
+        Some(role) => {
+            let read = run_capture(
+                &stado,
+                &["credentials", "get", "--role", role, "--field", "token"],
+                &[],
+            )?;
+            if !read.success {
+                bail!("{provider} at {url} answers in Brama's place, but the key of role {role} cannot be read: {}", read.stderr.trim())
+            }
+            Some(read.stdout.trim().to_string())
+        }
+        None => None,
+    };
+    Ok(Served {
+        url,
+        model: Some(model),
+        key,
+    })
 }
 
-/// Where Brama is: `BRAMA_URL` when the caller names it, otherwise where
-/// Stado's service directory places the gateway, the one record that follows
-/// it when it moves.
-pub(crate) fn resolve_url() -> Result<String> {
+/// Where the trainer's model calls go: `BRAMA_URL` when the caller names it,
+/// otherwise what Stado's capability resolution hands out.
+pub(crate) fn resolve_served() -> Result<Served> {
     if let Some(url) = env_value("BRAMA_URL")? {
-        return Ok(url);
+        return Ok(Served {
+            url,
+            model: None,
+            key: None,
+        });
     }
-    stado_url().map_err(|cause| {
+    stado_served().map_err(|cause| {
         Error(format!(
-            "no Brama endpoint: BRAMA_URL is unset and Stado could not place Brama: {cause}"
+            "no model service: BRAMA_URL is unset and Stado handed out none: {cause}"
         ))
     })
 }
@@ -188,5 +259,8 @@ pub struct BramaClient {
     pub agent_id: String,
     pub(crate) secret: String,
     pub(crate) token: Option<String>,
+    /// The model every call asks for instead of the caller's alias, when an
+    /// endpoint answers in Brama's place.
+    pub(crate) model: Option<String>,
     pub(crate) http: reqwest::blocking::Client,
 }

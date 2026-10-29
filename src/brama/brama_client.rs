@@ -13,6 +13,7 @@ impl BramaClient {
             agent_id,
             secret,
             token,
+            model: None,
             http,
         })
     }
@@ -20,7 +21,16 @@ impl BramaClient {
     /// The signing identity and the two secrets come from the environment or
     /// from the vault roles the environment declares; nothing names an agent
     /// or an item here. A variable that is set but empty is refused by name.
+    /// When an endpoint answers in Brama's place (`resolve_served`), it is
+    /// asked with its own key for its own model, and Brama's identity is
+    /// neither read nor sent.
     pub fn from_env() -> Result<Self> {
+        let served = resolve_served()?;
+        if let Some(model) = served.model {
+            let mut client = Self::new(&served.url, String::new(), String::new(), served.key)?;
+            client.model = Some(model);
+            return Ok(client);
+        }
         let agent_id = env_value("WISENT_APP_AGENT_ID")?.ok_or_else(|| {
             Error("WISENT_APP_AGENT_ID is required: the agent identity Brama verifies the signature against".to_string())
         })?;
@@ -32,8 +42,7 @@ impl BramaClient {
             Some(token) => token,
             None => read_role("TLT_BRAMA_TOKEN_ROLE", "the Brama bearer")?,
         };
-        let url = resolve_url()?;
-        Self::new(&url, agent_id, secret, Some(token))
+        Self::new(&served.url, agent_id, secret, Some(token))
     }
 
     /// The identity headers jeden signs with: the canonical string is
@@ -87,6 +96,7 @@ impl BramaClient {
     /// (Brama's `context_length_exceeded`) apart from every other failure, so
     /// a caller can ask about less instead of guessing a size up front.
     pub(crate) fn answer(&self, model: &str, messages: &[Message]) -> Result<ChatAnswer> {
+        let model = self.model.as_deref().unwrap_or(model);
         let body = serde_json::json!({ "model": model, "messages": messages });
         let payload = match self.completion(&body)? {
             Completion::Answered(payload) => payload,
@@ -133,6 +143,7 @@ impl BramaClient {
         description: &str,
         parameters: serde_json::Value,
     ) -> Result<Called> {
+        let model = self.model.as_deref().unwrap_or(model);
         let body = serde_json::json!({
             "model": model,
             "messages": messages,

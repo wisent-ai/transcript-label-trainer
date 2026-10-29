@@ -1,10 +1,12 @@
-//! Every command that reaches Brama first resolves where Brama is and reads
-//! its signing secret. The real executable runs `humanizer-audit` with an
-//! isolated HOME, and each way that resolution fails must be refused with
-//! its own cause: a BRAMA_URL set but empty is named instead of being read as
-//! unset, a stado that cannot run names the program, and the real Stado's
-//! refusal of the placement or of a credential role is carried in the
-//! answer, not replaced by a generic "no Brama endpoint".
+//! Every command that reaches a model service first asks where it is
+//! (`BRAMA_URL`, else `stado capabilities resolve inference --consumer
+//! transcript-label-trainer`) and, for Brama, reads its signing secret. The
+//! real executable runs `humanizer-audit` with an isolated HOME, and each way
+//! that resolution fails must be refused with its own cause: a BRAMA_URL set
+//! but empty is named instead of being read as unset, a stado that cannot run
+//! names the program, and the real Stado's refusal of every alternative or
+//! of a credential role is carried in the answer, not replaced by a generic
+//! "no Brama endpoint".
 //!
 //! A command that asks a typed question (a label, a verdict, an audit) asks
 //! it on Brama's decision endpoint, which answers only its two decision
@@ -147,7 +149,7 @@ fn a_stado_that_cannot_run_is_named() {
     let mut env = secrets();
     env.push(("TLT_STADO_BIN", missing.display().to_string()));
     let stderr = refusal(&run.audit(&env, &[]));
-    assert!(stderr.contains("Stado could not place Brama"), "{stderr}");
+    assert!(stderr.contains("Stado handed out none"), "{stderr}");
     assert!(
         stderr.contains(&format!("{} could not be run", missing.display())),
         "the refusal must name the program that could not run: {stderr}"
@@ -156,21 +158,23 @@ fn a_stado_that_cannot_run_is_named() {
 }
 
 #[test]
-fn stados_refusal_of_the_placement_is_carried() {
+fn stados_refusal_of_every_alternative_is_carried() {
     let mut run = Run::start("stado-placement");
     let mut env = secrets();
     env.push(("TLT_STADO_BIN", stado()));
     let stderr = refusal(&run.audit(&env, &[]));
-    let Some((_, cause)) = stderr.split_once("service directory connect --json brama` ") else {
-        panic!("the refusal must quote the Stado command: {stderr}");
+    // The isolated home places Brama nowhere and declares no endpoint, so
+    // Stado names both alternatives and why each did not answer.
+    let Some((_, named)) = stderr.split_once("no inference alternative answers: ") else {
+        panic!("the refusal must carry Stado's alternatives: {stderr}");
     };
     assert!(
-        cause.starts_with("was refused: ") || cause.starts_with("answered "),
-        "the refusal must carry what Stado answered: {stderr}"
+        named.starts_with("brama at "),
+        "Brama is named first: {stderr}"
     );
     assert!(
-        !cause.trim_start_matches("was refused: ").trim().is_empty(),
-        "Stado's reason must not be empty: {stderr}"
+        named.contains("model-endpoint at "),
+        "the declared endpoint alternative is named too: {stderr}"
     );
     run.passed();
 }
@@ -178,8 +182,10 @@ fn stados_refusal_of_the_placement_is_carried() {
 #[test]
 fn stados_refusal_of_a_credential_role_is_carried() {
     let mut run = Run::start("stado-role");
+    // A Brama address is given, so the run goes on to read Brama's identity.
     let env = vec![
         ("TLT_STADO_BIN", stado()),
+        ("BRAMA_URL", "http://127.0.0.1:1".to_string()),
         (
             "TLT_BRAMA_AGENT_ROLE",
             "transcript-label-trainer-test-absent-role#secret".to_string(),
