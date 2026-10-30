@@ -23,7 +23,7 @@
 # Run it with:  transcript-label-trainer run jobs/example-topic.yaml
 # Run it on a Stado target with:
 #   transcript-label-trainer run jobs/example-topic.yaml \
-#     --compute-target ubuntu-server-rtx-pro-6000
+#     --compute-target <a Stado target with a GPU>
 # Artifacts land in <training root>/models/<name>/.
 
 name: topic-v1
